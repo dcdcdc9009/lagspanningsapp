@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lågspänningsberedning</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="nav-brand" data-view="projekt">⚡ Lågspänningsberedning</div>
+  <div class="nav-links">
+    <a href="#projekt"       class="nav-link" data-view="projekt">Projekt</a>
+    <a href="#artiklar"      class="nav-link" data-view="artiklar">Artiklar</a>
+    <a href="#admin"         class="nav-link" data-view="admin">Admin</a>
+  </div>
+  <div class="nav-right">
+    <span id="adminBadge" class="badge badge-admin hidden">Admin</span>
+  </div>
+</nav>
+
+<div id="app" class="main-content"></div>
+
+<!-- MODAL -->
+<div id="modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 id="modalTitle"></h2>
+      <button class="modal-close" id="modalClose" aria-label="Stäng">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+<!-- CONFIRM DIALOG -->
+<div id="confirmDialog" class="modal-overlay hidden">
+  <div class="modal-box modal-sm">
+    <div class="modal-header">
+      <h2 id="confirmTitle">Bekräfta</h2>
+    </div>
+    <div class="modal-body">
+      <p id="confirmMsg"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="confirmOk">Ta bort</button>
+      <button class="btn btn-secondary" id="confirmCancel">Avbryt</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
