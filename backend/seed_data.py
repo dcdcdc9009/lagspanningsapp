@@ -96,16 +96,7 @@ def fyll_i_startdata(conn):
     # KABELSKÅP OCH FÖRDELNINGSSKÅP
     # ================================================================
     skap_namn = [
-        'ABB RK 5-fack', 'ABB RK 7-fack', 'ABB RK 10-fack', 'ABB RK 12-fack',
-        'ABB Combiflex 4-fack', 'ABB Combiflex 6-fack',
-        'Elmeko kabelskåp 4-fack', 'Elmeko kabelskåp 6-fack',
-        'Elmeko kabelskåp 8-fack', 'Elmeko kabelskåp 10-fack', 'Elmeko kabelskåp 12-fack',
-        'Ensto utomhus 4-fack', 'Ensto utomhus 6-fack',
-        'Ensto utomhus 8-fack', 'Ensto utomhus 12-fack',
-        'Hager kabelskåp 4-fack', 'Hager kabelskåp 6-fack', 'Hager kabelskåp 8-fack',
-        'Schneider Linergy 6-fack', 'Schneider Linergy 12-fack',
         'Siemens 8GK 4-fack', 'Siemens 8GK 6-fack',
-        'Pehaka kabelskåp 4-fack', 'Pehaka kabelskåp 6-fack', 'Pehaka kabelskåp 8-fack',
     ]
     for i, namn in enumerate(skap_namn):
         _art(conn, namn, kat_skap, 'st', i)
@@ -209,20 +200,11 @@ def fyll_i_startdata(conn):
         ('Korrugerat skyddsrör Ø90mm (DW)',  'm'),
         ('Korrugerat skyddsrör Ø110mm (DW)', 'm'),
         ('Korrugerat skyddsrör Ø160mm (DW)', 'm'),
-        ('Styv PVC-rör Ø50mm',               'm'),
-        ('Styv PVC-rör Ø63mm',               'm'),
-        ('Styv PVC-rör Ø110mm',              'm'),
-        ('Styv PVC-rör Ø160mm',              'm'),
-        ('Stålrör Ø50mm (väggenomföring)',   'm'),
-        ('Stålrör Ø100mm (väggenomföring)',  'm'),
     ]
     for i, (namn, enhet) in enumerate(ror_namn):
         _art(conn, namn, kat_ror, enhet, i)
 
     koppling_namn = [
-        ('Rörkoppling Ø50mm',  'st'), ('Rörkoppling Ø63mm',  'st'),
-        ('Rörkoppling Ø75mm',  'st'), ('Rörkoppling Ø90mm',  'st'),
-        ('Rörkoppling Ø110mm', 'st'), ('Rörkoppling Ø160mm', 'st'),
         ('Rörände/rörskydd Ø50mm',   'st'), ('Rörände/rörskydd Ø110mm', 'st'),
         ('Kabelmudde/genomföringsbussning Ø50mm',  'st'),
         ('Kabelmudde/genomföringsbussning Ø110mm', 'st'),
@@ -278,18 +260,11 @@ def fyll_i_startdata(conn):
         (STD_MARKBRICKA,                    'förp'),
         ('Märkbricka aluminium (förp 50st)', 'förp'),
         (STD_MARKERINGSBAND,                 'm'),
-        ('Markeringsband röd',               'm'),
-        (STD_KABELSKYDDSNAAT,                'm'),
-        ('Kabelskyddsplatta (grön/svart)',   'm'),
         (STD_BUNTBAND,                       'förp'),
         ('Buntband vit (förp 100st)',        'förp'),
         (STD_KABELKLAMMOR,                   'förp'),
         ('Kabelklämmor stor (förp 10st)',    'förp'),
-        ('Kabelstege plast 200mm bredd',     'm'),
-        ('Kabelstege plast 300mm bredd',     'm'),
         ('Kabelkanal PVC 60x40mm',           'm'),
-        (STD_KABELSAND,                      'ton'),
-        (STD_BETONGFUNDAMENT,                'st'),
         (STD_OVERSPANNING,                   'st'),
         ('Jordelektrod/jordspett 1,5m',      'st'),
         ('Jordledning 16mm² grön/gul',       'm'),
@@ -297,9 +272,7 @@ def fyll_i_startdata(conn):
         (STD_JORDSKENEANSL,                  'st'),
         (STD_GENOMFORING_LITEN,              'st'),
         (STD_GENOMFORING_STOR,               'st'),
-        ('Kabelgenomföring flerfack',        'st'),
         (STD_JORDSKENOR,                     'st'),
-        ('Silikon och fogmassa',             'st'),
         ('Varningsskylt elektrisk fara',     'st'),
         ('Flaggband varning 200m',           'rulle'),
         ('Kabelmärkning/kabelmärkband',      'förp'),
@@ -312,15 +285,17 @@ def fyll_i_startdata(conn):
         ('Kabelskydd plant 125-50',              'm'),
         ('Jordlina CCS 25 KAP',                  'm'),
         ('Jordtagsstång Elpress A9522463',        'st'),
-        ('Märksystem R5000 siffra 0-9 dekal',    'st'),
         ('E.ON kabelskåpslogo klister',           'st'),
         ('Märklist transp skylthåll PL',          'st'),
         ('Kopplingskniv 1KN 1 3st',              'sats'),
-        ('Märksystem H50 gul siffra 0-9',        'st'),
-        ('Märksystem H50 gul bokstav A-Z',       'st'),
-        ('Märksystem H50 gul blank',             'st'),
     ]):
         _art(conn, namn, kat_ovrigt, enhet, 40 + i)
+
+    # Märksystem R5000 – alla siffror och bokstäver
+    r5000 = [f'Märksystem R5000 siffra {d}' for d in '0123456789'] + \
+            [f'Märksystem R5000 bokstav {c}' for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ']
+    for i, namn in enumerate(r5000):
+        _art(conn, namn, kat_ovrigt, 'st', 50 + i)
 
     # ================================================================
     # MALLAR (4 stycken)

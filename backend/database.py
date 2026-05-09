@@ -105,6 +105,62 @@ def _migrera(conn):
             "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','5')"
         )
         conn.commit()
+        v = 5
+
+    if v < 6:
+        # v6: Ta bort ej relevanta artiklar, lägg till R5000 per siffra/bokstav
+        ta_bort = [
+            # Kabelskåp
+            'ABB RK 5-fack', 'ABB RK 7-fack', 'ABB RK 10-fack', 'ABB RK 12-fack',
+            'ABB Combiflex 4-fack', 'ABB Combiflex 6-fack',
+            'Elmeko kabelskåp 4-fack', 'Elmeko kabelskåp 6-fack', 'Elmeko kabelskåp 8-fack',
+            'Elmeko kabelskåp 10-fack', 'Elmeko kabelskåp 12-fack',
+            'Ensto utomhus 4-fack', 'Ensto utomhus 6-fack',
+            'Ensto utomhus 8-fack', 'Ensto utomhus 12-fack',
+            'Hager kabelskåp 4-fack', 'Hager kabelskåp 6-fack', 'Hager kabelskåp 8-fack',
+            'Schneider Linergy 6-fack', 'Schneider Linergy 12-fack',
+            'Pehaka kabelskåp 4-fack', 'Pehaka kabelskåp 6-fack', 'Pehaka kabelskåp 8-fack',
+            # Rör
+            'Styv PVC-rör Ø50mm', 'Styv PVC-rör Ø63mm',
+            'Styv PVC-rör Ø110mm', 'Styv PVC-rör Ø160mm',
+            'Stålrör Ø50mm (väggenomföring)', 'Stålrör Ø100mm (väggenomföring)',
+            # Rörkopplingar
+            'Rörkoppling Ø50mm', 'Rörkoppling Ø63mm', 'Rörkoppling Ø75mm',
+            'Rörkoppling Ø90mm', 'Rörkoppling Ø110mm', 'Rörkoppling Ø160mm',
+            # Övrigt
+            'Markeringsband röd', 'Kabelskyddsnät röd', 'Kabelskyddsplatta (grön/svart)',
+            'Kabelstege plast 200mm bredd', 'Kabelstege plast 300mm bredd',
+            'Kabelsand', 'Betongfundament kabelskåp', 'Silikon och fogmassa',
+            'Kabelgenomföring flerfack',
+            'Märksystem H50 gul siffra 0-9', 'Märksystem H50 gul bokstav A-Z',
+            'Märksystem H50 gul blank', 'Märksystem R5000 siffra 0-9 dekal',
+        ]
+        for namn in ta_bort:
+            conn.execute("DELETE FROM artiklar WHERE artikelnamn=?", (namn,))
+
+        # Lägg till R5000 per siffra och bokstav
+        kat = conn.execute(
+            "SELECT id FROM kategorier WHERE namn='Övrigt smågods'"
+        ).fetchone()
+        if kat:
+            kat_id = kat['id']
+            max_sort = conn.execute(
+                "SELECT COALESCE(MAX(sortering),49) FROM artiklar WHERE kategori_id=?",
+                (kat_id,)
+            ).fetchone()[0]
+            r5000 = [f'Märksystem R5000 siffra {d}' for d in '0123456789'] + \
+                    [f'Märksystem R5000 bokstav {c}'
+                     for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ']
+            for i, namn in enumerate(r5000):
+                conn.execute(
+                    "INSERT OR IGNORE INTO artiklar "
+                    "(artikelnamn, kategori_id, enhet, sortering) VALUES (?,?,?,?)",
+                    (namn, kat_id, 'st', max_sort + 1 + i)
+                )
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','6')"
+        )
+        conn.commit()
 
 
 def _create_tables(conn):
