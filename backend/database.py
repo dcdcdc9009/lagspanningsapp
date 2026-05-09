@@ -162,6 +162,18 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 7:
+        # v7: Ta bort dubletter i artiklar (behåll lägst id per artikelnamn+kategori)
+        conn.execute("""
+            DELETE FROM artiklar WHERE id NOT IN (
+                SELECT MIN(id) FROM artiklar GROUP BY artikelnamn, kategori_id
+            )
+        """)
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','7')"
+        )
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
