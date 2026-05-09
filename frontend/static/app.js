@@ -588,10 +588,10 @@ async function byggInputfalt(falt, existing = {}) {
       const chk = val === true || val === 'true' || val === '1' ? 'checked' : '';
       html += `<div class="form-group"><label class="form-check"><input type="checkbox" name="${f.faltnamn}" ${chk}> ${escHtml(f.etikett)}</label>${hint}</div>`;
     } else if (f.typ === 'artikel_select') {
-      // Fetch articles by category
+      // Fetch articles by category (alternativ-JSON has key kategori_namn)
       let alts = [];
       try { alts = JSON.parse(f.alternativ || '{}'); } catch {}
-      const kategori = alts.kategori || '';
+      const kategori = alts.kategori_namn || alts.kategori || '';
       let artiklar = [];
       try {
         artiklar = (await api('GET', `/artiklar?kategori=${encodeURIComponent(kategori)}`)).artiklar || [];
@@ -892,11 +892,28 @@ async function renderArtiklar(app) {
     const tbody = document.getElementById('artBody');
     if (!arts.length) { tbody.innerHTML = `<tr><td colspan="3" class="muted text-center">Inga artiklar hittades</td></tr>`; return; }
     tbody.innerHTML = arts.map(a => `
-      <tr>
-        <td><strong>${escHtml(a.artikelnamn)}</strong></td>
+      <tr style="cursor:pointer" data-id="${a.id}" data-namn="${escHtml(a.artikelnamn)}"
+          data-kat="${escHtml(a.kategori_namn||'')}" data-enhet="${escHtml(a.enhet)}"
+          data-beskrivning="${escHtml(a.beskrivning||'')}">
+        <td><strong>${escHtml(a.artikelnamn)}</strong>${a.beskrivning ? ' <span class="text-muted text-sm">ℹ</span>' : ''}</td>
         <td>${escHtml(a.kategori_namn||'')}</td>
         <td>${escHtml(a.enhet)}</td>
       </tr>`).join('');
+
+    tbody.querySelectorAll('tr[data-id]').forEach(row => {
+      row.addEventListener('click', () => {
+        const besk = row.dataset.beskrivning;
+        Modal.open(row.dataset.namn, `
+          <dl class="info-dl">
+            <dt>Kategori</dt><dd>${row.dataset.kat || '–'}</dd>
+            <dt>Enhet</dt>  <dd>${row.dataset.enhet || '–'}</dd>
+            ${besk ? `<dt>Beskrivning</dt><dd style="white-space:pre-wrap">${escHtml(besk)}</dd>` : ''}
+          </dl>
+          ${!besk ? '<p class="text-muted text-sm mt-2">Ingen beskrivning tillagd ännu. Admins kan lägga till via Admin → Artiklar → Redigera.</p>' : ''}`,
+          `<button class="btn btn-secondary" onclick="document.getElementById('modal').classList.add('hidden')">Stäng</button>`
+        );
+      });
+    });
   }
 
   document.getElementById('sokArt').addEventListener('input', ladda);
@@ -1075,6 +1092,10 @@ function modalArtForm(art, katOpts, onDone) {
           <label class="form-label">Enhet <span class="req">*</span></label>
           <input name="enhet" class="form-control" value="${escHtml(art?.enhet||'')}" required>
         </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Beskrivning</label>
+        <textarea name="beskrivning" class="form-control" rows="3" placeholder="Valfri beskrivning av artikeln…">${escHtml(art?.beskrivning||'')}</textarea>
       </div>
       <div class="form-check">
         <input type="checkbox" name="aktiv" id="artAktiv" ${(!art || art.aktiv) ? 'checked' : ''}>

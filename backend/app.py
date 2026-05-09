@@ -581,11 +581,13 @@ def admin_uppdatera_artikel(aid):
         bef = conn.execute("SELECT * FROM artiklar WHERE id=?", (aid,)).fetchone()
         if not bef: return fel('Artikeln hittades inte.', 404)
         d = request.get_json(silent=True) or {}
-        conn.execute("UPDATE artiklar SET artikelnamn=?,kategori_id=?,enhet=?,aktiv=? WHERE id=?",
-                     ((d.get('artikelnamn') or bef['artikelnamn']).strip(),
-                      d.get('kategori_id', bef['kategori_id']),
-                      (d.get('enhet') or bef['enhet']).strip(),
-                      d.get('aktiv', bef['aktiv']), aid))
+        conn.execute(
+            "UPDATE artiklar SET artikelnamn=?,kategori_id=?,enhet=?,beskrivning=?,aktiv=? WHERE id=?",
+            ((d.get('artikelnamn') or bef['artikelnamn']).strip(),
+             d.get('kategori_id', bef['kategori_id']),
+             (d.get('enhet') or bef['enhet']).strip(),
+             d.get('beskrivning', bef['beskrivning']),
+             d.get('aktiv', bef['aktiv']), aid))
         conn.commit()
         return jsonify(row_to_dict(conn.execute("SELECT * FROM artiklar WHERE id=?", (aid,)).fetchone()))
 

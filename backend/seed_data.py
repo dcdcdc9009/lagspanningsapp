@@ -30,10 +30,15 @@ def _lev(conn, namn):
 
 
 def _art(conn, namn, kat_id, enhet, sort=0):
-    conn.execute("INSERT OR IGNORE INTO artiklar (artikelnamn, kategori_id, enhet, sortering) VALUES (?,?,?,?)",
-                 (namn, kat_id, enhet, sort))
-    return conn.execute("SELECT id FROM artiklar WHERE artikelnamn=? AND kategori_id=?",
-                        (namn, kat_id)).fetchone()['id']
+    existing = conn.execute(
+        "SELECT id FROM artiklar WHERE artikelnamn=? AND kategori_id=?", (namn, kat_id)
+    ).fetchone()
+    if existing:
+        return existing['id']
+    cur = conn.execute(
+        "INSERT INTO artiklar (artikelnamn, kategori_id, enhet, sortering) VALUES (?,?,?,?)",
+        (namn, kat_id, enhet, sort))
+    return cur.lastrowid
 
 
 def fyll_i_startdata(conn):

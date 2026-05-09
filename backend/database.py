@@ -55,6 +55,24 @@ def _migrera(conn):
             "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','2')"
         )
         conn.commit()
+        v = 2
+
+    if v < 3:
+        # v3: Lägg till beskrivning-kolumn, ta bort eventuella dubletter
+        try:
+            conn.execute("ALTER TABLE artiklar ADD COLUMN beskrivning TEXT")
+        except Exception:
+            pass  # Kolumnen finns redan
+        # Ta bort dubletter – behåll lägst id per (artikelnamn, kategori_id)
+        conn.execute("""
+            DELETE FROM artiklar WHERE id NOT IN (
+                SELECT MIN(id) FROM artiklar GROUP BY artikelnamn, kategori_id
+            )
+        """)
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','3')"
+        )
+        conn.commit()
 
 
 def _create_tables(conn):
@@ -88,6 +106,7 @@ def _create_tables(conn):
             artikelnamn TEXT NOT NULL,
             kategori_id INTEGER NOT NULL REFERENCES kategorier(id),
             enhet       TEXT NOT NULL,
+            beskrivning TEXT,
             sortering   INTEGER NOT NULL DEFAULT 0,
             aktiv       INTEGER NOT NULL DEFAULT 1
         );
