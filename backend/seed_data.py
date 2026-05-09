@@ -264,8 +264,6 @@ def fyll_i_startdata(conn):
         ('Kabelskarv 4-led 6-50mm² 1kV',     'st'),
         ('Kabelskarv Al/Cu 50-95mm²',         'st'),
         ('Kabelskarv Al/Cu 95-240mm²',        'st'),
-        ('Kabelskarv PXE-SU5-SE01',           'st'),
-        ('Kabelskarv LJTM-W-4X035-150',       'st'),
         ('Kabelskarv 1kV 95-240mm²',          'st'),
         ('Ändhätta kallkrymp 16-30mm',        'st'),
         ('Ändhätta kallkrymp 26-49mm',        'st'),
@@ -505,8 +503,7 @@ def fyll_nya_artiklar(conn):
     if kat_forb:
         for i, (namn, enhet) in enumerate([
             ('Kabelskarv 4-led 6-50mm² 1kV', 'st'), ('Kabelskarv Al/Cu 50-95mm²', 'st'),
-            ('Kabelskarv Al/Cu 95-240mm²', 'st'),   ('Kabelskarv PXE-SU5-SE01', 'st'),
-            ('Kabelskarv LJTM-W-4X035-150', 'st'),  ('Kabelskarv 1kV 95-240mm²', 'st'),
+            ('Kabelskarv Al/Cu 95-240mm²', 'st'),   ('Kabelskarv 1kV 95-240mm²', 'st'),
             ('Ändhätta kallkrymp 16-30mm', 'st'),   ('Ändhätta kallkrymp 26-49mm', 'st'),
             ('Ändhätta kallkrymp 46-84mm', 'st'),
         ]):

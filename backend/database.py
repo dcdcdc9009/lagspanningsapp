@@ -74,6 +74,15 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 4:
+        # v4: Ta bort mellanspänningsprodukter (PXE- och LJTM-kabelskarvar)
+        for namn in ['Kabelskarv PXE-SU5-SE01', 'Kabelskarv LJTM-W-4X035-150']:
+            conn.execute("DELETE FROM artiklar WHERE artikelnamn=?", (namn,))
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','4')"
+        )
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
