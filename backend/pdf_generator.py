@@ -1,4 +1,4 @@
-"""PDF-generering för byggprotokoll och materiallista."""
+"""PDF-generering för byggprotokoll och materiallista. Tema: Oneco Networks AB."""
 from io import BytesIO
 from datetime import datetime
 from reportlab.lib import colors
@@ -13,25 +13,33 @@ from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate
 from reportlab.platypus.frames import Frame
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
-NAVY  = colors.HexColor('#1a3a5c')
-LIGHT = colors.HexColor('#e8f0f8')
-GRAY  = colors.HexColor('#666666')
-WHITE = colors.white
-BLACK = colors.black
+# Oneco Networks AB – färgpalett
+PRIMARY  = colors.HexColor('#2e1065')   # Mörk lila (nav/header)
+ACCENT   = colors.HexColor('#7c3aed')   # Medium lila (accenter)
+LIGHT    = colors.HexColor('#ede9fe')   # Ljus lavendel (alternativa rader)
+GRAY     = colors.HexColor('#52525b')   # Neutral grå
+WHITE    = colors.white
+BLACK    = colors.black
+GREEN    = colors.HexColor('#16a34a')
+RED      = colors.HexColor('#dc2626')
 
 W, H = A4
 MARGIN = 20 * mm
 
 
 # ----------------------------------------------------------------
-# SIDFOT / HEADER canvas
+# SIDHUVUD / SIDFOT canvas
 # ----------------------------------------------------------------
 
 def _bygg_header_footer(canvas, doc, foretag, titel):
     canvas.saveState()
-    # Toppbanderoll
-    canvas.setFillColor(NAVY)
+    # Toppbanderoll – mörk lila
+    canvas.setFillColor(PRIMARY)
     canvas.rect(0, H - 22 * mm, W, 22 * mm, fill=1, stroke=0)
+    # Accent-linje under bannern
+    canvas.setFillColor(ACCENT)
+    canvas.rect(0, H - 23 * mm, W, 1 * mm, fill=1, stroke=0)
+
     canvas.setFillColor(WHITE)
     canvas.setFont('Helvetica-Bold', 13)
     canvas.drawString(MARGIN, H - 14 * mm, titel)
@@ -41,6 +49,8 @@ def _bygg_header_footer(canvas, doc, foretag, titel):
     # Sidfot
     canvas.setFillColor(LIGHT)
     canvas.rect(0, 0, W, 12 * mm, fill=1, stroke=0)
+    canvas.setFillColor(ACCENT)
+    canvas.rect(0, 12 * mm, W, 0.5 * mm, fill=1, stroke=0)
     canvas.setFillColor(GRAY)
     canvas.setFont('Helvetica', 8)
     canvas.drawString(MARGIN, 4 * mm, f"Utskrivet {datetime.now().strftime('%Y-%m-%d %H:%M')}")
@@ -56,7 +66,7 @@ def _bygg_header_footer(canvas, doc, foretag, titel):
 def _styles():
     base = getSampleStyleSheet()
     h1 = ParagraphStyle('h1', parent=base['Normal'],
-                         fontSize=12, textColor=NAVY, leading=16,
+                         fontSize=12, textColor=PRIMARY, leading=16,
                          spaceAfter=4, fontName='Helvetica-Bold')
     normal = ParagraphStyle('norm', parent=base['Normal'],
                              fontSize=9, leading=12)
@@ -76,7 +86,7 @@ def _info_tabell(data, col_w=None):
         ('FONTNAME',  (0, 0), (-1, -1), 'Helvetica'),
         ('FONTSIZE',  (0, 0), (-1, -1), 9),
         ('FONTNAME',  (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('TEXTCOLOR', (0, 0), (0, -1), NAVY),
+        ('TEXTCOLOR', (0, 0), (0, -1), PRIMARY),
         ('VALIGN',    (0, 0), (-1, -1), 'TOP'),
         ('TOPPADDING', (0, 0), (-1, -1), 2),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
@@ -84,10 +94,10 @@ def _info_tabell(data, col_w=None):
     return t
 
 
-def _material_tabell(rader, visa_pris=True):
-    """Materialtabell med samtliga rader."""
+def _material_tabell(rader, visa_pris=False):
+    """Materialtabell med samtliga rader. Priser visas ej som standard."""
     header = ['Artikel', 'Kategori', 'Enhet', 'Antal']
-    col_w  = [75 * mm, 40 * mm, 20 * mm, 20 * mm]
+    col_w  = [80 * mm, 45 * mm, 20 * mm, 20 * mm]
     if visa_pris:
         header += ['À-pris', 'Totalt']
         col_w  += [20 * mm, 22 * mm]
@@ -95,7 +105,7 @@ def _material_tabell(rader, visa_pris=True):
 
     rows = [header]
     for r in rader:
-        pris = r.get('a_pris')
+        pris  = r.get('a_pris')
         antal = r.get('antal', 0)
         rad = [
             r.get('artikelnamn', ''),
@@ -110,8 +120,7 @@ def _material_tabell(rader, visa_pris=True):
 
     t = Table(rows, colWidths=col_w, repeatRows=1)
     style = [
-        # Header
-        ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY),
         ('TEXTCOLOR',  (0, 0), (-1, 0), WHITE),
         ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE',   (0, 0), (-1, -1), 8),
@@ -119,13 +128,48 @@ def _material_tabell(rader, visa_pris=True):
         ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), 3),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#cccccc')),
+        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT]),
     ]
-    # Markera manuella rader
     for i, r in enumerate(rader, start=1):
         if r.get('manuell'):
-            style.append(('TEXTCOLOR', (0, i), (-1, i), colors.HexColor('#8B4513')))
+            style.append(('TEXTCOLOR', (0, i), (-1, i), colors.HexColor('#b45309')))
+    t.setStyle(TableStyle(style))
+    return t
+
+
+def _egenkontroll_tabell(egenkontroll):
+    """Tabell med egenkontrollpunkter och deras status."""
+    header = ['#', 'Kontrollpunkt', 'Utförd', 'Ej rel.']
+    col_w  = [8 * mm, None, 18 * mm, 18 * mm]
+    col_w[1] = W - MARGIN * 2 - sum(x for x in col_w if x)
+
+    rows = [header]
+    for i, e in enumerate(egenkontroll, start=1):
+        utford     = '☑' if e.get('utford')     else '☐'
+        ej_relevant = '☑' if e.get('ej_relevant') else '☐'
+        rows.append([str(i), e.get('punkt', ''), utford, ej_relevant])
+
+    t = Table(rows, colWidths=col_w, repeatRows=1)
+    style = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY),
+        ('TEXTCOLOR',  (0, 0), (-1, 0), WHITE),
+        ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',   (0, 0), (-1, -1), 8),
+        ('ALIGN',      (0, 0), (0, -1), 'CENTER'),
+        ('ALIGN',      (2, 0), (-1, -1), 'CENTER'),
+        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT]),
+    ]
+    # Markera utförda punkter med grön text
+    for i, e in enumerate(egenkontroll, start=1):
+        if e.get('utford'):
+            style.append(('TEXTCOLOR', (2, i), (2, i), GREEN))
+        if e.get('ej_relevant'):
+            style.append(('TEXTCOLOR', (3, i), (3, i), GRAY))
     t.setStyle(TableStyle(style))
     return t
 
@@ -136,12 +180,13 @@ def _material_tabell(rader, visa_pris=True):
 
 def skapa_byggprotokoll_pdf(protokoll, projekt, installningar):
     """
-    protokoll: dict med alla fält + 'rader' lista
+    protokoll: dict med alla fält + 'rader' lista + 'egenkontroll' lista
     projekt:   dict med projektnummer, projektnamn, beredare, status
     installningar: dict  {nyckel: varde}
     Returnerar bytes.
     """
-    foretag = installningar.get('foretag_namn', 'Lågspänningsberedning')
+    foretag = installningar.get('foretagsnamn',
+               installningar.get('foretag_namn', 'Oneco Networks AB'))
     buf = BytesIO()
 
     def on_page(canvas, doc):
@@ -162,7 +207,7 @@ def skapa_byggprotokoll_pdf(protokoll, projekt, installningar):
         f"{projekt.get('projektnummer', '')} – {projekt.get('projektnamn', '')}",
         h1
     ))
-    story.append(HRFlowable(width='100%', thickness=1, color=NAVY, spaceAfter=6))
+    story.append(HRFlowable(width='100%', thickness=1.5, color=ACCENT, spaceAfter=6))
 
     # Projektinfo + protokollinfo sida vid sida
     pi = [
@@ -172,17 +217,17 @@ def skapa_byggprotokoll_pdf(protokoll, projekt, installningar):
         ['Status:',        projekt.get('status', '')],
         ['Startdatum:',    projekt.get('startdatum', '') or '–'],
     ]
-    bp = [
+    bp_info = [
         ['Mall:',         protokoll.get('mall_namn', '')],
         ['Prot.-status:', protokoll.get('status', '')],
         ['Skapad:',       (protokoll.get('skapad', '') or '')[:16]],
         ['Uppdaterad:',   (protokoll.get('uppdaterad', '') or '')[:16]],
     ]
     if protokoll.get('anteckningar'):
-        bp.append(['Anteckning:', protokoll['anteckningar']])
+        bp_info.append(['Anteckning:', protokoll['anteckningar']])
 
-    left  = _info_tabell(pi, col_w=[42 * mm, 48 * mm])
-    right = _info_tabell(bp, col_w=[38 * mm, 47 * mm])
+    left  = _info_tabell(pi,      col_w=[42 * mm, 48 * mm])
+    right = _info_tabell(bp_info, col_w=[38 * mm, 47 * mm])
     combo = Table([[left, right]], colWidths=[95 * mm, 90 * mm])
     combo.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -196,26 +241,24 @@ def skapa_byggprotokoll_pdf(protokoll, projekt, installningar):
     rader = protokoll.get('rader', [])
     if rader:
         story.append(Paragraph('Material', h1))
-        story.append(_material_tabell(rader, visa_pris=True))
+        story.append(_material_tabell(rader, visa_pris=False))
     else:
         story.append(Paragraph('Inga materialrader registrerade.', small))
 
-    # Totalsumma
-    total = sum(
-        (r.get('a_pris') or 0) * (r.get('antal') or 0)
-        for r in rader if r.get('a_pris')
-    )
-    if total:
-        story.append(Spacer(1, 4 * mm))
-        tot_rad = [['', '', '', '', 'Totalt:', f"{total:.2f} kr"]]
-        t = Table(tot_rad, colWidths=[75*mm, 40*mm, 20*mm, 20*mm, 20*mm, None])
-        t.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('ALIGN',    (4, 0), (-1, -1), 'RIGHT'),
-            ('TEXTCOLOR',(4, 0), (-1, -1), NAVY),
-        ]))
-        story.append(t)
+    # Egenkontroll
+    egenkontroll = protokoll.get('egenkontroll', [])
+    if egenkontroll:
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph('Egenkontroll', h1))
+        story.append(HRFlowable(width='100%', thickness=0.5, color=ACCENT, spaceAfter=4))
+        story.append(_egenkontroll_tabell(egenkontroll))
+
+        utforda   = sum(1 for e in egenkontroll if e.get('utford'))
+        ej_rel    = sum(1 for e in egenkontroll if e.get('ej_relevant'))
+        totalt    = len(egenkontroll)
+        summary   = f"Utförda: {utforda}/{totalt}  |  Ej relevanta: {ej_rel}"
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(summary, small))
 
     # Underskrift
     story.append(Spacer(1, 12 * mm))
@@ -250,7 +293,8 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
     installningar:   dict
     Returnerar bytes.
     """
-    foretag = installningar.get('foretag_namn', 'Lågspänningsberedning')
+    foretag = installningar.get('foretagsnamn',
+               installningar.get('foretag_namn', 'Oneco Networks AB'))
     buf = BytesIO()
 
     def on_page(canvas, doc):
@@ -271,7 +315,7 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
         f"{projekt.get('projektnummer', '')} – {projekt.get('projektnamn', '')}",
         h1
     ))
-    story.append(HRFlowable(width='100%', thickness=1, color=NAVY, spaceAfter=4))
+    story.append(HRFlowable(width='100%', thickness=1.5, color=ACCENT, spaceAfter=4))
     pi = [
         ['Projektnummer:', projekt.get('projektnummer', '')],
         ['Projektnamn:',   projekt.get('projektnamn', '')],
@@ -300,7 +344,6 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
                 }
             aggregat[key]['antal'] += r.get('antal', 0)
 
-    # Sortera per kategori, sedan artikelnamn
     sorterade = sorted(aggregat.values(), key=lambda x: (x['kategori'], x['artikelnamn']))
 
     if not sorterade:
@@ -314,44 +357,10 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
         kat = r['kategori'] or 'Övrigt'
         kategori_grupper.setdefault(kat, []).append(r)
 
-    grand_total = 0.0
-
     for kat, rader in kategori_grupper.items():
         story.append(Paragraph(kat, h1))
-        story.append(_material_tabell(rader, visa_pris=True))
-
-        kat_total = sum(
-            (r.get('a_pris') or 0) * (r.get('antal') or 0)
-            for r in rader if r.get('a_pris')
-        )
-        grand_total += kat_total
-        if kat_total:
-            tot_rad = [['', '', '', '', 'Delsumma:', f"{kat_total:.2f} kr"]]
-            t = Table(tot_rad, colWidths=[75*mm, 40*mm, 20*mm, 20*mm, 20*mm, None])
-            t.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('ALIGN',    (4, 0), (-1, -1), 'RIGHT'),
-                ('TEXTCOLOR',(4, 0), (-1, -1), GRAY),
-            ]))
-            story.append(t)
+        story.append(_material_tabell(rader, visa_pris=False))
         story.append(Spacer(1, 6 * mm))
-
-    # Totalsumma
-    if grand_total:
-        story.append(HRFlowable(width='100%', thickness=1, color=NAVY))
-        story.append(Spacer(1, 2 * mm))
-        tot = Table(
-            [['', '', '', '', 'TOTALT:', f"{grand_total:.2f} kr"]],
-            colWidths=[75*mm, 40*mm, 20*mm, 20*mm, 20*mm, None]
-        )
-        tot.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('ALIGN',    (4, 0), (-1, -1), 'RIGHT'),
-            ('TEXTCOLOR',(4, 0), (-1, -1), NAVY),
-        ]))
-        story.append(tot)
 
     doc.build(story)
     return buf.getvalue()

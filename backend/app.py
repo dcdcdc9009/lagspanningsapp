@@ -409,6 +409,19 @@ def skapa_protokoll():
         protokoll_id = cur.lastrowid
 
         _spara_rader(conn, protokoll_id, rader_in)
+
+        # Seed egenkontroll från mallens mall_egenkontroll
+        egk_mall = conn.execute(
+            "SELECT punkt, sortering FROM mall_egenkontroll WHERE mall_id=? ORDER BY sortering",
+            (mall_id,)
+        ).fetchall()
+        for row in egk_mall:
+            conn.execute(
+                "INSERT INTO byggprotokoll_egenkontroll "
+                "(protokoll_id, punkt, utford, ej_relevant, sortering) VALUES (?,?,0,0,?)",
+                (protokoll_id, row['punkt'], row['sortering'])
+            )
+
         conn.commit()
 
         return jsonify({'byggprotokoll': _hamta_protokoll_komplett(conn, protokoll_id)}), 201
@@ -446,6 +459,15 @@ def uppdatera_protokoll(bpid):
             conn.execute("DELETE FROM byggprotokoll_rader WHERE protokoll_id=?", (bpid,))
             _spara_rader(conn, bpid, rader_in)
 
+        egenkontroll_in = d.get('egenkontroll')
+        if egenkontroll_in is not None:
+            for item in egenkontroll_in:
+                conn.execute(
+                    "UPDATE byggprotokoll_egenkontroll SET utford=?, ej_relevant=? WHERE id=? AND protokoll_id=?",
+                    (int(item.get('utford', 0)), int(item.get('ej_relevant', 0)),
+                     item['id'], bpid)
+                )
+
         conn.commit()
         return jsonify({'byggprotokoll': _hamta_protokoll_komplett(conn, bpid)})
 
@@ -481,6 +503,8 @@ def _hamta_protokoll_komplett(conn, bpid):
     d = row_to_dict(bp)
     d['rader'] = rows_to_list(conn.execute(
         "SELECT * FROM byggprotokoll_rader WHERE protokoll_id=? ORDER BY sortering", (bpid,)).fetchall())
+    d['egenkontroll'] = rows_to_list(conn.execute(
+        "SELECT * FROM byggprotokoll_egenkontroll WHERE protokoll_id=? ORDER BY sortering", (bpid,)).fetchall())
     try:
         d['inputdata'] = json.loads(d['inputdata'] or '{}')
     except Exception:

@@ -20,12 +20,41 @@ def init_db():
     try:
         _create_tables(conn)
         conn.commit()
-        if _is_tom(conn):
+
+        tom = _is_tom(conn)
+        if tom:
+            # Helt ny databas – fyll allt
             from seed_data import fyll_i_startdata
             fyll_i_startdata(conn)
             conn.commit()
+        else:
+            # Befintlig databas – kör migrationer + nya artiklar
+            _migrera(conn)
+
+        # Alltid: säkerställ egenkontroll-data för alla mallar
+        from seed_data import fyll_egenkontroll
+        fyll_egenkontroll(conn)
+        conn.commit()
     finally:
         conn.close()
+
+
+def _migrera(conn):
+    """Kör eventuella databas-migrationer."""
+    ver_rad = conn.execute(
+        "SELECT varde FROM installningar WHERE nyckel='db_version'"
+    ).fetchone()
+    v = int(ver_rad['varde']) if ver_rad else 0
+
+    if v < 2:
+        # v2: Ta bort alla priser, lägg till nya artiklar
+        conn.execute("DELETE FROM artikel_leverantor")
+        from seed_data import fyll_nya_artiklar
+        fyll_nya_artiklar(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','2')"
+        )
+        conn.commit()
 
 
 def _create_tables(conn):
@@ -105,6 +134,14 @@ def _create_tables(conn):
             sortering   INTEGER NOT NULL DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS mall_egenkontroll (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            mall_id     INTEGER NOT NULL REFERENCES mallar(id) ON DELETE CASCADE,
+            punkt       TEXT NOT NULL,
+            sortering   INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(mall_id, punkt)
+        );
+
         CREATE TABLE IF NOT EXISTS byggprotokoll (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
@@ -131,6 +168,15 @@ def _create_tables(conn):
             a_pris          REAL,
             anteckning      TEXT,
             manuell         INTEGER NOT NULL DEFAULT 0,
+            sortering       INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS byggprotokoll_egenkontroll (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            protokoll_id    INTEGER NOT NULL REFERENCES byggprotokoll(id) ON DELETE CASCADE,
+            punkt           TEXT NOT NULL,
+            utford          INTEGER NOT NULL DEFAULT 0,
+            ej_relevant     INTEGER NOT NULL DEFAULT 0,
             sortering       INTEGER NOT NULL DEFAULT 0
         );
     """)

@@ -460,7 +460,7 @@ async function modalNyttProtokoll(projektId, onDone) {
   async function visaSteg1() {
     steg = 1;
     const mallKort = S.mallar.map(m => `
-      <div class="card mb-1" style="cursor:pointer;border:2px solid ${valdMall?.id===m.id?'var(--navy)':'var(--gray-200)'};" data-mid="${m.id}">
+      <div class="card mb-1" style="cursor:pointer;border:2px solid ${valdMall?.id===m.id?'var(--navy)':'var(--gray-200)'}; transition:border-color .15s;" data-mid="${m.id}">
         <div class="card-body">
           <strong>${escHtml(m.namn)}</strong>
           <p class="text-sm text-muted mt-1">${escHtml(m.beskrivning||'')}</p>
@@ -528,15 +528,13 @@ async function modalNyttProtokoll(projektId, onDone) {
     const tabHtml = rader.length ? `
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Artikel</th><th>Kategori</th><th>Enhet</th><th class="right">Antal</th><th class="right">À-pris</th><th class="right">Totalt</th></tr></thead>
+          <thead><tr><th>Artikel</th><th>Kategori</th><th>Enhet</th><th class="right">Antal</th></tr></thead>
           <tbody>
             ${rader.map(r => `<tr>
               <td>${escHtml(r.artikelnamn)}</td>
               <td>${escHtml(r.kategori||'')}</td>
               <td>${escHtml(r.enhet)}</td>
               <td class="num">${num(r.antal)}</td>
-              <td class="num">${r.a_pris ? kr(r.a_pris) : '–'}</td>
-              <td class="num">${r.a_pris ? kr(r.a_pris * r.antal) : '–'}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -631,10 +629,36 @@ async function modalVisaProtokoll(bpid, projektId, protokollLista, onDone) {
       <td>${escHtml(r.kategori||'')}</td>
       <td>${escHtml(r.enhet)}</td>
       <td class="num"><input type="number" class="form-control" style="width:80px;text-align:right" name="antal_${i}" value="${r.antal}" min="0" step="any"></td>
-      <td class="num">${r.a_pris ? kr(r.a_pris) : '–'}</td>
-      <td class="num" id="tot_${i}">${r.a_pris ? kr(r.a_pris * r.antal) : '–'}</td>
       <td><button class="btn btn-sm btn-danger" data-del="${i}">✕</button></td>
     </tr>`).join('');
+
+  // Bygg egenkontroll HTML
+  const egkLista = bp.egenkontroll || [];
+  const egkUtforda = egkLista.filter(e => e.utford).length;
+  const egkTotal   = egkLista.length;
+  const egkHtml = egkTotal ? `
+    <div class="egk-section">
+      <div class="egk-section-title">
+        Egenkontroll
+        <span class="egk-progress">${egkUtforda}/${egkTotal} utförda</span>
+      </div>
+      <ul class="egk-list" id="egkList">
+        ${egkLista.map((e, i) => `
+          <li class="egk-item ${e.utford ? 'utford' : ''} ${e.ej_relevant ? 'ej-rel' : ''}"
+              data-egk-id="${e.id}" data-idx="${i}">
+            <span class="egk-nr">${i + 1}.</span>
+            <span class="egk-punkt">${escHtml(e.punkt)}</span>
+            <div class="egk-checkboxes">
+              <label class="egk-check-label">
+                <input type="checkbox" class="egk-utford" ${e.utford ? 'checked' : ''}> Utförd
+              </label>
+              <label class="egk-check-label">
+                <input type="checkbox" class="egk-ej-rel" ${e.ej_relevant ? 'checked' : ''}> Ej relevant
+              </label>
+            </div>
+          </li>`).join('')}
+      </ul>
+    </div>` : '';
 
   Modal.open('Byggprotokoll',
     `<div class="flex gap-2 items-center mb-2">
@@ -644,14 +668,14 @@ async function modalVisaProtokoll(bpid, projektId, protokollLista, onDone) {
      </div>
      <div class="table-wrap">
        <table id="radTabell">
-         <thead><tr><th>Artikel</th><th>Kategori</th><th>Enhet</th><th class="right">Antal</th><th class="right">À-pris</th><th class="right">Totalt</th><th></th></tr></thead>
+         <thead><tr><th>Artikel</th><th>Kategori</th><th>Enhet</th><th class="right">Antal</th><th></th></tr></thead>
          <tbody id="radBody">${tabRader}</tbody>
        </table>
      </div>
      <div class="mt-2 flex gap-1 items-center">
        <button class="btn btn-outline btn-sm" id="btnLaggTillRad">+ Lägg till rad</button>
-       <span class="ml-auto font-bold" id="grandTotal"></span>
      </div>
+     ${egkHtml}
      <div class="form-group mt-2">
        <label class="form-label">Anteckning</label>
        <textarea class="form-control" id="bpAnt" rows="2">${escHtml(bp.anteckningar||'')}</textarea>
@@ -664,21 +688,14 @@ async function modalVisaProtokoll(bpid, projektId, protokollLista, onDone) {
   // local rader copy
   let rader = JSON.parse(JSON.stringify(bp.rader || []));
 
-  function uppdateraTotal() {
-    let tot = 0;
+  function syncAntal() {
     rader.forEach((r, i) => {
       const inp = document.querySelector(`input[name="antal_${i}"]`);
       if (inp) r.antal = parseFloat(inp.value) || 0;
-      const t = (r.a_pris || 0) * r.antal;
-      const el = document.getElementById(`tot_${i}`);
-      if (el) el.textContent = r.a_pris ? kr(t) : '–';
-      tot += t;
     });
-    document.getElementById('grandTotal').textContent = tot ? `Totalt: ${kr(tot)}` : '';
   }
 
-  document.getElementById('radBody').addEventListener('input', uppdateraTotal);
-  uppdateraTotal();
+  document.getElementById('radBody').addEventListener('input', syncAntal);
 
   document.getElementById('radBody').addEventListener('click', e => {
     const btn = e.target.closest('button[data-del]');
@@ -693,27 +710,56 @@ async function modalVisaProtokoll(bpid, projektId, protokollLista, onDone) {
       <tr class="${r.manuell ? 'rad-manuell' : ''}">
         <td>${escHtml(r.artikelnamn)}</td><td>${escHtml(r.kategori||'')}</td><td>${escHtml(r.enhet)}</td>
         <td class="num"><input type="number" class="form-control" style="width:80px;text-align:right" name="antal_${i}" value="${r.antal}" min="0" step="any"></td>
-        <td class="num">${r.a_pris ? kr(r.a_pris) : '–'}</td>
-        <td class="num" id="tot_${i}">${r.a_pris ? kr(r.a_pris * r.antal) : '–'}</td>
         <td><button class="btn btn-sm btn-danger" data-del="${i}">✕</button></td>
       </tr>`).join('');
-    uppdateraTotal();
   }
 
   document.getElementById('btnLaggTillRad').addEventListener('click', () => modalLaggTillRad(rader, renderRadBody));
 
+  // Egenkontroll interaktivitet
+  const egkListEl = document.getElementById('egkList');
+  if (egkListEl) {
+    egkListEl.addEventListener('change', e => {
+      const item = e.target.closest('.egk-item');
+      if (!item) return;
+      const cbUtford = item.querySelector('.egk-utford');
+      const cbEjRel  = item.querySelector('.egk-ej-rel');
+      if (e.target === cbUtford && cbUtford.checked) {
+        cbEjRel.checked = false;
+        item.classList.add('utford'); item.classList.remove('ej-rel');
+      } else if (e.target === cbEjRel && cbEjRel.checked) {
+        cbUtford.checked = false;
+        item.classList.add('ej-rel'); item.classList.remove('utford');
+      } else {
+        item.classList.remove('utford', 'ej-rel');
+      }
+      // Update progress
+      const allItems = egkListEl.querySelectorAll('.egk-item');
+      const done = [...allItems].filter(i => i.querySelector('.egk-utford').checked).length;
+      const tot  = allItems.length;
+      const progEl = document.querySelector('.egk-progress');
+      if (progEl) progEl.textContent = `${done}/${tot} utförda`;
+    });
+  }
+
   document.getElementById('avbrytBP').addEventListener('click', Modal.close);
   document.getElementById('sparaBP').addEventListener('click', async () => {
-    // sync antal from inputs
-    rader.forEach((r, i) => {
-      const inp = document.querySelector(`input[name="antal_${i}"]`);
-      if (inp) r.antal = parseFloat(inp.value) || 0;
+    syncAntal();
+    // Samla egenkontroll-data
+    const egkData = [];
+    document.querySelectorAll('.egk-item[data-egk-id]').forEach(item => {
+      egkData.push({
+        id:          parseInt(item.dataset.egkId),
+        utford:      item.querySelector('.egk-utford').checked ? 1 : 0,
+        ej_relevant: item.querySelector('.egk-ej-rel').checked ? 1 : 0,
+      });
     });
     try {
       await api('PUT', `/byggprotokoll/${bpid}`, {
-        status:       document.getElementById('bpStatus').value,
-        anteckningar: document.getElementById('bpAnt').value,
+        status:        document.getElementById('bpStatus').value,
+        anteckningar:  document.getElementById('bpAnt').value,
         rader,
+        egenkontroll:  egkData,
       });
       toast('Protokoll sparat', 'success');
       Modal.close();
@@ -817,14 +863,12 @@ async function renderArtiklar(app) {
     <div class="filter-bar">
       <input type="search" class="form-control" id="sokArt" placeholder="Sök artikel…">
       <select class="form-control" id="filtKat"><option value="">Alla kategorier</option></select>
-      <select class="form-control" id="filtLev"><option value="">Alla leverantörer</option></select>
     </div>
     <div class="card">
       <div class="table-wrap">
         <table>
           <thead><tr>
             <th>Artikelnamn</th><th>Kategori</th><th>Enhet</th>
-            <th>Leverantör</th><th>Art.nr</th><th class="right">À-pris</th>
           </tr></thead>
           <tbody id="artBody"></tbody>
         </table>
@@ -835,39 +879,28 @@ async function renderArtiklar(app) {
   if (!S.kategorier.length) {
     try { S.kategorier = (await api('GET', '/kategorier')).kategorier || []; } catch {}
   }
-  if (!S.leverantorer.length) {
-    try { S.leverantorer = (await api('GET', '/leverantorer')).leverantorer || []; } catch {}
-  }
   const filtKat = document.getElementById('filtKat');
   S.kategorier.forEach(k => { filtKat.innerHTML += `<option value="${k.id}">${escHtml(k.namn)}</option>`; });
-  const filtLev = document.getElementById('filtLev');
-  S.leverantorer.forEach(l => { filtLev.innerHTML += `<option value="${l.id}">${escHtml(l.namn)}</option>`; });
 
   async function ladda() {
     const sok = document.getElementById('sokArt').value;
     const kat = document.getElementById('filtKat').value;
-    const lev = document.getElementById('filtLev').value;
     let url = '/artiklar?';
     if (sok) url += `sok=${encodeURIComponent(sok)}&`;
     if (kat) url += `kategori_id=${kat}&`;
-    if (lev) url += `leverantor_id=${lev}&`;
     const arts = (await api('GET', url)).artiklar || [];
     const tbody = document.getElementById('artBody');
-    if (!arts.length) { tbody.innerHTML = `<tr><td colspan="6" class="muted text-center">Inga artiklar hittades</td></tr>`; return; }
+    if (!arts.length) { tbody.innerHTML = `<tr><td colspan="3" class="muted text-center">Inga artiklar hittades</td></tr>`; return; }
     tbody.innerHTML = arts.map(a => `
       <tr>
         <td><strong>${escHtml(a.artikelnamn)}</strong></td>
         <td>${escHtml(a.kategori_namn||'')}</td>
         <td>${escHtml(a.enhet)}</td>
-        <td>${escHtml(a.leverantor_namn||'–')}</td>
-        <td class="mono">${escHtml(a.artikelnummer||'–')}</td>
-        <td class="num">${a.a_pris ? kr(a.a_pris) : '–'}</td>
       </tr>`).join('');
   }
 
   document.getElementById('sokArt').addEventListener('input', ladda);
   document.getElementById('filtKat').addEventListener('change', ladda);
-  document.getElementById('filtLev').addEventListener('change', ladda);
   ladda();
 }
 

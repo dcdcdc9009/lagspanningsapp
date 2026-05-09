@@ -1,28 +1,29 @@
 /* ================================================================
    LÅGSPÄNNINGSBEREDNING – Stylesheet
+   Tema: Oneco Networks AB – lila, vit, svart
    ================================================================ */
 
 :root {
-  --navy:    #1a3a5c;
-  --navy-d:  #122843;
-  --blue:    #2563eb;
-  --blue-l:  #e8f0fb;
+  --navy:    #5b21b6;   /* primary purple */
+  --navy-d:  #2e1065;   /* dark nav/header purple */
+  --blue:    #7c3aed;   /* accent violet */
+  --blue-l:  #ede9fe;   /* light lavender tint */
   --green:   #16a34a;
   --green-l: #dcfce7;
   --amber:   #d97706;
   --amber-l: #fef3c7;
   --red:     #dc2626;
   --red-l:   #fee2e2;
-  --gray-50: #f8fafc;
-  --gray-100:#f1f5f9;
-  --gray-200:#e2e8f0;
-  --gray-400:#94a3b8;
-  --gray-600:#475569;
-  --gray-800:#1e293b;
+  --gray-50: #fafafa;
+  --gray-100:#f4f4f5;
+  --gray-200:#e4e4e7;
+  --gray-400:#a1a1aa;
+  --gray-600:#52525b;
+  --gray-800:#18181b;
   --white:   #ffffff;
   --radius:  6px;
-  --shadow:  0 1px 4px rgba(0,0,0,.12);
-  --shadow-lg:0 4px 16px rgba(0,0,0,.18);
+  --shadow:  0 1px 4px rgba(0,0,0,.10);
+  --shadow-lg:0 4px 20px rgba(46,16,101,.18);
   --font:    'Segoe UI', system-ui, sans-serif;
 }
 
@@ -41,7 +42,7 @@ body {
    NAV
    ---------------------------------------------------------------- */
 .topnav {
-  background: var(--navy);
+  background: var(--navy-d);
   color: var(--white);
   display: flex;
   align-items: center;
@@ -51,17 +52,30 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 2px 12px rgba(46,16,101,.35);
+  border-bottom: 2px solid var(--navy);
 }
 
 .nav-brand {
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: .3px;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: .5px;
   cursor: pointer;
   white-space: nowrap;
   color: var(--white);
   text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-brand-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--blue);
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .nav-links {
@@ -72,15 +86,15 @@ body {
 }
 
 .nav-link {
-  color: rgba(255,255,255,.75);
+  color: rgba(255,255,255,.70);
   text-decoration: none;
   padding: 6px 14px;
   border-radius: var(--radius);
   font-size: 13px;
   transition: background .15s, color .15s;
 }
-.nav-link:hover { background: rgba(255,255,255,.12); color: var(--white); }
-.nav-link.active { background: rgba(255,255,255,.2); color: var(--white); font-weight: 600; }
+.nav-link:hover { background: rgba(255,255,255,.10); color: var(--white); }
+.nav-link.active { background: var(--navy); color: var(--white); font-weight: 600; }
 
 .nav-right { display: flex; align-items: center; gap: 8px; }
 
@@ -105,7 +119,7 @@ body {
 .page-title {
   font-size: 22px;
   font-weight: 700;
-  color: var(--navy);
+  color: var(--navy-d);
 }
 
 /* ----------------------------------------------------------------
@@ -130,7 +144,7 @@ body {
 .card-title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--navy);
+  color: var(--navy-d);
 }
 
 .card-body { padding: 18px; }
@@ -155,16 +169,16 @@ body {
 .btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
-.btn-primary   { background: var(--blue);  color: var(--white); }
+.btn-primary   { background: var(--blue);   color: var(--white); }
 .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
 
-.btn-navy      { background: var(--navy);  color: var(--white); }
+.btn-navy      { background: var(--navy);   color: var(--white); }
 .btn-navy:hover:not(:disabled) { filter: brightness(1.15); }
 
-.btn-success   { background: var(--green); color: var(--white); }
+.btn-success   { background: var(--green);  color: var(--white); }
 .btn-success:hover:not(:disabled) { filter: brightness(1.1); }
 
-.btn-danger    { background: var(--red);   color: var(--white); }
+.btn-danger    { background: var(--red);    color: var(--white); }
 .btn-danger:hover:not(:disabled) { filter: brightness(1.1); }
 
 .btn-secondary { background: var(--gray-200); color: var(--gray-800); }
@@ -210,7 +224,7 @@ body {
 .form-control:focus {
   outline: none;
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+  box-shadow: 0 0 0 3px rgba(124,58,237,.15);
 }
 .form-control[type="checkbox"] { width: auto; }
 
@@ -246,7 +260,7 @@ table {
   font-size: 13px;
 }
 thead th {
-  background: var(--navy);
+  background: var(--navy-d);
   color: var(--white);
   padding: 9px 12px;
   text-align: left;
@@ -287,7 +301,7 @@ td.mono   { font-family: 'Courier New', monospace; font-size: 12px; }
   font-weight: 600;
   white-space: nowrap;
 }
-.badge-admin  { background: var(--amber-l); color: var(--amber); }
+.badge-admin    { background: var(--amber-l); color: var(--amber); }
 .badge-planerat { background: var(--gray-100); color: var(--gray-600); }
 .badge-pagaende { background: var(--amber-l); color: var(--amber); }
 .badge-klart    { background: var(--green-l); color: var(--green); }
@@ -301,7 +315,7 @@ td.mono   { font-family: 'Courier New', monospace; font-size: 12px; }
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.45);
+  background: rgba(0,0,0,.50);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -335,7 +349,7 @@ td.mono   { font-family: 'Courier New', monospace; font-size: 12px; }
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--gray-200);
-  background: var(--navy);
+  background: var(--navy-d);
   border-radius: 10px 10px 0 0;
 }
 .modal-header h2 { color: var(--white); font-size: 16px; font-weight: 600; }
@@ -461,8 +475,8 @@ td.mono   { font-family: 'Courier New', monospace; font-size: 12px; }
   transition: background .15s;
 }
 .wizard-step:last-child { border-right: none; }
-.wizard-step.active { background: var(--navy); color: var(--white); }
-.wizard-step.done   { background: var(--blue-l); color: var(--navy); }
+.wizard-step.active { background: var(--navy-d); color: var(--white); }
+.wizard-step.done   { background: var(--blue-l);  color: var(--navy); }
 
 /* ----------------------------------------------------------------
    STAT CARDS
@@ -479,17 +493,18 @@ td.mono   { font-family: 'Courier New', monospace; font-size: 12px; }
   border-radius: var(--radius);
   padding: 16px;
   text-align: center;
+  border-top: 3px solid var(--navy);
 }
 .stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--navy);
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--navy-d);
   line-height: 1;
 }
 .stat-label {
   font-size: 11px;
   color: var(--gray-400);
-  margin-top: 4px;
+  margin-top: 6px;
   text-transform: uppercase;
   letter-spacing: .5px;
 }
@@ -502,7 +517,7 @@ td.mono   { font-family: 'Courier New', monospace; font-size: 12px; }
   padding: 48px 24px;
   color: var(--gray-400);
 }
-.empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state-icon  { font-size: 48px; margin-bottom: 12px; }
 .empty-state-title { font-size: 17px; font-weight: 600; color: var(--gray-600); margin-bottom: 6px; }
 .empty-state-text  { font-size: 13px; margin-bottom: 18px; }
 
@@ -560,6 +575,99 @@ td.mono   { font-family: 'Courier New', monospace; font-size: 12px; }
 }
 
 /* ----------------------------------------------------------------
+   EGENKONTROLL
+   ---------------------------------------------------------------- */
+.egk-section {
+  margin-top: 20px;
+}
+.egk-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy-d);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.egk-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--gray-200);
+}
+.egk-progress {
+  font-size: 11px;
+  color: var(--gray-400);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.egk-list {
+  list-style: none;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.egk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  transition: background .1s;
+}
+.egk-item:last-child { border-bottom: none; }
+.egk-item:hover { background: var(--gray-50); }
+.egk-item.utford  { background: #f0fdf4; }
+.egk-item.ej-rel  { background: #fafafa; }
+
+.egk-nr {
+  font-size: 11px;
+  color: var(--gray-400);
+  font-weight: 600;
+  min-width: 20px;
+  text-align: right;
+}
+.egk-punkt {
+  flex: 1;
+  font-size: 13px;
+  color: var(--gray-800);
+}
+.egk-item.utford .egk-punkt {
+  color: var(--gray-400);
+  text-decoration: line-through;
+}
+.egk-item.ej-rel .egk-punkt {
+  color: var(--gray-400);
+  font-style: italic;
+}
+.egk-checkboxes {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.egk-check-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--gray-600);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.egk-check-label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--navy);
+}
+.egk-item.utford .egk-check-label { color: var(--green); }
+.egk-item.ej-rel .egk-check-label { color: var(--gray-400); }
+
+/* ----------------------------------------------------------------
    UTILITIES
    ---------------------------------------------------------------- */
 .hidden  { display: none !important; }
@@ -584,6 +692,7 @@ td.mono   { font-family: 'Courier New', monospace; font-size: 12px; }
 .text-red  { color: var(--red); }
 .text-green { color: var(--green); }
 .w-full { width: 100%; }
+hr.divider { border: none; border-top: 1px solid var(--gray-200); margin: 16px 0; }
 
 /* ----------------------------------------------------------------
    RESPONSIVE
@@ -594,4 +703,5 @@ td.mono   { font-family: 'Courier New', monospace; font-size: 12px; }
   .topnav { padding: 0 12px; }
   .main-content { padding: 14px 10px; }
   .modal-box { max-width: 100%; margin: 8px; }
+  .egk-checkboxes { flex-direction: column; gap: 4px; }
 }
