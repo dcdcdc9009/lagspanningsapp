@@ -329,7 +329,7 @@ def fyll_i_startdata(conn):
         ('ror_meter',              'Skyddsrörlängd (m)',             'number',
          '{"min":0}',                                                'Meter skyddsrör',         0, 4),
         ('kabelforband_artikel_id','Kabelskyddsband',               'artikel_select',
-         '{"kategori_namn":"Kabelförband och muffar","filter":"\\u00e4nde"}',
+         '{"kategori_namn":"\\u00d6vrigt sm\\u00e5gods","filter":"kabelskydd"}',
          'Välj kabelskyddsband',                                     0, 5),
         ('inkl_kabelsand',         'Inkl. kabelsand',                'checkbox',
          '{"default":true}',                                         'Ca 1 ton per 100m schakt',0, 6),

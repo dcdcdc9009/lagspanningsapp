@@ -174,6 +174,18 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 8:
+        # v8: Ändra Kabelskyddsband-dropdown att visa från Övrigt smågods filtrerat på kabelskydd
+        conn.execute(
+            "UPDATE mall_inputfalt SET alternativ=? "
+            "WHERE mall_id=1 AND faltnamn='kabelforband_artikel_id'",
+            ('{"kategori_namn":"Övrigt smågods","filter":"kabelskydd"}',)
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','8')"
+        )
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
