@@ -83,6 +83,29 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 5:
+        # v5: Uppdatera Mall 1 – ta bort rörkopplingstyp & antal kabeländar,
+        #     byt etikett på kabelförband, lägg till filter på skyddsrör
+        conn.execute(
+            "DELETE FROM mall_inputfalt WHERE mall_id=1 AND faltnamn='ror_koppling_artikel_id'"
+        )
+        conn.execute(
+            "DELETE FROM mall_inputfalt WHERE mall_id=1 AND faltnamn='antal_kabelander'"
+        )
+        conn.execute(
+            "UPDATE mall_inputfalt SET etikett='Kabelskyddsband', hjalp='Välj kabelskyddsband' "
+            "WHERE mall_id=1 AND faltnamn='kabelforband_artikel_id'"
+        )
+        conn.execute(
+            "UPDATE mall_inputfalt SET alternativ=? "
+            "WHERE mall_id=1 AND faltnamn='ror_artikel_id'",
+            ('{"kategori_namn":"Rör och skyddsrör","filter":"skyddsrör|kabelrör|Styv PVC|Stålrör"}',)
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','5')"
+        )
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""

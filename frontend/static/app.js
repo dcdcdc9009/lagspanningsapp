@@ -596,6 +596,10 @@ async function byggInputfalt(falt, existing = {}) {
       try {
         artiklar = (await api('GET', `/artiklar?kategori=${encodeURIComponent(kategori)}`)).artiklar || [];
       } catch {}
+      if (alts.filter) {
+        const terms = alts.filter.toLowerCase().split('|');
+        artiklar = artiklar.filter(a => terms.some(t => a.artikelnamn.toLowerCase().includes(t)));
+      }
       const opts = artiklar.map(a =>
         `<option value="${a.id}" ${val == a.id ? 'selected' : ''}>${escHtml(a.artikelnamn)}</option>`
       ).join('');
