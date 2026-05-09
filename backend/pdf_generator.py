@@ -144,11 +144,15 @@ def _egenkontroll_tabell(egenkontroll):
     col_w  = [8 * mm, None, 18 * mm, 18 * mm]
     col_w[1] = W - MARGIN * 2 - sum(x for x in col_w if x)
 
+    # Använd ren ASCII-text – undviker Unicode-problem med Helvetica i PDF
     rows = [header]
     for i, e in enumerate(egenkontroll, start=1):
-        utford     = '☑' if e.get('utford')     else '☐'
-        ej_relevant = '☑' if e.get('ej_relevant') else '☐'
-        rows.append([str(i), e.get('punkt', ''), utford, ej_relevant])
+        utford  = 'Ja' if e.get('utford')      else ''
+        ej_rel  = 'Ja' if e.get('ej_relevant') else ''
+        rows.append([str(i), e.get('punkt', ''), utford, ej_rel])
+
+    GREEN_LIGHT = colors.HexColor('#dcfce7')
+    GRAY_LIGHT  = colors.HexColor('#f1f5f9')
 
     t = Table(rows, colWidths=col_w, repeatRows=1)
     style = [
@@ -164,12 +168,14 @@ def _egenkontroll_tabell(egenkontroll):
         ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT]),
     ]
-    # Markera utförda punkter med grön text
     for i, e in enumerate(egenkontroll, start=1):
         if e.get('utford'):
-            style.append(('TEXTCOLOR', (2, i), (2, i), GREEN))
+            style.append(('BACKGROUND', (2, i), (2, i), GREEN_LIGHT))
+            style.append(('TEXTCOLOR',  (2, i), (2, i), GREEN))
+            style.append(('FONTNAME',   (2, i), (2, i), 'Helvetica-Bold'))
         if e.get('ej_relevant'):
-            style.append(('TEXTCOLOR', (3, i), (3, i), GRAY))
+            style.append(('BACKGROUND', (3, i), (3, i), GRAY_LIGHT))
+            style.append(('TEXTCOLOR',  (3, i), (3, i), GRAY))
     t.setStyle(TableStyle(style))
     return t
 
