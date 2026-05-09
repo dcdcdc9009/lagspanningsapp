@@ -579,11 +579,11 @@ async function byggInputfalt(falt, existing = {}) {
   let html = '';
   for (const f of falt) {
     const val = existing[f.faltnamn] ?? '';
-    const label = `<label class="form-label">${escHtml(f.etikett)}${f.obligatorisk ? ' <span class="req">*</span>' : ''}</label>`;
+    const label = `<label class="form-label">${escHtml(f.etikett)}</label>`;
     const hint  = f.hjalp ? `<div class="form-hint">${escHtml(f.hjalp)}</div>` : '';
 
     if (f.typ === 'number') {
-      html += `<div class="form-group">${label}<input type="number" name="${f.faltnamn}" class="form-control" value="${val}" min="0" step="any" ${f.obligatorisk?'required':''}>${hint}</div>`;
+      html += `<div class="form-group">${label}<input type="number" name="${f.faltnamn}" class="form-control" value="${val}" min="0" step="any">${hint}</div>`;
     } else if (f.typ === 'checkbox') {
       const chk = val === true || val === 'true' || val === '1' ? 'checked' : '';
       html += `<div class="form-group"><label class="form-check"><input type="checkbox" name="${f.faltnamn}" ${chk}> ${escHtml(f.etikett)}</label>${hint}</div>`;
@@ -603,14 +603,14 @@ async function byggInputfalt(falt, existing = {}) {
       const opts = artiklar.map(a =>
         `<option value="${a.id}" ${val == a.id ? 'selected' : ''}>${escHtml(a.artikelnamn)}</option>`
       ).join('');
-      html += `<div class="form-group">${label}<select name="${f.faltnamn}" class="form-control" ${f.obligatorisk?'required':''}><option value="">– välj –</option>${opts}</select>${hint}</div>`;
+      html += `<div class="form-group">${label}<select name="${f.faltnamn}" class="form-control"><option value="">– välj –</option>${opts}</select>${hint}</div>`;
     } else if (f.typ === 'select') {
       let alts = [];
       try { alts = JSON.parse(f.alternativ || '[]'); } catch {}
       const opts = alts.map(a => `<option ${val===a?'selected':''}>${escHtml(a)}</option>`).join('');
       html += `<div class="form-group">${label}<select name="${f.faltnamn}" class="form-control">${opts}</select>${hint}</div>`;
     } else {
-      html += `<div class="form-group">${label}<input type="text" name="${f.faltnamn}" class="form-control" value="${escHtml(val)}" ${f.obligatorisk?'required':''}>${hint}</div>`;
+      html += `<div class="form-group">${label}<input type="text" name="${f.faltnamn}" class="form-control" value="${escHtml(val)}">${hint}</div>`;
     }
   }
   return html;
