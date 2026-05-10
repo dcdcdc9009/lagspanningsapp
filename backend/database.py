@@ -244,6 +244,26 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 11:
+        # v11: Ta bort punkter 3,4,7,10 och byt namn på punkt 6 i Mall 1
+        for punkt in [
+            'Kabelns förläggning godkänd av beställaren',
+            'Mantelprovning utförd med godkända värden',
+            'Kabelskyddsplatta monterad (vid vägkorsning o.d.)',
+            'Faslikhet kontrollerad',
+        ]:
+            conn.execute(
+                "DELETE FROM mall_egenkontroll WHERE mall_id=1 AND punkt=?", (punkt,)
+            )
+        conn.execute(
+            "UPDATE mall_egenkontroll SET punkt='Kabelskyddsband utlagt' "
+            "WHERE mall_id=1 AND punkt='Markeringsband utlagt'"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','11')"
+        )
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
