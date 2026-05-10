@@ -284,6 +284,7 @@ def lista_artiklar():
 
     sql = """
         SELECT a.id, a.artikelnamn, a.enhet, a.sortering, a.aktiv,
+               COALESCE(a.moduler, 0) AS moduler,
                k.id AS kategori_id, k.namn AS kategori_namn
         FROM artiklar a
         JOIN kategorier k ON k.id = a.kategori_id
@@ -839,6 +840,208 @@ def uppdatera_mall_inputfalt(fid):
                       d.get('obligatorisk', bef['obligatorisk']), fid))
         conn.commit()
         return jsonify(row_to_dict(conn.execute("SELECT * FROM mall_inputfalt WHERE id=?", (fid,)).fetchone()))
+
+
+# ============================================================
+# KONSTRUKTIONER
+# ============================================================
+
+KONSTRUKTIONSTYPER = {
+    'Kabelskåp': [
+        'Riskhantering utförd och dokumenterad',
+        'Kabelskåp placerat enligt beredningshandlingar',
+        'Kablar förlagda och märkta korrekt',
+        'Anslutningar i kabelskåp uppfyller IP 2X',
+        'Säkringslastfrånskiljare korrekt monterade',
+        'Kabelskor korrekt monterade och pressade',
+        'Anslutningar dragna med rätt moment',
+        'Säkringar rätt storlek, rättvända och märkning synlig',
+        'Kontinuitetsmätning utförd',
+        'Spänningsprovning, Fas-N 225–240 V, Fas-Fas 390–415 V',
+        'Kabelskåp stängt och låst',
+        'Fotodokumentation utförd',
+    ],
+    'Kabelförläggning': [
+        'Riskhantering utförd och dokumenterad',
+        'Schaktdjup kontrollerat',
+        'Kabelsand utlagd i erforderlig mängd',
+        'Kabelskyddsband utlagt',
+        'Kabelände utförd korrekt och väderskyddad',
+        'Märkning utförd enligt anvisningar',
+        'Fotodokumentation utförd',
+        'Förlagt en kj. 41',
+    ],
+    'Nätstation': [
+        'Riskhantering utförd och dokumenterad',
+        'Station placerad enligt beredningshandlingar och bygglov',
+        'Funktionskontroll utförd av brytare och jordningsomkopplare',
+        'Mantelprovning utförd med godkända värden',
+        'Jordförbindelsemätning utförd med godkända värden',
+        'Jordtag mätta och protokollförda',
+        'Potentialutjämning utförd',
+        'Taket på station åtdraget',
+        'Tempvakt synlig och inställd enligt anvisningar',
+        'Kontinuitetsmätning utförd på berörd anläggning',
+        'Spänningsprovning, Fas-N 225–240 V, Fas-Fas 390–415 V',
+        'Funktionskontroll av skyddsvakter utförd',
+        'Fasföljd kontrollerad',
+        'Fotodokumentation utförd',
+    ],
+    'Övrigt': [
+        'Riskhantering utförd och dokumenterad',
+        'Arbetet utfört enligt beredningshandlingar',
+        'Märkning utförd enligt anvisningar',
+        'Fotodokumentation utförd',
+    ],
+}
+
+GILTIGA_STATUSAR_KONSTR = ('Pågående', 'Klar', 'Pausad', 'Avbruten')
+
+
+@app.get('/api/konstruktionstyper')
+def lista_konstruktionstyper():
+    result = []
+    for typ, punkter in KONSTRUKTIONSTYPER.items():
+        result.append({'typ': typ, 'egenkontroll': punkter})
+    return jsonify({'typer': result})
+
+
+def _hamta_konstruktion_komplett(conn, kid):
+    k = conn.execute("SELECT * FROM konstruktioner WHERE id=?", (kid,)).fetchone()
+    if not k:
+        return None
+    d = row_to_dict(k)
+    d['rader'] = rows_to_list(conn.execute(
+        "SELECT * FROM konstruktion_rader WHERE konstruktion_id=? ORDER BY sortering",
+        (kid,)).fetchall())
+    d['egenkontroll'] = rows_to_list(conn.execute(
+        "SELECT * FROM konstruktion_egenkontroll WHERE konstruktion_id=? ORDER BY sortering",
+        (kid,)).fetchall())
+    return d
+
+
+@app.get('/api/konstruktioner')
+def lista_konstruktioner():
+    typ    = request.args.get('typ', '').strip()
+    status = request.args.get('status', '').strip()
+    sok    = request.args.get('sok', '').strip()
+    sql = "SELECT * FROM konstruktioner WHERE 1=1"
+    params = []
+    if typ:    sql += " AND typ=?";    params.append(typ)
+    if status: sql += " AND status=?"; params.append(status)
+    if sok:
+        sql += " AND (namn LIKE ? OR byggnr LIKE ? OR fri_id LIKE ?)"
+        params += [f'%{sok}%'] * 3
+    sql += " ORDER BY skapad DESC"
+    with get_db() as conn:
+        return jsonify({'konstruktioner': rows_to_list(conn.execute(sql, params).fetchall())})
+
+
+@app.post('/api/konstruktioner')
+def skapa_konstruktion():
+    d = request.get_json(silent=True) or {}
+    typ  = (d.get('typ') or '').strip()
+    namn = (d.get('namn') or '').strip()
+    if not typ:  return fel('Typ är obligatorisk.')
+    if typ not in KONSTRUKTIONSTYPER: return fel(f'Ogiltig typ: {typ}')
+    if not namn: return fel('Namn är obligatoriskt.')
+    tidpunkt = nu()
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO konstruktioner (typ,byggnr,namn,fri_id,anmarkning,status,skapad,uppdaterad)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            (typ, (d.get('byggnr') or '').strip() or None,
+             namn,
+             (d.get('fri_id') or '').strip() or None,
+             (d.get('anmarkning') or '').strip() or None,
+             d.get('status', 'Pågående'),
+             tidpunkt, tidpunkt))
+        kid = cur.lastrowid
+        # Seed egenkontrollpunkter från typen
+        for i, punkt in enumerate(KONSTRUKTIONSTYPER[typ]):
+            conn.execute(
+                "INSERT INTO konstruktion_egenkontroll "
+                "(konstruktion_id, punkt, utford, ej_relevant, sortering) VALUES (?,?,0,0,?)",
+                (kid, punkt, i))
+        conn.commit()
+        return jsonify({'konstruktion': _hamta_konstruktion_komplett(conn, kid)}), 201
+
+
+@app.get('/api/konstruktioner/<int:kid>')
+def hamta_konstruktion(kid):
+    with get_db() as conn:
+        k = _hamta_konstruktion_komplett(conn, kid)
+    if not k: return fel('Konstruktionen hittades inte.', 404)
+    return jsonify({'konstruktion': k})
+
+
+@app.put('/api/konstruktioner/<int:kid>')
+def uppdatera_konstruktion(kid):
+    with get_db() as conn:
+        bef = conn.execute("SELECT * FROM konstruktioner WHERE id=?", (kid,)).fetchone()
+        if not bef: return fel('Konstruktionen hittades inte.', 404)
+        d = request.get_json(silent=True) or {}
+
+        # Uppdatera grundfält
+        updates = ["uppdaterad=?"]
+        params  = [nu()]
+        for falt in ('typ', 'byggnr', 'namn', 'fri_id', 'anmarkning', 'status'):
+            if falt in d:
+                updates.append(f"{falt}=?")
+                params.append((d[falt] or '').strip() or None if falt != 'typ' and falt != 'status' else d[falt])
+        params.append(kid)
+        conn.execute(f"UPDATE konstruktioner SET {','.join(updates)} WHERE id=?", params)
+
+        # Uppdatera rader om skickade
+        rader_in = d.get('rader')
+        if rader_in is not None:
+            conn.execute("DELETE FROM konstruktion_rader WHERE konstruktion_id=?", (kid,))
+            for i, r in enumerate(rader_in):
+                if not r: continue
+                conn.execute(
+                    "INSERT INTO konstruktion_rader "
+                    "(konstruktion_id,artikel_id,artikelnamn,enhet,antal,moduler,anteckning,sortering)"
+                    " VALUES (?,?,?,?,?,?,?,?)",
+                    (kid, r.get('artikel_id'), r.get('artikelnamn', ''),
+                     r.get('enhet', ''), float(r.get('antal', 1)),
+                     int(r.get('moduler', 0)),
+                     r.get('anteckning', '') or None, i))
+
+        # Uppdatera egenkontroll om skickad
+        egk_in = d.get('egenkontroll')
+        if egk_in is not None:
+            for item in egk_in:
+                conn.execute(
+                    "UPDATE konstruktion_egenkontroll SET utford=?, ej_relevant=? WHERE id=? AND konstruktion_id=?",
+                    (int(item.get('utford', 0)), int(item.get('ej_relevant', 0)),
+                     item['id'], kid))
+
+        conn.commit()
+        return jsonify({'konstruktion': _hamta_konstruktion_komplett(conn, kid)})
+
+
+@app.delete('/api/konstruktioner/<int:kid>')
+def ta_bort_konstruktion(kid):
+    with get_db() as conn:
+        rad = conn.execute("SELECT namn FROM konstruktioner WHERE id=?", (kid,)).fetchone()
+        if not rad: return fel('Konstruktionen hittades inte.', 404)
+        conn.execute("DELETE FROM konstruktioner WHERE id=?", (kid,))
+        conn.commit()
+    return jsonify({'meddelande': f'Konstruktion "{rad["namn"]}" borttagen.'})
+
+
+@app.get('/api/konstruktioner/<int:kid>/pdf')
+def konstruktion_pdf(kid):
+    from pdf_generator import skapa_konstruktion_pdf
+    with get_db() as conn:
+        k = _hamta_konstruktion_komplett(conn, kid)
+        if not k: return fel('Konstruktionen hittades inte.', 404)
+        inst = {r['nyckel']: r['varde'] for r in
+                conn.execute("SELECT nyckel,varde FROM installningar").fetchall()}
+    pdf = skapa_konstruktion_pdf(k, inst)
+    filnamn = f"konstruktion_{kid}_{k['namn'][:20].replace(' ','_')}.pdf"
+    return Response(pdf, mimetype='application/pdf',
+                    headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
 
 
 # ============================================================

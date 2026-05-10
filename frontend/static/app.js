@@ -97,11 +97,12 @@ function render(view, params = {}) {
   const app = document.getElementById('app');
   app.innerHTML = '';
   switch (view) {
-    case 'projekt':    renderProjekt(app); break;
-    case 'projekt-detail': renderProjektDetail(app, params.id); break;
-    case 'artiklar':   renderArtiklar(app); break;
-    case 'admin':      renderAdmin(app); break;
-    default:           renderProjekt(app);
+    case 'projekt':         renderProjekt(app); break;
+    case 'projekt-detail':  renderProjektDetail(app, params.id); break;
+    case 'artiklar':        renderArtiklar(app); break;
+    case 'konstruktioner':  renderKonstruktioner(app); break;
+    case 'admin':           renderAdmin(app); break;
+    default:                renderProjekt(app);
   }
 }
 
@@ -112,8 +113,19 @@ function badge(status) {
   const map = {
     'Planerat': 'badge-planerat', 'Pågående': 'badge-pagaende', 'Klart': 'badge-klart',
     'Utkast': 'badge-utkast', 'Granskat': 'badge-granskat', 'Godkänt': 'badge-godkant',
+    'Klar': 'badge-klart', 'Pausad': 'badge-utkast', 'Avbruten': 'badge-danger',
   };
   return `<span class="badge ${map[status] || ''}">${status}</span>`;
+}
+
+function badgeTyp(typ) {
+  const map = {
+    'Kabelskåp':       'badge-navy',
+    'Kabelförläggning':'badge-pagaende',
+    'Nätstation':      'badge-planerat',
+    'Övrigt':          'badge-utkast',
+  };
+  return `<span class="badge ${map[typ] || ''}">${escHtml(typ)}</span>`;
 }
 
 function kr(val) {
@@ -938,6 +950,493 @@ async function modalLaggTillRad(rader, onDone) {
     toast('Rad tillagd', 'success');
     Modal.close();
     onDone && onDone();
+  });
+}
+
+// ----------------------------------------------------------------
+// VIEW: KONSTRUKTIONER
+// ----------------------------------------------------------------
+async function renderKonstruktioner(app) {
+  app.innerHTML = `
+    <div class="page-header">
+      <h1 class="page-title">Konstruktioner</h1>
+      <button class="btn btn-navy" id="btnNyKonstr">+ Ny konstruktion</button>
+    </div>
+    <div class="filter-bar">
+      <input type="search" class="form-control" id="sokKonstr" placeholder="Sök namn, byggnr, fri ID…">
+      <select class="form-control" id="filtKonstrTyp">
+        <option value="">Alla typer</option>
+        <option>Kabelskåp</option>
+        <option>Kabelförläggning</option>
+        <option>Nätstation</option>
+        <option>Övrigt</option>
+      </select>
+      <select class="form-control" id="filtKonstrStatus">
+        <option value="">Alla statusar</option>
+        <option>Pågående</option>
+        <option>Klar</option>
+        <option>Pausad</option>
+        <option>Avbruten</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Typ</th><th>Byggnr</th><th>Namn</th><th>Fri ID</th><th>Status</th><th>Skapad</th><th>Åtgärder</th>
+          </tr></thead>
+          <tbody id="konstrBody"></tbody>
+        </table>
+      </div>
+    </div>`;
+
+  let konstruktioner = [];
+
+  async function ladda() {
+    const sok    = document.getElementById('sokKonstr').value.trim();
+    const typ    = document.getElementById('filtKonstrTyp').value;
+    const status = document.getElementById('filtKonstrStatus').value;
+    let url = '/konstruktioner?';
+    if (sok)    url += `sok=${encodeURIComponent(sok)}&`;
+    if (typ)    url += `typ=${encodeURIComponent(typ)}&`;
+    if (status) url += `status=${encodeURIComponent(status)}&`;
+    try {
+      konstruktioner = (await api('GET', url)).konstruktioner || [];
+    } catch (e) { toast(e.message, 'error'); return; }
+    renderKonstrRader();
+  }
+
+  function renderKonstrRader() {
+    const tbody = document.getElementById('konstrBody');
+    if (!konstruktioner.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="muted text-center">Inga konstruktioner hittades</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = konstruktioner.map(k => `
+      <tr style="cursor:pointer">
+        <td>${badgeTyp(k.typ)}</td>
+        <td>${escHtml(k.byggnr || '–')}</td>
+        <td><strong>${escHtml(k.namn)}</strong></td>
+        <td>${escHtml(k.fri_id || '–')}</td>
+        <td>${badge(k.status)}</td>
+        <td>${(k.skapad || '').slice(0, 10)}</td>
+        <td class="flex gap-1">
+          <button class="btn btn-sm btn-navy" data-id="${k.id}" data-action="oppna">Öppna</button>
+          <button class="btn btn-sm btn-outline" data-id="${k.id}" data-action="redigera">Redigera</button>
+          <button class="btn btn-sm btn-danger" data-id="${k.id}" data-action="radera">Ta bort</button>
+        </td>
+      </tr>`).join('');
+
+    tbody.querySelectorAll('button[data-action]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        const k  = konstruktioner.find(x => x.id == id);
+        if (btn.dataset.action === 'oppna') {
+          await modalVisaKonstruktion(id, ladda);
+        } else if (btn.dataset.action === 'redigera') {
+          await modalKonstruktionForm(k, ladda);
+        } else if (btn.dataset.action === 'radera') {
+          const ok = await confirm('Ta bort konstruktion', `Ta bort "${k.namn}"?`);
+          if (!ok) return;
+          try {
+            await api('DELETE', `/konstruktioner/${id}`);
+            toast('Konstruktion borttagen', 'success');
+            await ladda();
+          } catch (e) { toast(e.message, 'error'); }
+        }
+      });
+    });
+
+    // Klick på rad öppnar konstruktionen
+    tbody.querySelectorAll('tr').forEach(row => {
+      row.addEventListener('click', async e => {
+        if (e.target.closest('button')) return;
+        const btn = row.querySelector('button[data-action="oppna"]');
+        if (btn) await modalVisaKonstruktion(btn.dataset.id, ladda);
+      });
+    });
+  }
+
+  document.getElementById('sokKonstr').addEventListener('input', ladda);
+  document.getElementById('filtKonstrTyp').addEventListener('change', ladda);
+  document.getElementById('filtKonstrStatus').addEventListener('change', ladda);
+  document.getElementById('btnNyKonstr').addEventListener('click', () => modalKonstruktionForm(null, ladda));
+
+  await ladda();
+}
+
+// ----------------------------------------------------------------
+// MODAL: KONSTRUKTION FORMULÄR (skapa/redigera)
+// ----------------------------------------------------------------
+async function modalKonstruktionForm(existing, onDone) {
+  const typer = ['Kabelskåp', 'Kabelförläggning', 'Nätstation', 'Övrigt'];
+  const statusar = ['Pågående', 'Klar', 'Pausad', 'Avbruten'];
+  const d = existing || {};
+
+  const typOpts = typer.map(t =>
+    `<option ${d.typ === t ? 'selected' : ''}>${escHtml(t)}</option>`).join('');
+  const statusOpts = statusar.map(s =>
+    `<option ${(d.status || 'Pågående') === s ? 'selected' : ''}>${escHtml(s)}</option>`).join('');
+
+  Modal.open(
+    existing ? 'Redigera konstruktion' : 'Ny konstruktion',
+    `<form id="konstrForm">
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Typ <span class="req">*</span></label>
+          <select name="typ" class="form-control" required ${existing ? 'disabled' : ''}>
+            <option value="">– välj –</option>${typOpts}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select name="status" class="form-control">${statusOpts}</select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Namn <span class="req">*</span></label>
+        <input name="namn" class="form-control" value="${escHtml(d.namn || '')}" required placeholder="T.ex. KS-42 Storgatan 12">
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Byggnr</label>
+          <input name="byggnr" class="form-control" value="${escHtml(d.byggnr || '')}" placeholder="T.ex. B-42">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fri ID</label>
+          <input name="fri_id" class="form-control" value="${escHtml(d.fri_id || '')}" placeholder="Valfritt fält">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Anmärkning</label>
+        <textarea name="anmarkning" class="form-control" rows="2">${escHtml(d.anmarkning || '')}</textarea>
+      </div>
+    </form>`,
+    `<button class="btn btn-navy" id="sparaKonstr">${existing ? 'Spara' : 'Skapa'}</button>
+     <button class="btn btn-secondary" id="avbrytKonstr">Avbryt</button>`
+  );
+
+  document.getElementById('avbrytKonstr').addEventListener('click', Modal.close);
+  document.getElementById('sparaKonstr').addEventListener('click', async () => {
+    const f = document.getElementById('konstrForm');
+    if (!f.reportValidity()) return;
+    const fd   = new FormData(f);
+    const body = Object.fromEntries(fd.entries());
+    // Om typ är disabled används inte värdet i FormData
+    if (existing) body.typ = existing.typ;
+    try {
+      if (existing) {
+        await api('PUT', `/konstruktioner/${existing.id}`, body);
+        toast('Konstruktion sparad', 'success');
+      } else {
+        await api('POST', '/konstruktioner', body);
+        toast('Konstruktion skapad', 'success');
+      }
+      Modal.close();
+      onDone && await onDone();
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+// ----------------------------------------------------------------
+// MODAL: VISA KONSTRUKTION (komplett vy med rader + egenkontroll)
+// ----------------------------------------------------------------
+async function modalVisaKonstruktion(kid, onDone) {
+  // Ladda kategorier i förväg
+  if (!S.kategorier.length) {
+    try { S.kategorier = (await api('GET', '/kategorier')).kategorier || []; } catch {}
+  }
+
+  let k;
+  try { k = (await api('GET', `/konstruktioner/${kid}`)).konstruktion; }
+  catch (e) { toast(e.message, 'error'); return; }
+
+  const statusar    = ['Pågående', 'Klar', 'Pausad', 'Avbruten'];
+  const statusOpts  = statusar.map(s => `<option ${k.status === s ? 'selected' : ''}>${s}</option>`).join('');
+  const erKabelskap = k.typ === 'Kabelskåp';
+
+  function beraknaModuler(rader) {
+    const kapacitet = rader.reduce((s, r) => s + ((r.moduler || 0) > 0 ? (r.moduler || 0) * (r.antal || 1) : 0), 0);
+    const anvant    = rader.reduce((s, r) => s + ((r.moduler || 0) < 0 ? Math.abs(r.moduler || 0) * (r.antal || 1) : 0), 0);
+    const kvar      = kapacitet - anvant;
+    return { kapacitet, anvant, kvar };
+  }
+
+  function modulIndikatorHtml(rader) {
+    if (!erKabelskap) return '';
+    const { kapacitet, anvant, kvar } = beraknaModuler(rader);
+    const pct = kapacitet > 0 ? Math.min(100, Math.round(anvant / kapacitet * 100)) : 0;
+    const färg = kvar < 0 ? '#dc2626' : kvar <= 2 ? '#d97706' : '#7c3aed';
+    return `
+      <div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;padding:10px 14px;margin-bottom:10px">
+        <div style="font-weight:600;color:#2e1065;margin-bottom:6px;font-size:13px">Moduler – ${escHtml(k.namn)}</div>
+        <div style="display:flex;gap:16px;font-size:12px;margin-bottom:6px">
+          <span>Kapacitet: <strong>${kapacitet}</strong></span>
+          <span>Använt: <strong>${anvant}</strong></span>
+          <span style="color:${färg}">Kvar: <strong>${kvar}</strong></span>
+        </div>
+        <div style="background:#e2e8f0;border-radius:4px;height:10px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${färg};transition:width .3s"></div>
+        </div>
+      </div>`;
+  }
+
+  function radTabellHtml(rader) {
+    if (!rader.length) return '<p class="text-muted text-sm">Inga materialrader ännu.</p>';
+    return `
+      <div class="table-wrap">
+        <table id="konstrRadTabell">
+          <thead><tr>
+            <th>Artikel</th><th>Enhet</th><th class="right">Antal</th>
+            ${erKabelskap ? '<th class="right">Moduler</th>' : ''}
+            <th>Anteckning</th><th></th>
+          </tr></thead>
+          <tbody id="konstrRadBody">
+            ${rader.map((r, i) => `
+              <tr>
+                <td>${escHtml(r.artikelnamn)}</td>
+                <td>${escHtml(r.enhet)}</td>
+                <td class="num"><input type="number" class="form-control" style="width:80px;text-align:right"
+                    name="antal_${i}" value="${r.antal}" min="0" step="any"></td>
+                ${erKabelskap ? `<td class="num" style="color:${(r.moduler || 0) > 0 ? '#7c3aed' : (r.moduler || 0) < 0 ? '#dc2626' : '#666'}">${r.moduler || 0}</td>` : ''}
+                <td><input type="text" class="form-control" style="width:120px" name="ant_${i}" value="${escHtml(r.anteckning || '')}"></td>
+                <td><button class="btn btn-sm btn-danger" data-del="${i}">✕</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function egkHtml(egkLista) {
+    if (!egkLista.length) return '';
+    const utforda = egkLista.filter(e => e.utford).length;
+    return `
+      <div class="egk-section">
+        <div class="egk-section-title">
+          Egenkontroll
+          <span class="egk-progress">${utforda}/${egkLista.length} utförda</span>
+        </div>
+        <ul class="egk-list" id="konstrEgkList">
+          ${egkLista.map((e, i) => `
+            <li class="egk-item ${e.utford ? 'utford' : ''} ${e.ej_relevant ? 'ej-rel' : ''}"
+                data-egk-id="${e.id}" data-idx="${i}">
+              <span class="egk-nr">${i + 1}.</span>
+              <span class="egk-punkt">${escHtml(e.punkt)}</span>
+              <div class="egk-checkboxes">
+                <label class="egk-check-label">
+                  <input type="checkbox" class="egk-utford" ${e.utford ? 'checked' : ''}> Utförd
+                </label>
+                <label class="egk-check-label">
+                  <input type="checkbox" class="egk-ej-rel" ${e.ej_relevant ? 'checked' : ''}> Ej relevant
+                </label>
+              </div>
+            </li>`).join('')}
+        </ul>
+      </div>`;
+  }
+
+  // Lokal kopia av rader
+  let rader = JSON.parse(JSON.stringify(k.rader || []));
+
+  function byggModalBody() {
+    return `
+      <div class="flex gap-2 items-center mb-2 flex-wrap">
+        ${badgeTyp(k.typ)}
+        ${k.byggnr ? `<span class="text-muted text-sm">Byggnr: <strong>${escHtml(k.byggnr)}</strong></span>` : ''}
+        ${k.fri_id ? `<span class="text-muted text-sm">ID: <strong>${escHtml(k.fri_id)}</strong></span>` : ''}
+        <select id="konstrStatus" class="form-control" style="width:140px">${statusOpts}</select>
+        <span class="ml-auto text-sm text-muted">Skapad: ${(k.skapad || '').slice(0, 10)}</span>
+      </div>
+      ${k.anmarkning ? `<p class="text-sm text-muted mb-2" style="background:#f5f3ff;padding:6px 10px;border-radius:4px">${escHtml(k.anmarkning)}</p>` : ''}
+      <div id="konstrModulIndikator">${modulIndikatorHtml(rader)}</div>
+      <div id="konstrRadWrapper">${radTabellHtml(rader)}</div>
+      <div class="mt-2 flex gap-1 items-center">
+        <button class="btn btn-outline btn-sm" id="btnKonstrLaggTillRad">+ Lägg till rad</button>
+      </div>
+      <div id="konstrInlineForm" style="display:none;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;padding:12px;margin-top:8px">
+        <div class="form-row cols-2" style="margin-bottom:6px">
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Kategori</label>
+            <select id="konstrInlineKat" class="form-control">
+              <option value="">– alla –</option>
+              ${S.kategorier.map(k2 => `<option value="${k2.id}">${escHtml(k2.namn)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Artikel</label>
+            <select id="konstrInlineArt" class="form-control"><option value="">Laddar...</option></select>
+          </div>
+        </div>
+        <div class="form-row cols-2" style="margin-bottom:8px">
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Antal</label>
+            <input type="number" id="konstrInlineAntal" class="form-control" value="1" min="0" step="any">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Anteckning (valfri)</label>
+            <input type="text" id="konstrInlineAnt" class="form-control" placeholder="">
+          </div>
+        </div>
+        <div class="flex gap-1">
+          <button class="btn btn-success btn-sm" id="konstrInlineLeggTill">✓ Lägg till</button>
+          <button class="btn btn-outline btn-sm" id="konstrInlineStang">Stäng</button>
+        </div>
+      </div>
+      ${egkHtml(k.egenkontroll || [])}
+      <div class="form-group mt-2">
+        <label class="form-label">Anmärkning</label>
+        <textarea class="form-control" id="konstrAnt" rows="2">${escHtml(k.anmarkning || '')}</textarea>
+      </div>`;
+  }
+
+  Modal.open(
+    `${escHtml(k.namn)}`,
+    byggModalBody(),
+    `<button class="btn btn-success" id="sparaKonstrModal">Spara</button>
+     <a class="btn btn-secondary" href="/api/konstruktioner/${kid}/pdf" target="_blank">⬇ PDF</a>
+     <button class="btn btn-outline" id="avbrytKonstrModal">Stäng</button>`
+  );
+
+  function uppdateraModulIndikator() {
+    const el = document.getElementById('konstrModulIndikator');
+    if (el) el.innerHTML = modulIndikatorHtml(rader);
+  }
+
+  function syncRader() {
+    rader.forEach((r, i) => {
+      const inp = document.querySelector(`input[name="antal_${i}"]`);
+      const ant = document.querySelector(`input[name="ant_${i}"]`);
+      if (inp) r.antal = parseFloat(inp.value) || 0;
+      if (ant) r.anteckning = ant.value;
+    });
+  }
+
+  function renderRadWrapper() {
+    const el = document.getElementById('konstrRadWrapper');
+    if (el) el.innerHTML = radTabellHtml(rader);
+    bindRadEvents();
+    uppdateraModulIndikator();
+  }
+
+  function bindRadEvents() {
+    const radBody = document.getElementById('konstrRadBody');
+    if (!radBody) return;
+    radBody.addEventListener('input', () => { syncRader(); uppdateraModulIndikator(); });
+    radBody.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-del]');
+      if (!btn) return;
+      syncRader();
+      rader.splice(parseInt(btn.dataset.del), 1);
+      renderRadWrapper();
+    });
+  }
+
+  bindRadEvents();
+
+  // Inline lägg till rad
+  async function laddaKonstrArtiklar() {
+    const katId = document.getElementById('konstrInlineKat').value;
+    const sel   = document.getElementById('konstrInlineArt');
+    sel.innerHTML = '<option value="">Laddar...</option>';
+    try {
+      const url  = katId ? `/artiklar?kategori_id=${katId}` : '/artiklar';
+      const arts = (await api('GET', url)).artiklar || [];
+      sel.innerHTML = '<option value="">– välj artikel –</option>' +
+        arts.map(a => `<option value="${a.id}"
+            data-enhet="${escHtml(a.enhet || '')}"
+            data-kat="${escHtml(a.kategori_namn || '')}"
+            data-moduler="${a.moduler || 0}">
+          ${escHtml(a.artikelnamn)}</option>`).join('');
+    } catch { sel.innerHTML = '<option value="">Fel vid laddning</option>'; }
+  }
+
+  document.getElementById('btnKonstrLaggTillRad').addEventListener('click', async () => {
+    const form    = document.getElementById('konstrInlineForm');
+    const visible = form.style.display !== 'none';
+    form.style.display = visible ? 'none' : '';
+    if (!visible) await laddaKonstrArtiklar();
+  });
+
+  document.getElementById('konstrInlineStang').addEventListener('click', () => {
+    document.getElementById('konstrInlineForm').style.display = 'none';
+  });
+
+  document.getElementById('konstrInlineKat').addEventListener('change', laddaKonstrArtiklar);
+
+  document.getElementById('konstrInlineLeggTill').addEventListener('click', () => {
+    const artSel = document.getElementById('konstrInlineArt');
+    const artId  = parseInt(artSel.value);
+    if (!artId) { toast('Välj en artikel', 'error'); return; }
+    const opt    = artSel.options[artSel.selectedIndex];
+    const antal  = parseFloat(document.getElementById('konstrInlineAntal').value) || 1;
+    const ant    = document.getElementById('konstrInlineAnt').value.trim();
+    const moduler = parseInt(opt.dataset.moduler || '0') || 0;
+    syncRader();
+    rader.push({
+      artikel_id:  artId,
+      artikelnamn: opt.textContent.trim(),
+      enhet:       opt.dataset.enhet || '',
+      antal,
+      moduler,
+      anteckning:  ant,
+    });
+    renderRadWrapper();
+    document.getElementById('konstrInlineAntal').value = '1';
+    document.getElementById('konstrInlineAnt').value   = '';
+    toast('Rad tillagd ✓', 'success');
+  });
+
+  // Egenkontroll interaktivitet
+  const egkListEl = document.getElementById('konstrEgkList');
+  if (egkListEl) {
+    egkListEl.addEventListener('change', e => {
+      const item = e.target.closest('.egk-item');
+      if (!item) return;
+      const cbUtford = item.querySelector('.egk-utford');
+      const cbEjRel  = item.querySelector('.egk-ej-rel');
+      if (e.target === cbUtford && cbUtford.checked) {
+        cbEjRel.checked = false;
+        item.classList.add('utford'); item.classList.remove('ej-rel');
+      } else if (e.target === cbEjRel && cbEjRel.checked) {
+        cbUtford.checked = false;
+        item.classList.add('ej-rel'); item.classList.remove('utford');
+      } else {
+        item.classList.remove('utford', 'ej-rel');
+      }
+      const allItems = egkListEl.querySelectorAll('.egk-item');
+      const done = [...allItems].filter(i => i.querySelector('.egk-utford').checked).length;
+      const tot  = allItems.length;
+      const progEl = egkListEl.closest('.egk-section')?.querySelector('.egk-progress');
+      if (progEl) progEl.textContent = `${done}/${tot} utförda`;
+    });
+  }
+
+  document.getElementById('avbrytKonstrModal').addEventListener('click', Modal.close);
+
+  document.getElementById('sparaKonstrModal').addEventListener('click', async () => {
+    syncRader();
+    const egkData = [];
+    document.querySelectorAll('#konstrEgkList .egk-item[data-egk-id]').forEach(item => {
+      egkData.push({
+        id:          parseInt(item.dataset.egkId),
+        utford:      item.querySelector('.egk-utford').checked ? 1 : 0,
+        ej_relevant: item.querySelector('.egk-ej-rel').checked ? 1 : 0,
+      });
+    });
+    const nyStatus    = document.getElementById('konstrStatus').value;
+    const nyAnmarkning = document.getElementById('konstrAnt').value;
+    try {
+      await api('PUT', `/konstruktioner/${kid}`, {
+        status:     nyStatus,
+        anmarkning: nyAnmarkning,
+        rader,
+        egenkontroll: egkData,
+      });
+      toast('Konstruktion sparad', 'success');
+      Modal.close();
+      onDone && await onDone();
+    } catch (e) { toast(e.message, 'error'); }
   });
 }
 

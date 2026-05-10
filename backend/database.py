@@ -324,6 +324,16 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 14:
+        # v14: Lägg till konstruktioner-modulen
+        try:
+            conn.execute("ALTER TABLE artiklar ADD COLUMN moduler INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+        # skapa_tabeller för konstruktioner körs redan via _create_tables
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','14')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -447,6 +457,39 @@ def _create_tables(conn):
             utford          INTEGER NOT NULL DEFAULT 0,
             ej_relevant     INTEGER NOT NULL DEFAULT 0,
             sortering       INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS konstruktioner (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            typ         TEXT NOT NULL,
+            byggnr      TEXT,
+            namn        TEXT NOT NULL,
+            fri_id      TEXT,
+            anmarkning  TEXT,
+            status      TEXT NOT NULL DEFAULT 'Pågående',
+            skapad      DATETIME NOT NULL,
+            uppdaterad  DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS konstruktion_rader (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            konstruktion_id   INTEGER NOT NULL REFERENCES konstruktioner(id) ON DELETE CASCADE,
+            artikel_id        INTEGER REFERENCES artiklar(id),
+            artikelnamn       TEXT NOT NULL,
+            enhet             TEXT NOT NULL,
+            antal             REAL NOT NULL DEFAULT 1,
+            moduler           INTEGER NOT NULL DEFAULT 0,
+            anteckning        TEXT,
+            sortering         INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS konstruktion_egenkontroll (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            konstruktion_id   INTEGER NOT NULL REFERENCES konstruktioner(id) ON DELETE CASCADE,
+            punkt             TEXT NOT NULL,
+            utford            INTEGER NOT NULL DEFAULT 0,
+            ej_relevant       INTEGER NOT NULL DEFAULT 0,
+            sortering         INTEGER NOT NULL DEFAULT 0
         );
     """)
 

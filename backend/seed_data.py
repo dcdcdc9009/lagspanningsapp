@@ -390,7 +390,7 @@ def fyll_i_startdata(conn):
         ('foretagsnamn',    'Oneco Networks AB'),
         ('admin_losenord',  hashlib.sha256(b'admin').hexdigest()),
         ('logotyptext',     'LÅGSPÄNNINGSBEREDNING'),
-        ('db_version',      '13'),   # Sätts direkt så migrationer inte körs på tom DB
+        ('db_version',      '14'),   # Sätts direkt så migrationer inte körs på tom DB
     ]:
         conn.execute("INSERT OR IGNORE INTO installningar (nyckel, varde) VALUES (?,?)",
                      (nyckel, varde))

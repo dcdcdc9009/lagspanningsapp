@@ -378,3 +378,148 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
 
     doc.build(story)
     return buf.getvalue()
+
+
+# ----------------------------------------------------------------
+# KONSTRUKTIONSPROTOKOLL PDF
+# ----------------------------------------------------------------
+
+def skapa_konstruktion_pdf(konstruktion, installningar):
+    """
+    konstruktion: dict med alla fält + 'rader' lista + 'egenkontroll' lista
+    installningar: dict {nyckel: varde}
+    Returnerar bytes.
+    """
+    foretag = installningar.get('foretagsnamn',
+               installningar.get('foretag_namn', 'Oneco Networks AB'))
+    buf = BytesIO()
+
+    def on_page(canvas, doc):
+        _bygg_header_footer(canvas, doc, foretag, 'Konstruktionsprotokoll')
+
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=28 * mm, bottomMargin=18 * mm,
+        onFirstPage=on_page, onLaterPages=on_page,
+    )
+
+    h1, title, normal, small, cell = _styles()
+    story = []
+
+    # Stor rubrik
+    story.append(Paragraph('Konstruktionsprotokoll', title))
+    story.append(HRFlowable(width='100%', thickness=2, color=PRIMARY, spaceAfter=6))
+
+    # Info-tabell
+    pi = [
+        ['Typ:',        konstruktion.get('typ', '')],
+        ['Byggnr:',     konstruktion.get('byggnr', '') or '–'],
+        ['Namn:',       konstruktion.get('namn', '')],
+        ['Fri ID:',     konstruktion.get('fri_id', '') or '–'],
+        ['Status:',     konstruktion.get('status', '')],
+        ['Datum:',      (konstruktion.get('skapad', '') or '')[:16]],
+    ]
+    if konstruktion.get('anmarkning'):
+        pi.append(['Anmarkning:', konstruktion['anmarkning']])
+    story.append(_info_tabell(pi))
+    story.append(Spacer(1, 6 * mm))
+
+    # Materialtabell
+    rader = konstruktion.get('rader', [])
+    if rader:
+        story.append(Paragraph('Material', h1))
+        story.append(HRFlowable(width='100%', thickness=0.5, color=ACCENT, spaceAfter=4))
+
+        # Bygg en materialtabell med moduler-kolumn
+        header = ['Artikel', 'Enhet', 'Antal', 'Moduler']
+        col_w  = [100 * mm, 22 * mm, 22 * mm, 22 * mm]
+        col_w[-1] = W - MARGIN * 2 - sum(col_w[:-1])
+
+        rows = [header]
+        for r in rader:
+            moduler_val = r.get('moduler', 0)
+            moduler_str = str(int(moduler_val)) if moduler_val else '-'
+            rows.append([
+                r.get('artikelnamn', ''),
+                r.get('enhet', ''),
+                f"{r.get('antal', 0):g}",
+                moduler_str,
+            ])
+
+        t = Table(rows, colWidths=col_w, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), PRIMARY),
+            ('TEXTCOLOR',  (0, 0), (-1, 0), WHITE),
+            ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',   (0, 0), (-1, -1), 8),
+            ('ALIGN',      (2, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT]),
+        ]))
+        story.append(t)
+
+        # Modulsammanfattning (endast Kabelskap)
+        if konstruktion.get('typ') == 'Kabelskap':
+            story.append(Spacer(1, 3 * mm))
+            kapacitet = sum((r.get('moduler', 0) or 0) * (r.get('antal', 1) or 1)
+                            for r in rader if (r.get('moduler', 0) or 0) > 0)
+            anvant    = abs(sum((r.get('moduler', 0) or 0) * (r.get('antal', 1) or 1)
+                               for r in rader if (r.get('moduler', 0) or 0) < 0))
+            kvar      = kapacitet - anvant
+            modul_data = [
+                ['Kapacitet:', f"{int(kapacitet)} moduler"],
+                ['Anvant:',    f"{int(anvant)} moduler"],
+                ['Kvar:',      f"{int(kvar)} moduler"],
+            ]
+            modul_t = Table(modul_data, colWidths=[40 * mm, 50 * mm])
+            modul_t.setStyle(TableStyle([
+                ('FONTNAME',  (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE',  (0, 0), (-1, -1), 9),
+                ('FONTNAME',  (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (0, 0), (0, -1), PRIMARY),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ]))
+            story.append(modul_t)
+    else:
+        story.append(Paragraph('Inga materialrader registrerade.', small))
+
+    # Egenkontroll
+    egenkontroll = konstruktion.get('egenkontroll', [])
+    if egenkontroll:
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph('Egenkontroll', h1))
+        story.append(HRFlowable(width='100%', thickness=0.5, color=ACCENT, spaceAfter=4))
+        story.append(_egenkontroll_tabell(egenkontroll))
+
+        utforda = sum(1 for e in egenkontroll if e.get('utford'))
+        ej_rel  = sum(1 for e in egenkontroll if e.get('ej_relevant'))
+        totalt  = len(egenkontroll)
+        summary = f"Utforda: {utforda}/{totalt}  |  Ej relevanta: {ej_rel}"
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(summary, small))
+
+    # Underskrift
+    story.append(Spacer(1, 12 * mm))
+    story.append(HRFlowable(width='100%', thickness=0.5, color=GRAY))
+    story.append(Spacer(1, 2 * mm))
+    sign = Table(
+        [['Utford av:', '_' * 35, 'Datum:', '_' * 20]],
+        colWidths=[25 * mm, 75 * mm, 20 * mm, 45 * mm]
+    )
+    sign.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (2, 0), (2, 0), 'Helvetica-Bold'),
+        ('ALIGN',    (0, 0), (-1, -1), 'LEFT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(sign)
+
+    doc.build(story)
+    return buf.getvalue()
