@@ -23,8 +23,16 @@ def _get_logo():
     if _logo_drawing is None:
         try:
             from svglib.svglib import svg2rlg
-            _logo_drawing = svg2rlg(_LOGO_PATH)
-        except Exception:
+            drawing = svg2rlg(_LOGO_PATH)
+            if drawing and drawing.width and drawing.height:
+                _logo_drawing = drawing
+            else:
+                import sys
+                print(f"[PDF] Logo laddades men är tom: {drawing}", file=sys.stderr)
+                _logo_drawing = False
+        except Exception as exc:
+            import sys
+            print(f"[PDF] Kunde inte ladda logo: {exc}", file=sys.stderr)
             _logo_drawing = False
     return _logo_drawing if _logo_drawing else None
 
