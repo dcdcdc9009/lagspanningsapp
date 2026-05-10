@@ -462,8 +462,8 @@ def skapa_konstruktion_pdf(konstruktion, installningar):
         ]))
         story.append(t)
 
-        # Modulsammanfattning (endast Kabelskap)
-        if konstruktion.get('typ') == 'Kabelskap':
+        # Modulsammanfattning (endast Kabelskåp)
+        if konstruktion.get('typ') == 'Kabelskåp':
             story.append(Spacer(1, 3 * mm))
             kapacitet = sum((r.get('moduler', 0) or 0) * (r.get('antal', 1) or 1)
                             for r in rader if (r.get('moduler', 0) or 0) > 0)

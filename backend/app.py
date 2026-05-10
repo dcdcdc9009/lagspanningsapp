@@ -621,8 +621,16 @@ def admin_uppdatera_artikel(aid):
 @admin_required
 def admin_ta_bort_artikel(aid):
     with get_db() as conn:
-        conn.execute("DELETE FROM artiklar WHERE id=?", (aid,))
-        conn.commit()
+        rad = conn.execute("SELECT artikelnamn FROM artiklar WHERE id=?", (aid,)).fetchone()
+        if not rad:
+            return fel('Artikeln hittades inte.', 404)
+        try:
+            conn.execute("DELETE FROM artiklar WHERE id=?", (aid,))
+            conn.commit()
+        except Exception as e:
+            if 'FOREIGN KEY' in str(e):
+                return fel('Artikeln kan inte tas bort – den används i ett eller flera byggprotokoll.', 400)
+            return fel(str(e))
     return jsonify({'meddelande': 'Artikel borttagen.'})
 
 
