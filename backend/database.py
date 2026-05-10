@@ -6,46 +6,41 @@ DB_PATH = os.environ.get(
     os.path.join(os.path.dirname(__file__), '..', 'data', 'lagspanning.db')
 )
 
-# En enda delad connection per process – undviker upprepade open/close på nätverksvolym
-_conn = None
-_conn_lock = threading.Lock()
+# En persistent connection per tråd (undviker open/close-overhead per request)
+_local = threading.local()
 
 
 def _open_conn():
-    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = DELETE")   # Ingen WAL – fungerar bättre på nätverkslagring
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA cache_size = -16000")     # 16 MB cache i minnet
+    conn.execute("PRAGMA cache_size = -16000")  # 16 MB cache
     conn.execute("PRAGMA temp_store = MEMORY")
-    conn.commit()
     return conn
 
 
 @contextmanager
 def get_db():
-    """Delar en persistent connection för alla requests (serialiserat med mutex)."""
-    global _conn
-    with _conn_lock:
-        if _conn is None:
-            _conn = _open_conn()
-        conn = _conn
+    """Återanvänder en persistent connection per tråd för att undvika nätverksoverhead."""
+    if not hasattr(_local, 'conn') or _local.conn is None:
+        _local.conn = _open_conn()
+    conn = _local.conn
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
         try:
-            yield conn
-            conn.commit()
+            conn.rollback()
         except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            # Nollställ vid fel så nästa request öppnar en ny connection
-            try:
-                conn.close()
-            except Exception:
-                pass
-            _conn = None
-            raise
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _local.conn = None
+        raise
 
 
 def init_db():
@@ -53,11 +48,10 @@ def init_db():
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
 
-    # Använd separat connection för init (innan den delade är skapad)
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = DELETE")
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
     try:
         _create_tables(conn)
