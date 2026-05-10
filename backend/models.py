@@ -16,9 +16,16 @@ def nu():
 def nasta_projektnummer(conn):
     ar = datetime.now().year
     prefix = f"{ar}-"
-    rad = conn.execute(
-        "SELECT projektnummer FROM projekt WHERE projektnummer LIKE ? ORDER BY projektnummer DESC LIMIT 1",
+    rader = conn.execute(
+        "SELECT projektnummer FROM projekt WHERE projektnummer LIKE ? ORDER BY projektnummer DESC",
         (prefix + '%',)
-    ).fetchone()
-    lopnummer = int(rad['projektnummer'].split('-')[1]) + 1 if rad else 1
+    ).fetchall()
+    lopnummer = 1
+    for rad in rader:
+        try:
+            n = int(rad['projektnummer'].split('-')[1])
+            lopnummer = n + 1
+            break
+        except (ValueError, IndexError):
+            continue
     return f"{ar}-{lopnummer:04d}"

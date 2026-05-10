@@ -334,10 +334,6 @@ def fyll_i_startdata(conn):
          'Välj kabelskyddsband',                                     0, 5),
         ('kabelforband_meter',     'Kabelskyddsband (m)',            'number',
          '{"min":0}',                                                'Meter kabelskyddsband',   0, 6),
-        ('inkl_kabelsand',         'Inkl. kabelsand',                'checkbox',
-         '{"default":true}',                                         'Ca 1 ton per 100m schakt',0, 7),
-        ('inkl_markeringsband',    'Inkl. markeringsband',           'checkbox',
-         '{"default":true}',                                         'Gul/svart varningsband',  0, 8),
     ])
 
     # ----------------------------------------------------------------
@@ -394,6 +390,7 @@ def fyll_i_startdata(conn):
         ('foretagsnamn',    'Oneco Networks AB'),
         ('admin_losenord',  hashlib.sha256(b'admin').hexdigest()),
         ('logotyptext',     'LÅGSPÄNNINGSBEREDNING'),
+        ('db_version',      '13'),   # Sätts direkt så migrationer inte körs på tom DB
     ]:
         conn.execute("INSERT OR IGNORE INTO installningar (nyckel, varde) VALUES (?,?)",
                      (nyckel, varde))
@@ -532,7 +529,7 @@ def fyll_egenkontroll(conn):
             'Riskhantering utförd och dokumenterad',
             'Kabelskåp placerat och monterat enligt anvisningar',
             'Fundament godkänt och kabelskåp säkrat',
-            'Jordfförbindelsemätning utförd med godkända värden',
+            'Jordförbindelsemätning utförd med godkända värden',
             'Potentialutjämning utförd',
             'Mantelprovning utförd med godkända värden',
             'Kabelskor korrekt monterade och dragna med rätt moment',
@@ -549,7 +546,7 @@ def fyll_egenkontroll(conn):
             'Riskhantering utförd och dokumenterad',
             'Leveranskontroll utförd',
             'Mantelprovning utförd med godkända värden',
-            'Jordfförbindelsemätning utförd med godkända värden',
+            'Jordförbindelsemätning utförd med godkända värden',
             'Jordtag mätta och protokollförda',
             'Potentialutjämning utförd',
             'Samtliga anslutningar dragna med rätt moment',

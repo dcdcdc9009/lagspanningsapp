@@ -297,6 +297,33 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 13:
+        # v13: Fixa typo "Jordfförbindelsemätning", ta bort oanvända checkboxar i Mall 1,
+        #      och säkerställ att db_version finns satt
+        conn.execute("""
+            UPDATE mall_egenkontroll
+            SET punkt = REPLACE(punkt, 'Jordfförbindelsemätning', 'Jordförbindelsemätning')
+            WHERE punkt LIKE '%Jordfförbindelsemätning%'
+        """)
+        for falt in ('inkl_kabelsand', 'inkl_markeringsband'):
+            conn.execute(
+                "DELETE FROM mall_inputfalt WHERE mall_id=1 AND faltnamn=?", (falt,)
+            )
+        # Säkerställ att foretagsnamn-nyckeln är konsekvent (inte foretag_namn)
+        rad = conn.execute(
+            "SELECT varde FROM installningar WHERE nyckel='foretag_namn'"
+        ).fetchone()
+        if rad:
+            conn.execute(
+                "INSERT OR IGNORE INTO installningar (nyckel,varde) VALUES ('foretagsnamn',?)",
+                (rad['varde'],)
+            )
+            conn.execute("DELETE FROM installningar WHERE nyckel='foretag_namn'")
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','13')"
+        )
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""

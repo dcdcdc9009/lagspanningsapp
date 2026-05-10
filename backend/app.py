@@ -419,6 +419,8 @@ def skapa_protokoll():
     with get_db() as conn:
         mall = conn.execute("SELECT namn FROM mallar WHERE id=?", (mall_id,)).fetchone()
         if not mall: return fel('Mallen hittades inte.', 404)
+        proj = conn.execute("SELECT id FROM projekt WHERE id=?", (projekt_id,)).fetchone()
+        if not proj: return fel('Projektet hittades inte.', 404)
 
         if rader_in is None:
             rader_in = berakna(mall_id, inputdata, conn)
@@ -715,8 +717,13 @@ def admin_uppdatera_kategori(kid):
 @admin_required
 def admin_ta_bort_kategori(kid):
     with get_db() as conn:
-        conn.execute("DELETE FROM kategorier WHERE id=?", (kid,))
-        conn.commit()
+        try:
+            conn.execute("DELETE FROM kategorier WHERE id=?", (kid,))
+            conn.commit()
+        except Exception as e:
+            if 'FOREIGN KEY' in str(e):
+                return fel('Kategorin kan inte tas bort – den har artiklar kopplade till sig.', 400)
+            return fel(str(e))
     return jsonify({'meddelande': 'Kategori borttagen.'})
 
 
@@ -756,8 +763,13 @@ def admin_uppdatera_leverantor(lid):
 @admin_required
 def admin_ta_bort_leverantor(lid):
     with get_db() as conn:
-        conn.execute("DELETE FROM leverantorer WHERE id=?", (lid,))
-        conn.commit()
+        try:
+            conn.execute("DELETE FROM leverantorer WHERE id=?", (lid,))
+            conn.commit()
+        except Exception as e:
+            if 'FOREIGN KEY' in str(e):
+                return fel('Leverantören kan inte tas bort – den används i artiklar eller protokoll.', 400)
+            return fel(str(e))
     return jsonify({'meddelande': 'Leverantör borttagen.'})
 
 
