@@ -334,6 +334,198 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','14')")
         conn.commit()
 
+    if v < 15:
+        # v15: Ersätt alla kategorier och artiklar med Excel-baserade (Byggprotokoll 1.0)
+        #      samt uppdatera egenkontroll för alla mallar och inputfält-alternativ.
+
+        # Nullställ artikel_id i rader så FK-constraint inte blockerar radering
+        # (artikelnamn bevaras som text i raderna)
+        conn.execute("UPDATE byggprotokoll_rader SET artikel_id = NULL")
+        conn.execute("UPDATE konstruktion_rader SET artikel_id = NULL")
+
+        # Radera allt befintligt
+        conn.execute("DELETE FROM artikel_leverantor")
+        conn.execute("DELETE FROM artiklar")
+        conn.execute("DELETE FROM kategorier")
+
+        # Radera befintlig egenkontroll för alla mallar
+        conn.execute("DELETE FROM mall_egenkontroll")
+
+        # Seeda nya kategorier, artiklar och egenkontroll från Excel
+        from seed_data import fyll_i_startdata as _seed, fyll_egenkontroll as _egk
+        # Kör bara kategori/artikel-delen (inte mallar/inställningar som redan finns)
+        from seed_data import _kat, _art, _lev, _mall_falt
+
+        kat_kabel   = _kat(conn, 'Kablar',                    1)
+        kat_ansl    = _kat(conn, 'Anslutningsdon',             2)
+        kat_sak     = _kat(conn, 'Säkringslastfrånskiljare',   3)
+        kat_kniv    = _kat(conn, 'Knivssäkringar',             4)
+        kat_kaps    = _kat(conn, 'Kapsling',                   5)
+        kat_skarv   = _kat(conn, 'Kabelskarvar',               6)
+        kat_skydd   = _kat(conn, 'Kabelskydd och rör',         7)
+        kat_mark    = _kat(conn, 'Märkning',                   8)
+        kat_ovrigt  = _kat(conn, 'Övrigt',                     9)
+
+        for i, (namn, enhet) in enumerate([
+            ('AML 4G25 1KV SV', 'm'), ('AML 4G50 1KV SV', 'm'),
+            ('AML 4G95 1KV SV', 'm'), ('AML 4G150 1KV SV', 'm'),
+            ('AML 4G240 1KV SV', 'm'), ('CU-LINA BELAGD 25MM²', 'm'),
+        ]):
+            _art(conn, namn, kat_kabel, enhet, i)
+
+        for i, namn in enumerate([
+            'ANSLUTNINGSDON ABB ADI 300 ISOLERAT',
+            'ANSLUTNINGSDON ABB ADU 300 OISOLERAT',
+            'ANSLUTNINGSDON ABB ADI 95 ISOLERAT',
+            'ANSLUTNINGSDON ABB ADU 95 OISOLERAT',
+            'ANSLUTNINGSDON AD 350',
+            'ANSLUTNINGSDON PEN/PE CUZ 95',
+            'ANSLUTNINGSDON PEN/PE CUZ 300',
+            'ANSLUTNINGSDON ISOLERAD Z-SKENA CIZ 95',
+            'ANSLUTNINGSDON ISOLERAD Z-SKENA CIZ 300',
+        ]):
+            _art(conn, namn, kat_ansl, 'st', i)
+
+        for i, namn in enumerate([
+            'SÄKRINGSLASTFRÅNSKILJARE SLD 00 500V',
+            'SÄKRINGSLASTFRÅNSKILJARE SLD 000 500V',
+            'SÄKRINGSLASTFRÅNSKILJARE SLE 1 690V',
+            'SÄKRINGSLASTFRÅNSKILJARE SLE 2 690V',
+            'SÄKRINGSLASFRÅNSK SLF160P',
+            'SÄKRINGSLASFRÅNSK SLF250P',
+            'SÄKRINGSLASFRÅNSK SLF400P',
+            'SÄKRINGSLASFRÅNSK SLF630P',
+        ]):
+            _art(conn, namn, kat_sak, 'st', i)
+
+        for i, namn in enumerate([
+            'KNIVSSÄKRING ECO HICAP 000/10A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 000/16A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 000/25A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 000/35A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 000/50A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 000/63A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 000/80A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 000/100A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 00/125A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 00/160A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 1/63A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 1/80A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 1/100A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 1/125A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 1/160A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 1/200A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 1/250A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 2/100A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 2/125A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 2/160A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 2/200A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 2/250A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 2/315A GG 500V',
+            'KNIVSSÄKRING ECO HICAP 2/355A GG 500V',
+            'KOPPLINGSKNIV 1 KN 1 3ST',
+        ]):
+            enhet = 'sats' if 'KOPPLINGSKNIV' in namn else 'st'
+            _art(conn, namn, kat_kniv, enhet, i)
+
+        for i, (namn, moduler) in enumerate([
+            ('KAPSLING CDC 420 K2', 20),
+            ('KAPSLING CDC 440 K3', 40),
+            ('KAPSLING CDC 460 K4', 60),
+        ]):
+            _art(conn, namn, kat_kaps, 'st', i, moduler=moduler)
+
+        for i, namn in enumerate([
+            'KABELSKARV 4-LED 6-50 MM² 1KV',
+            'KABELSKARV 1KV AL/CU 50-95MM²',
+            'KABELSKARV 1KV AL/CU 95-240MM²',
+            'KABELSKARV PXE-SU5-SE01',
+            'KABELSKARV LJTM-W-4X035-150',
+            'KABELSKARV 1KV 95-240 MM²',
+            'AVGRENINGSHYLSA C25-50',
+            'ÄNDHÄTTA KALLKRYMP 16-30MM',
+            'ÄNDHÄTTA KALLKRYMP 26-49MM',
+            'ÄNDHÄTTA KALLKRYMP 46-84MM',
+        ]):
+            _art(conn, namn, kat_skarv, 'st', i)
+
+        for i, (namn, enhet) in enumerate([
+            ('KABELSKYDD PLANT 125-50', 'm'),
+            ('KABELRÖR KORR UDV 160',   'm'),
+            ('KABELRÖR UDV 110',         'm'),
+            ('RAK-BÖJ 110 SRN',          'st'),
+            ('RAK-BÖJ 160 SRN',          'st'),
+        ]):
+            _art(conn, namn, kat_skydd, enhet, i)
+
+        mark_art = (
+            [('MÄRKSYST R5000 SIFFRA {} DEKAL'.format(d), 'st') for d in '0123456789'] +
+            [('MÄRKLIST TRANSP SKYLTHÅLL PL', 'st'), ('MARKERINGSSTÅNG KSPS 7', 'st'),
+             ('E.ON KABELSKÅPSLOGO KLISTER', 'st')] +
+            [('MÄRKSYSTEM H50 GUL SIFFRA {}'.format(d), 'st') for d in '0123456789'] +
+            [('MÄRKSYSTEM H50 GUL BOKSTAV {}'.format(c), 'st') for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'] +
+            [('MÄRKSYSTEM H50 GUL BLANK', 'st'), ('BOTTENPLATTA H50', 'st')]
+        )
+        for i, (namn, enhet) in enumerate(mark_art):
+            _art(conn, namn, kat_mark, enhet, i)
+
+        for i, (namn, enhet) in enumerate([
+            ('HÅRDAD STÅLSPETS FS-11', 'st'), ('FRÄMRE RÖR FS-21', 'st'),
+            ('FÖRLÄNGNINGSRÖR FS-31', 'st'), ('JORDLINA CCS 25 KAP', 'm'),
+            ('JORDTAGSSTÅNG ELPRESS A9522463', 'st'), ('KABELSKO KRF 25-12', 'st'),
+        ]):
+            _art(conn, namn, kat_ovrigt, enhet, i)
+
+        # Säkerställ att alla 4 mallar finns (kan saknas på extremt gamla installationer)
+        for mid, namn in [(1,'Kabelförläggning'),(2,'Anslutning i kabelskåp'),
+                          (3,'Nytt kabelskåp'),(4,'Anslutning i nätstation')]:
+            conn.execute(
+                "INSERT OR IGNORE INTO mallar (id,namn,beskrivning,sortering) VALUES (?,?,?,?)",
+                (mid, namn, '', mid))
+
+        # Seeda ny egenkontroll
+        _egk(conn)
+
+        # Uppdatera mall_inputfalt alternativ-JSON till nya kategorier
+        upd = [
+            (1, 'kabel_artikel_id',
+             '{"kategori_namn":"Kablar"}'),
+            (1, 'ror_artikel_id',
+             '{"kategori_namn":"Kabelskydd och rör","filter":"Kabelrör|Rak-böj"}'),
+            (1, 'kabelforband_artikel_id',
+             '{"kategori_namn":"Kabelskydd och rör","filter":"kabelskydd"}'),
+            (2, 'kabelskor_artikel_id',
+             '{"kategori_namn":"Anslutningsdon"}'),
+            (3, 'kabelskap_artikel_id',
+             '{"kategori_namn":"Kapsling"}'),
+            (3, 'kabelskor_artikel_id',
+             '{"kategori_namn":"Anslutningsdon"}'),
+            (4, 'kabel_artikel_id',
+             '{"kategori_namn":"Kablar"}'),
+            (4, 'kabelskor_artikel_id',
+             '{"kategori_namn":"Anslutningsdon"}'),
+        ]
+        for mid, faltnamn, alternativ in upd:
+            conn.execute(
+                "UPDATE mall_inputfalt SET alternativ=? WHERE mall_id=? AND faltnamn=?",
+                (alternativ, mid, faltnamn))
+
+        # Uppdatera etikett för mall 2/3 kabelskor → anslutningsdon
+        conn.execute(
+            "UPDATE mall_inputfalt SET etikett='Anslutningsdon' WHERE faltnamn='kabelskor_artikel_id'"
+        )
+        conn.execute(
+            "UPDATE mall_inputfalt SET etikett='Kapsling (välj ur katalog)' "
+            "WHERE mall_id=3 AND faltnamn='kabelskap_artikel_id'"
+        )
+        conn.execute(
+            "UPDATE mall_inputfalt SET hjalp='4 anslutningsdon (3L+N)' "
+            "WHERE mall_id=4 AND faltnamn='kabelskor_artikel_id'"
+        )
+
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','15')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -368,7 +560,8 @@ def _create_tables(conn):
             enhet       TEXT NOT NULL,
             beskrivning TEXT,
             sortering   INTEGER NOT NULL DEFAULT 0,
-            aktiv       INTEGER NOT NULL DEFAULT 1
+            aktiv       INTEGER NOT NULL DEFAULT 1,
+            moduler     INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS artikel_leverantor (
