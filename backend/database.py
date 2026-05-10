@@ -205,6 +205,25 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 9:
+        # v9: Ta bort schaktdjup-punkt, lägg till kj.41-punkt i Mall 1
+        conn.execute(
+            "DELETE FROM mall_egenkontroll "
+            "WHERE mall_id=1 AND punkt='Schaktdjup kontrollerat (min 0,7 m för markkabel)'"
+        )
+        # Lägg till ny punkt sist (högst sortering + 1)
+        max_sort = conn.execute(
+            "SELECT COALESCE(MAX(sortering), 0) FROM mall_egenkontroll WHERE mall_id=1"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT OR IGNORE INTO mall_egenkontroll (mall_id, punkt, sortering) VALUES (?,?,?)",
+            (1, 'Förlagt en kj. 41', max_sort + 1)
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','9')"
+        )
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""

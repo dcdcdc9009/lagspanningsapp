@@ -502,7 +502,6 @@ def fyll_egenkontroll(conn):
         # Mall 1 – Kabelförläggning
         1: [
             'Riskhantering utförd och dokumenterad',
-            'Schaktdjup kontrollerat (min 0,7 m för markkabel)',
             'Kabelns förläggning godkänd av beställaren',
             'Mantelprovning utförd med godkända värden',
             'Kabelsand utlagd i erforderlig mängd',
@@ -512,6 +511,7 @@ def fyll_egenkontroll(conn):
             'Märkning utförd enligt anvisningar',
             'Faslikhet kontrollerad',
             'Fotodokumentation utförd',
+            'Förlagt en kj. 41',
         ],
         # Mall 2 – Anslutning i kabelskåp
         2: [
