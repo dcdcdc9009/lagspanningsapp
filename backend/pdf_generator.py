@@ -144,16 +144,20 @@ def _material_tabell(rader, visa_pris=False):
 
 def _egenkontroll_tabell(egenkontroll):
     """Tabell med egenkontrollpunkter och deras status."""
-    header = ['#', 'Kontrollpunkt', 'Utförd', 'Ej rel.']
+    punkt_style = ParagraphStyle('egk_punkt', fontName='Helvetica', fontSize=8, leading=11)
+    header_style = ParagraphStyle('egk_header', fontName='Helvetica-Bold', fontSize=8,
+                                  leading=11, textColor=WHITE)
+
+    header = [Paragraph('#', header_style), Paragraph('Kontrollpunkt', header_style),
+              Paragraph('Utförd', header_style), Paragraph('Ej rel.', header_style)]
     col_w  = [8 * mm, None, 18 * mm, 18 * mm]
     col_w[1] = W - MARGIN * 2 - sum(x for x in col_w if x)
 
-    # Använd ren ASCII-text – undviker Unicode-problem med Helvetica i PDF
     rows = [header]
     for i, e in enumerate(egenkontroll, start=1):
-        utford  = 'Ja' if e.get('utford')      else ''
-        ej_rel  = 'Ja' if e.get('ej_relevant') else ''
-        rows.append([str(i), e.get('punkt', ''), utford, ej_rel])
+        utford = 'Ja' if e.get('utford')      else ''
+        ej_rel = 'Ja' if e.get('ej_relevant') else ''
+        rows.append([str(i), Paragraph(e.get('punkt', ''), punkt_style), utford, ej_rel])
 
     GREEN_LIGHT = colors.HexColor('#dcfce7')
     GRAY_LIGHT  = colors.HexColor('#f1f5f9')
@@ -166,9 +170,9 @@ def _egenkontroll_tabell(egenkontroll):
         ('FONTSIZE',   (0, 0), (-1, -1), 8),
         ('ALIGN',      (0, 0), (0, -1), 'CENTER'),
         ('ALIGN',      (2, 0), (-1, -1), 'CENTER'),
-        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('VALIGN',     (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT]),
     ]
@@ -395,7 +399,7 @@ def skapa_konstruktion_pdf(konstruktion, installningar):
     buf = BytesIO()
 
     def on_page(canvas, doc):
-        _bygg_header_footer(canvas, doc, foretag, 'Konstruktionsprotokoll')
+        _bygg_header_footer(canvas, doc, foretag, 'Byggprotokoll')
 
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
@@ -408,7 +412,7 @@ def skapa_konstruktion_pdf(konstruktion, installningar):
     story = []
 
     # Stor rubrik
-    story.append(Paragraph('Konstruktionsprotokoll', title))
+    story.append(Paragraph('Byggprotokoll', title))
     story.append(HRFlowable(width='100%', thickness=2, color=PRIMARY, spaceAfter=6))
 
     # Info-tabell
