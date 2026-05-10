@@ -1,55 +1,81 @@
-import sqlite3, os
+import sqlite3, os, threading
 from contextlib import contextmanager
-from datetime import datetime
 
 DB_PATH = os.environ.get(
     'DATABASE_PATH',
     os.path.join(os.path.dirname(__file__), '..', 'data', 'lagspanning.db')
 )
 
+# En enda delad connection per process – undviker upprepade open/close på nätverksvolym
+_conn = None
+_conn_lock = threading.Lock()
+
+
+def _open_conn():
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = DELETE")   # Ingen WAL – fungerar bättre på nätverkslagring
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA cache_size = -16000")     # 16 MB cache i minnet
+    conn.execute("PRAGMA temp_store = MEMORY")
+    conn.commit()
+    return conn
+
 
 @contextmanager
 def get_db():
-    """Context manager som öppnar, committar/rollbackar och stänger connection."""
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA cache_size = -8000")  # 8 MB cache
-    conn.execute("PRAGMA temp_store = MEMORY")
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    """Delar en persistent connection för alla requests (serialiserat med mutex)."""
+    global _conn
+    with _conn_lock:
+        if _conn is None:
+            _conn = _open_conn()
+        conn = _conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            # Nollställ vid fel så nästa request öppnar en ny connection
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _conn = None
+            raise
 
 
 def init_db():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
-    with get_db() as conn:
+
+    # Använd separat connection för init (innan den delade är skapad)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = DELETE")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    try:
         _create_tables(conn)
         conn.commit()
 
         tom = _is_tom(conn)
         if tom:
-            # Helt ny databas – fyll allt
             from seed_data import fyll_i_startdata
             fyll_i_startdata(conn)
             conn.commit()
         else:
-            # Befintlig databas – kör migrationer + nya artiklar
             _migrera(conn)
 
-        # Alltid: säkerställ egenkontroll-data för alla mallar
         from seed_data import fyll_egenkontroll
         fyll_egenkontroll(conn)
         conn.commit()
+    finally:
+        conn.close()
 
 
 def _migrera(conn):
@@ -60,7 +86,6 @@ def _migrera(conn):
     v = int(ver_rad['varde']) if ver_rad else 0
 
     if v < 2:
-        # v2: Ta bort alla priser, lägg till nya artiklar
         conn.execute("DELETE FROM artikel_leverantor")
         from seed_data import fyll_nya_artiklar
         fyll_nya_artiklar(conn)
@@ -71,12 +96,10 @@ def _migrera(conn):
         v = 2
 
     if v < 3:
-        # v3: Lägg till beskrivning-kolumn, ta bort eventuella dubletter
         try:
             conn.execute("ALTER TABLE artiklar ADD COLUMN beskrivning TEXT")
         except Exception:
-            pass  # Kolumnen finns redan
-        # Ta bort dubletter – behåll lägst id per (artikelnamn, kategori_id)
+            pass
         conn.execute("""
             DELETE FROM artiklar WHERE id NOT IN (
                 SELECT MIN(id) FROM artiklar GROUP BY artikelnamn, kategori_id
@@ -88,7 +111,6 @@ def _migrera(conn):
         conn.commit()
 
     if v < 4:
-        # v4: Ta bort mellanspänningsprodukter (PXE- och LJTM-kabelskarvar)
         for namn in ['Kabelskarv PXE-SU5-SE01', 'Kabelskarv LJTM-W-4X035-150']:
             conn.execute("DELETE FROM artiklar WHERE artikelnamn=?", (namn,))
         conn.execute(
@@ -97,8 +119,6 @@ def _migrera(conn):
         conn.commit()
 
     if v < 5:
-        # v5: Uppdatera Mall 1 – ta bort rörkopplingstyp & antal kabeländar,
-        #     byt etikett på kabelförband, lägg till filter på skyddsrör
         conn.execute(
             "DELETE FROM mall_inputfalt WHERE mall_id=1 AND faltnamn='ror_koppling_artikel_id'"
         )
@@ -121,9 +141,7 @@ def _migrera(conn):
         v = 5
 
     if v < 6:
-        # v6: Ta bort ej relevanta artiklar, lägg till R5000 per siffra/bokstav
         ta_bort = [
-            # Kabelskåp
             'ABB RK 5-fack', 'ABB RK 7-fack', 'ABB RK 10-fack', 'ABB RK 12-fack',
             'ABB Combiflex 4-fack', 'ABB Combiflex 6-fack',
             'Elmeko kabelskåp 4-fack', 'Elmeko kabelskåp 6-fack', 'Elmeko kabelskåp 8-fack',
@@ -133,14 +151,11 @@ def _migrera(conn):
             'Hager kabelskåp 4-fack', 'Hager kabelskåp 6-fack', 'Hager kabelskåp 8-fack',
             'Schneider Linergy 6-fack', 'Schneider Linergy 12-fack',
             'Pehaka kabelskåp 4-fack', 'Pehaka kabelskåp 6-fack', 'Pehaka kabelskåp 8-fack',
-            # Rör
             'Styv PVC-rör Ø50mm', 'Styv PVC-rör Ø63mm',
             'Styv PVC-rör Ø110mm', 'Styv PVC-rör Ø160mm',
             'Stålrör Ø50mm (väggenomföring)', 'Stålrör Ø100mm (väggenomföring)',
-            # Rörkopplingar
             'Rörkoppling Ø50mm', 'Rörkoppling Ø63mm', 'Rörkoppling Ø75mm',
             'Rörkoppling Ø90mm', 'Rörkoppling Ø110mm', 'Rörkoppling Ø160mm',
-            # Övrigt
             'Markeringsband röd', 'Kabelskyddsnät röd', 'Kabelskyddsplatta (grön/svart)',
             'Kabelstege plast 200mm bredd', 'Kabelstege plast 300mm bredd',
             'Kabelsand', 'Betongfundament kabelskåp', 'Silikon och fogmassa',
@@ -151,7 +166,6 @@ def _migrera(conn):
         for namn in ta_bort:
             conn.execute("DELETE FROM artiklar WHERE artikelnamn=?", (namn,))
 
-        # Lägg till R5000 per siffra och bokstav
         kat = conn.execute(
             "SELECT id FROM kategorier WHERE namn='Övrigt smågods'"
         ).fetchone()
@@ -176,7 +190,6 @@ def _migrera(conn):
         conn.commit()
 
     if v < 7:
-        # v7: Ta bort dubletter i artiklar (behåll lägst id per artikelnamn+kategori)
         conn.execute("""
             DELETE FROM artiklar WHERE id NOT IN (
                 SELECT MIN(id) FROM artiklar GROUP BY artikelnamn, kategori_id
@@ -188,7 +201,6 @@ def _migrera(conn):
         conn.commit()
 
     if v < 8:
-        # v8: Ändra Kabelskyddsband-dropdown att visa från Övrigt smågods filtrerat på kabelskydd
         conn.execute(
             "UPDATE mall_inputfalt SET alternativ=? "
             "WHERE mall_id=1 AND faltnamn='kabelforband_artikel_id'",
