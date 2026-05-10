@@ -417,6 +417,139 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
 
 
 # ----------------------------------------------------------------
+# KONSTRUKTIONER MATERIALLISTA PDF  (aggregerad för alla konstruktioner)
+# ----------------------------------------------------------------
+
+def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar):
+    """
+    konstruktioner: lista av dicts med 'typ', 'namn', 'rader'
+    installningar:  dict {nyckel: varde}
+    Returnerar bytes.
+    """
+    foretag = installningar.get('foretagsnamn',
+               installningar.get('foretag_namn', 'Oneco Networks AB'))
+    buf = BytesIO()
+
+    def on_page(canvas, doc):
+        _bygg_header_footer(canvas, doc, foretag, 'Materiallista')
+
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=28 * mm, bottomMargin=18 * mm,
+        onFirstPage=on_page, onLaterPages=on_page,
+    )
+
+    h1, title, normal, small, cell = _styles()
+    story = []
+
+    # Stor rubrik
+    story.append(Paragraph('Materiallista', title))
+    story.append(HRFlowable(width='100%', thickness=2, color=PRIMARY, spaceAfter=6))
+    story.append(Paragraph('Byggprotokoll – sammanställt material', h1))
+    story.append(HRFlowable(width='100%', thickness=1.5, color=ACCENT, spaceAfter=4))
+
+    antal_konstr = len(konstruktioner)
+    antal_med_rad = sum(1 for k in konstruktioner if k.get('rader'))
+    pi = [
+        ['Antal protokoll:', str(antal_konstr)],
+        ['Med material:',    str(antal_med_rad)],
+    ]
+    story.append(_info_tabell(pi))
+    story.append(Spacer(1, 6 * mm))
+
+    # Gruppera per typ
+    typer_ordning = ['Kabelskåp', 'Kabelförläggning', 'Nätstation', 'Övrigt']
+    grupper = {}
+    for k in konstruktioner:
+        typ = k.get('typ', 'Övrigt')
+        grupper.setdefault(typ, []).append(k)
+
+    # Sortera typer efter ordning, resterande sist
+    sorterade_typer = [t for t in typer_ordning if t in grupper]
+    sorterade_typer += [t for t in grupper if t not in sorterade_typer]
+
+    har_innehall = False
+    for typ in sorterade_typer:
+        konstr_i_grupp = grupper[typ]
+
+        # Aggregera rader per artikelnamn inom typen
+        aggregat = {}
+        for k in konstr_i_grupp:
+            for r in k.get('rader', []):
+                key = r.get('artikelnamn', '').strip()
+                if not key:
+                    continue
+                if key not in aggregat:
+                    aggregat[key] = {
+                        'artikelnamn': key,
+                        'enhet':       r.get('enhet', ''),
+                        'antal':       0.0,
+                        'konstruktioner': [],
+                    }
+                aggregat[key]['antal'] += float(r.get('antal', 0) or 0)
+                knamn = k.get('namn', '')
+                if knamn not in aggregat[key]['konstruktioner']:
+                    aggregat[key]['konstruktioner'].append(knamn)
+
+        if not aggregat:
+            continue
+
+        har_innehall = True
+        story.append(Paragraph(typ, h1))
+
+        # Rubrikrad + rader
+        header = ['Artikel', 'Enhet', 'Antal', 'Används i']
+        col_enhet  = 18 * mm
+        col_antal  = 18 * mm
+        col_anvands = 65 * mm
+        col_artikel = W - MARGIN * 2 - col_enhet - col_antal - col_anvands
+
+        col_w = [col_artikel, col_enhet, col_antal, col_anvands]
+        rows = [header]
+
+        punkt_s = ParagraphStyle('mat_punkt', fontName='Helvetica', fontSize=8, leading=10)
+        anvands_s = ParagraphStyle('mat_anvands', fontName='Helvetica', fontSize=7,
+                                   leading=9, textColor=GRAY)
+        header_s  = ParagraphStyle('mat_hdr', fontName='Helvetica-Bold', fontSize=8,
+                                   leading=10, textColor=WHITE)
+
+        rows = [[Paragraph(h, header_s) for h in header]]
+        for art in sorted(aggregat.values(), key=lambda x: x['artikelnamn']):
+            anvands_text = ', '.join(art['konstruktioner'][:5])
+            if len(art['konstruktioner']) > 5:
+                anvands_text += f" +{len(art['konstruktioner'])-5} till"
+            rows.append([
+                Paragraph(art['artikelnamn'], punkt_s),
+                art['enhet'],
+                f"{art['antal']:g}",
+                Paragraph(anvands_text, anvands_s),
+            ])
+
+        t = Table(rows, colWidths=col_w, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, 0), PRIMARY),
+            ('TEXTCOLOR',     (0, 0), (-1, 0), WHITE),
+            ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0, 0), (-1, -1), 8),
+            ('ALIGN',         (2, 0), (2, -1), 'RIGHT'),
+            ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING',    (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('GRID',          (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
+            ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, LIGHT]),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 6 * mm))
+
+    if not har_innehall:
+        story.append(Paragraph('Inga materialrader finns för några konstruktioner.', small))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+# ----------------------------------------------------------------
 # KONSTRUKTIONSPROTOKOLL PDF
 # ----------------------------------------------------------------
 

@@ -1059,6 +1059,20 @@ def konstruktion_pdf(kid):
                     headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
 
 
+@app.get('/api/konstruktioner/materiallista/pdf')
+def konstruktioner_materiallista_pdf():
+    from pdf_generator import skapa_konstruktioner_materiallista_pdf
+    with get_db() as conn:
+        inst = {r['nyckel']: r['varde'] for r in
+                conn.execute("SELECT nyckel,varde FROM installningar").fetchall()}
+        ids = [r[0] for r in conn.execute(
+            "SELECT id FROM konstruktioner ORDER BY typ, namn").fetchall()]
+        konstruktioner = [_hamta_konstruktion_komplett(conn, kid) for kid in ids]
+    pdf = skapa_konstruktioner_materiallista_pdf(konstruktioner, inst)
+    return Response(pdf, mimetype='application/pdf',
+                    headers={'Content-Disposition': 'attachment; filename="konstruktioner_materiallista.pdf"'})
+
+
 # ============================================================
 # START
 # ============================================================

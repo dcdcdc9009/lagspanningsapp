@@ -960,7 +960,10 @@ async function renderKonstruktioner(app) {
   app.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Konstruktioner</h1>
-      <button class="btn btn-navy" id="btnNyKonstr">+ Ny konstruktion</button>
+      <div class="flex gap-2">
+        <a class="btn btn-outline" href="/api/konstruktioner/materiallista/pdf" target="_blank">⬇ Materiallista</a>
+        <button class="btn btn-navy" id="btnNyKonstr">+ Ny konstruktion</button>
+      </div>
     </div>
     <div class="filter-bar">
       <input type="search" class="form-control" id="sokKonstr" placeholder="Sök namn, byggnr, fri ID…">
