@@ -68,13 +68,17 @@ def _styles():
     h1 = ParagraphStyle('h1', parent=base['Normal'],
                          fontSize=12, textColor=PRIMARY, leading=16,
                          spaceAfter=4, fontName='Helvetica-Bold')
+    title = ParagraphStyle('title', parent=base['Normal'],
+                            fontSize=22, textColor=PRIMARY, leading=28,
+                            spaceAfter=2, fontName='Helvetica-Bold',
+                            alignment=TA_LEFT)
     normal = ParagraphStyle('norm', parent=base['Normal'],
                              fontSize=9, leading=12)
     small = ParagraphStyle('small', parent=base['Normal'],
                             fontSize=8, textColor=GRAY, leading=11)
     cell = ParagraphStyle('cell', parent=base['Normal'],
                            fontSize=8, leading=10)
-    return h1, normal, small, cell
+    return h1, title, normal, small, cell
 
 
 def _info_tabell(data, col_w=None):
@@ -205,7 +209,7 @@ def skapa_byggprotokoll_pdf(protokoll, projekt, installningar):
         onFirstPage=on_page, onLaterPages=on_page,
     )
 
-    h1, normal, small, cell = _styles()
+    h1, title, normal, small, cell = _styles()
     story = []
 
     # Projektrubrik
@@ -313,8 +317,12 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
         onFirstPage=on_page, onLaterPages=on_page,
     )
 
-    h1, normal, small, cell = _styles()
+    h1, title, normal, small, cell = _styles()
     story = []
+
+    # Stor rubrik "Materiallista"
+    story.append(Paragraph('Materiallista', title))
+    story.append(HRFlowable(width='100%', thickness=2, color=PRIMARY, spaceAfter=6))
 
     # Projektrubrik
     story.append(Paragraph(
