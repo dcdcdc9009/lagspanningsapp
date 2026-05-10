@@ -1,6 +1,7 @@
 """PDF-generering för byggprotokoll och materiallista. Tema: Oneco Networks AB."""
 from io import BytesIO
 from datetime import datetime
+import os
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -12,6 +13,20 @@ from reportlab.platypus import (
 from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate
 from reportlab.platypus.frames import Frame
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+
+# Logotyp
+_LOGO_PATH = os.path.join(os.path.dirname(__file__), 'static', 'oneco_logo.svg')
+_logo_drawing = None
+
+def _get_logo():
+    global _logo_drawing
+    if _logo_drawing is None:
+        try:
+            from svglib.svglib import svg2rlg
+            _logo_drawing = svg2rlg(_LOGO_PATH)
+        except Exception:
+            _logo_drawing = False
+    return _logo_drawing if _logo_drawing else None
 
 # Oneco Networks AB – färgpalett
 PRIMARY  = colors.HexColor('#2e1065')   # Mörk lila (nav/header)
@@ -40,11 +55,28 @@ def _bygg_header_footer(canvas, doc, foretag, titel):
     canvas.setFillColor(ACCENT)
     canvas.rect(0, H - 23 * mm, W, 1 * mm, fill=1, stroke=0)
 
+    # Titel (vänster)
     canvas.setFillColor(WHITE)
     canvas.setFont('Helvetica-Bold', 13)
     canvas.drawString(MARGIN, H - 14 * mm, titel)
-    canvas.setFont('Helvetica', 9)
-    canvas.drawRightString(W - MARGIN, H - 14 * mm, foretag)
+
+    # Logotyp (höger i headern) – 13 mm hög, högerjusterad
+    logo = _get_logo()
+    if logo:
+        from reportlab.graphics import renderPDF
+        logo_h = 13 * mm
+        scale  = logo_h / logo.height
+        logo_w = logo.width * scale
+        x = W - MARGIN - logo_w
+        y = H - 22 * mm + (22 * mm - logo_h) / 2   # vertikalt centrerad i bannern
+        canvas.translate(x, y)
+        canvas.scale(scale, scale)
+        renderPDF.draw(logo, canvas, 0, 0)
+        canvas.scale(1 / scale, 1 / scale)
+        canvas.translate(-x, -y)
+    else:
+        canvas.setFont('Helvetica', 9)
+        canvas.drawRightString(W - MARGIN, H - 14 * mm, foretag)
 
     # Sidfot
     canvas.setFillColor(LIGHT)
