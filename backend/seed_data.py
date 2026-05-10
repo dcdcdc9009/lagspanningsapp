@@ -122,7 +122,8 @@ def fyll_i_startdata(conn):
     for i, namn in enumerate([
         'Säkringslastfrånskiljare SLF160P', 'Säkringslastfrånskiljare SLF250P',
         'Säkringslastfrånskiljare SLF400P', 'Säkringslastfrånskiljare SLF630P',
-        'Säkringslastfrånskiljare SLD 00/000 500V', 'Säkringslastfrånskiljare SLE 1/2 690V',
+        'Säkringslastfrånskiljare SLD 00 500V', 'Säkringslastfrånskiljare SLD 000 500V',
+        'Säkringslastfrånskiljare SLE 1 690V', 'Säkringslastfrånskiljare SLE 2 690V',
     ]):
         _art(conn, namn, kat_sak, 'st', 20 + i)
 

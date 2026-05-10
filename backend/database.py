@@ -264,6 +264,39 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 12:
+        # v12: Dela upp SLD 00/000 och SLE 1/2 i separata artiklar
+        kat = conn.execute(
+            "SELECT id FROM kategorier WHERE namn='Säkringslastfrånskiljare'"
+        ).fetchone()
+        if kat:
+            kat_id = kat['id']
+            # Ta bort de ihopslagna artiklarna
+            for gamla in ['Säkringslastfrånskiljare SLD 00/000 500V',
+                          'Säkringslastfrånskiljare SLE 1/2 690V']:
+                conn.execute("DELETE FROM artiklar WHERE artikelnamn=? AND kategori_id=?",
+                             (gamla, kat_id))
+            # Lägg till separata artiklar
+            max_sort = conn.execute(
+                "SELECT COALESCE(MAX(sortering), 20) FROM artiklar WHERE kategori_id=?",
+                (kat_id,)
+            ).fetchone()[0]
+            for i, namn in enumerate([
+                'Säkringslastfrånskiljare SLD 00 500V',
+                'Säkringslastfrånskiljare SLD 000 500V',
+                'Säkringslastfrånskiljare SLE 1 690V',
+                'Säkringslastfrånskiljare SLE 2 690V',
+            ]):
+                conn.execute(
+                    "INSERT OR IGNORE INTO artiklar "
+                    "(artikelnamn, kategori_id, enhet, sortering) VALUES (?,?,?,?)",
+                    (namn, kat_id, 'st', max_sort + 1 + i)
+                )
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','12')"
+        )
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
