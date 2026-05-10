@@ -620,6 +620,11 @@ async function byggInputfalt(falt, existing = {}) {
 // MODAL: VISA/REDIGERA PROTOKOLL
 // ----------------------------------------------------------------
 async function modalVisaProtokoll(bpid, projektId, protokollLista, onDone) {
+  // Ladda kategorier i förväg (behövs för inline-formuläret)
+  if (!S.kategorier.length) {
+    try { S.kategorier = (await api('GET', '/kategorier')).kategorier || []; } catch {}
+  }
+
   let bp;
   try { bp = (await api('GET', `/byggprotokoll/${bpid}`)).byggprotokoll; }
   catch (e) { toast(e.message, 'error'); return; }
@@ -679,6 +684,35 @@ async function modalVisaProtokoll(bpid, projektId, protokollLista, onDone) {
      <div class="mt-2 flex gap-1 items-center">
        <button class="btn btn-outline btn-sm" id="btnLaggTillRad">+ Lägg till rad</button>
      </div>
+     <div id="inlineRadForm" style="display:none;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;padding:12px;margin-top:8px">
+       <div class="form-row cols-2" style="margin-bottom:6px">
+         <div class="form-group" style="margin:0">
+           <label class="form-label">Kategori</label>
+           <select id="inlineKat" class="form-control">
+             <option value="">– alla –</option>
+             ${S.kategorier.map(k => `<option value="${k.id}">${escHtml(k.namn)}</option>`).join('')}
+           </select>
+         </div>
+         <div class="form-group" style="margin:0">
+           <label class="form-label">Artikel</label>
+           <select id="inlineArt" class="form-control"><option value="">Laddar...</option></select>
+         </div>
+       </div>
+       <div class="form-row cols-2" style="margin-bottom:8px">
+         <div class="form-group" style="margin:0">
+           <label class="form-label">Antal</label>
+           <input type="number" id="inlineAntal" class="form-control" value="1" min="0" step="any">
+         </div>
+         <div class="form-group" style="margin:0">
+           <label class="form-label">Anteckning (valfri)</label>
+           <input type="text" id="inlineAnt" class="form-control" placeholder="">
+         </div>
+       </div>
+       <div class="flex gap-1">
+         <button class="btn btn-success btn-sm" id="inlineLeggTill">✓ Lägg till</button>
+         <button class="btn btn-outline btn-sm" id="inlineStang">Stäng</button>
+       </div>
+     </div>
      ${egkHtml}
      <div class="form-group mt-2">
        <label class="form-label">Anteckning</label>
@@ -718,7 +752,58 @@ async function modalVisaProtokoll(bpid, projektId, protokollLista, onDone) {
       </tr>`).join('');
   }
 
-  document.getElementById('btnLaggTillRad').addEventListener('click', () => modalLaggTillRad(rader, renderRadBody));
+  // Inline "Lägg till rad"-formulär
+  async function laddaInlineArtiklar() {
+    const katId = document.getElementById('inlineKat').value;
+    const sel = document.getElementById('inlineArt');
+    sel.innerHTML = '<option value="">Laddar...</option>';
+    try {
+      const url = katId ? `/artiklar?kategori_id=${katId}` : '/artiklar';
+      const arts = (await api('GET', url)).artiklar || [];
+      sel.innerHTML = '<option value="">– välj artikel –</option>' +
+        arts.map(a => `<option value="${a.id}" data-enhet="${escHtml(a.enhet||'')}" data-kat="${escHtml(a.kategori_namn||'')}">
+          ${escHtml(a.artikelnamn)}</option>`).join('');
+    } catch { sel.innerHTML = '<option value="">Fel vid laddning</option>'; }
+  }
+
+  document.getElementById('btnLaggTillRad').addEventListener('click', async () => {
+    const form = document.getElementById('inlineRadForm');
+    const visible = form.style.display !== 'none';
+    form.style.display = visible ? 'none' : '';
+    if (!visible) await laddaInlineArtiklar();
+  });
+
+  document.getElementById('inlineStang').addEventListener('click', () => {
+    document.getElementById('inlineRadForm').style.display = 'none';
+  });
+
+  document.getElementById('inlineKat').addEventListener('change', laddaInlineArtiklar);
+
+  document.getElementById('inlineLeggTill').addEventListener('click', () => {
+    const artSel = document.getElementById('inlineArt');
+    const artId  = parseInt(artSel.value);
+    if (!artId) { toast('Välj en artikel', 'error'); return; }
+    const opt   = artSel.options[artSel.selectedIndex];
+    const antal = parseFloat(document.getElementById('inlineAntal').value) || 1;
+    const ant   = document.getElementById('inlineAnt').value.trim();
+    rader.push({
+      artikel_id:      artId,
+      artikelnamn:     opt.textContent.trim(),
+      kategori:        opt.dataset.kat  || '',
+      enhet:           opt.dataset.enhet || '',
+      antal,
+      a_pris:          null,
+      leverantor_id:   null,
+      leverantor_namn: null,
+      artikelnummer:   null,
+      anteckning:      ant,
+      manuell:         1,
+    });
+    renderRadBody();
+    document.getElementById('inlineAntal').value = '1';
+    document.getElementById('inlineAnt').value   = '';
+    toast('Rad tillagd ✓', 'success');
+  });
 
   // Egenkontroll interaktivitet
   const egkListEl = document.getElementById('egkList');
