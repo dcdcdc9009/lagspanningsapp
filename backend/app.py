@@ -1,7 +1,7 @@
 import os, hashlib, json
 from functools import wraps
 from flask import Flask, jsonify, request, session, send_from_directory, Response
-from database import get_db, init_db
+from database import get_db, init_db, DB_PATH
 from models import rows_to_list, row_to_dict, nu, nasta_projektnummer
 from mall_berakning import berakna
 
@@ -42,6 +42,28 @@ def admin_required(f):
 @app.get('/')
 def index():
     return send_from_directory(FRONTEND_DIR, 'index.html')
+
+
+@app.get('/api/debug')
+def debug_info():
+    """Visar vilken databasfil appen använder – för felsökning."""
+    info = {
+        'db_path': DB_PATH,
+        'db_abs_path': os.path.abspath(DB_PATH),
+        'db_exists': os.path.isfile(DB_PATH),
+        'db_size_bytes': os.path.getsize(DB_PATH) if os.path.isfile(DB_PATH) else 0,
+        'db_dir_exists': os.path.isdir(os.path.dirname(DB_PATH)) if os.path.dirname(DB_PATH) else True,
+        'DATABASE_PATH_env': os.environ.get('DATABASE_PATH', '(ej satt)'),
+    }
+    try:
+        with get_db() as conn:
+            info['beredare_antal'] = conn.execute("SELECT COUNT(*) FROM beredare").fetchone()[0]
+            info['projekt_antal'] = conn.execute("SELECT COUNT(*) FROM projekt").fetchone()[0]
+            info['db_skrivbar'] = True
+    except Exception as e:
+        info['db_skrivbar'] = False
+        info['db_fel'] = str(e)
+    return jsonify(info)
 
 
 # ============================================================

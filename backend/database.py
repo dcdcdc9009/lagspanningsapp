@@ -1,4 +1,5 @@
 import sqlite3, os
+from contextlib import contextmanager
 from datetime import datetime
 
 DB_PATH = os.environ.get(
@@ -7,7 +8,9 @@ DB_PATH = os.environ.get(
 )
 
 
+@contextmanager
 def get_db():
+    """Context manager som öppnar, committar/rollbackar och stänger connection."""
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -15,13 +18,21 @@ def get_db():
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA cache_size = -8000")  # 8 MB cache
     conn.execute("PRAGMA temp_store = MEMORY")
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = get_db()
-    try:
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    with get_db() as conn:
         _create_tables(conn)
         conn.commit()
 
@@ -39,8 +50,6 @@ def init_db():
         from seed_data import fyll_egenkontroll
         fyll_egenkontroll(conn)
         conn.commit()
-    finally:
-        conn.close()
 
 
 def _migrera(conn):
