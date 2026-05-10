@@ -104,8 +104,9 @@ def _mall1(inp, conn):
 
     # Kabelskyddsband
     forband = _hämta_id(conn, inp.get('kabelforband_artikel_id'))
-    if forband:
-        rader.append(_rad(forband, 1))
+    forband_m = _inp_float(inp, 'kabelforband_meter')
+    if forband and forband_m > 0:
+        rader.append(_rad(forband, forband_m, 'Kabelskyddsband'))
 
     return rader
 

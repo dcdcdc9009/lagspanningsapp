@@ -224,6 +224,26 @@ def _migrera(conn):
         )
         conn.commit()
 
+    if v < 10:
+        # v10: Lägg till meterfält för kabelskyddsband i Mall 1
+        conn.execute("""
+            INSERT OR IGNORE INTO mall_inputfalt
+                (mall_id, faltnamn, etikett, typ, alternativ, hjalp, obligatorisk, sortering)
+            VALUES (1, 'kabelforband_meter', 'Kabelskyddsband (m)', 'number',
+                    '{"min":0}', 'Meter kabelskyddsband', 0, 6)
+        """)
+        # Flytta inkl_kabelsand och inkl_markeringsband ett steg ned
+        conn.execute(
+            "UPDATE mall_inputfalt SET sortering=7 WHERE mall_id=1 AND faltnamn='inkl_kabelsand'"
+        )
+        conn.execute(
+            "UPDATE mall_inputfalt SET sortering=8 WHERE mall_id=1 AND faltnamn='inkl_markeringsband'"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','10')"
+        )
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""

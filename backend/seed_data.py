@@ -331,10 +331,12 @@ def fyll_i_startdata(conn):
         ('kabelforband_artikel_id','Kabelskyddsband',               'artikel_select',
          '{"kategori_namn":"\\u00d6vrigt sm\\u00e5gods","filter":"kabelskydd"}',
          'Välj kabelskyddsband',                                     0, 5),
+        ('kabelforband_meter',     'Kabelskyddsband (m)',            'number',
+         '{"min":0}',                                                'Meter kabelskyddsband',   0, 6),
         ('inkl_kabelsand',         'Inkl. kabelsand',                'checkbox',
-         '{"default":true}',                                         'Ca 1 ton per 100m schakt',0, 6),
+         '{"default":true}',                                         'Ca 1 ton per 100m schakt',0, 7),
         ('inkl_markeringsband',    'Inkl. markeringsband',           'checkbox',
-         '{"default":true}',                                         'Gul/svart varningsband',  0, 7),
+         '{"default":true}',                                         'Gul/svart varningsband',  0, 8),
     ])
 
     # ----------------------------------------------------------------
