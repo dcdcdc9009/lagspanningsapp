@@ -206,9 +206,9 @@ def _migrera(conn):
         conn.commit()
 
     if v < 9:
-        # v9: Ta bort schaktdjup-punkt, lägg till kj.41-punkt i Mall 1
+        # v9: Korta schaktdjup-texten, lägg till kj.41-punkt i Mall 1
         conn.execute(
-            "DELETE FROM mall_egenkontroll "
+            "UPDATE mall_egenkontroll SET punkt='Schaktdjup kontrollerat' "
             "WHERE mall_id=1 AND punkt='Schaktdjup kontrollerat (min 0,7 m för markkabel)'"
         )
         # Lägg till ny punkt sist (högst sortering + 1)
