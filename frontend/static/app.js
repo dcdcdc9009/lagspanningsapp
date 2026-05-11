@@ -2095,21 +2095,28 @@ function visaLoginSkarm() {
 
   document.getElementById('loginForm').addEventListener('submit', async e => {
     e.preventDefault();
-    const pw  = document.getElementById('loginPw').value;
-    const fel = document.getElementById('loginFel');
-    fel.classList.add('hidden');
+    const pw      = document.getElementById('loginPw').value;
+    const felDiv  = document.getElementById('loginFel');
+    const btn     = e.target.querySelector('button[type="submit"]');
+    felDiv.classList.add('hidden');
+    btn.disabled = true;
+    btn.textContent = 'Loggar in…';
     try {
-      await fetch('/api/auth/login', {
+      const r = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ losenord: pw }),
-      }).then(r => { if (!r.ok) throw new Error(); });
+      });
+      if (!r.ok) throw new Error('fel');
       document.querySelector('.topnav').style.display = '';
       await boot();
     } catch {
-      fel.classList.remove('hidden');
+      felDiv.classList.remove('hidden');
       document.getElementById('loginPw').value = '';
       document.getElementById('loginPw').focus();
+      btn.disabled = false;
+      btn.textContent = 'Logga in';
     }
   });
 }
@@ -2121,8 +2128,9 @@ async function boot() {
   // Kolla app-inloggning
   let loggedIn = false;
   try {
-    const s = await fetch('/api/auth/status').then(r => r.json());
-    loggedIn = s.loggedin;
+    const r = await fetch('/api/auth/status', { credentials: 'same-origin' });
+    const s = await r.json();
+    loggedIn = !!s.loggedin;
   } catch {}
 
   if (!loggedIn) { visaLoginSkarm(); return; }

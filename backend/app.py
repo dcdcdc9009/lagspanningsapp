@@ -12,6 +12,10 @@ app = Flask(__name__,
             static_url_path='/static')
 app.secret_key = os.environ.get('SECRET_KEY', 'lagspanning-dev-key-byt-i-prod')
 app.config['JSON_AS_ASCII'] = False
+# Sessionskakor – fungerar på Railway (HTTPS) och lokalt (HTTP)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('RAILWAY_ENVIRONMENT') is not None
 
 
 # ============================================================
