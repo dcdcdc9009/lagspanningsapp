@@ -705,3 +705,92 @@ hr.divider { border: none; border-top: 1px solid var(--gray-200); margin: 16px 0
   .modal-box { max-width: 100%; margin: 8px; }
   .egk-checkboxes { flex-direction: column; gap: 4px; }
 }
+
+/* ================================================================
+   INLOGGNINGSSKÄRM
+   ================================================================ */
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--navy-d) 0%, #4c1d95 60%, var(--blue) 100%);
+  padding: 24px;
+}
+
+.login-card {
+  background: var(--white);
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.35);
+  padding: 40px 44px;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.login-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.login-logo-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--navy-d);
+  box-shadow: 0 0 0 3px var(--blue-l);
+}
+
+.login-logo-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy-d);
+  letter-spacing: .3px;
+}
+
+.login-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--navy-d);
+  margin-bottom: 6px;
+}
+
+.login-sub {
+  font-size: 13px;
+  color: var(--gray-600);
+  margin-bottom: 28px;
+}
+
+.login-form { display: flex; flex-direction: column; gap: 12px; }
+
+.login-input {
+  font-size: 15px;
+  padding: 11px 14px;
+  text-align: center;
+  letter-spacing: 2px;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 11px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: var(--radius);
+}
+
+.login-fel {
+  font-size: 13px;
+  color: var(--red);
+  background: var(--red-l);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
+
+.btn-logout {
+  font-size: 12px;
+  padding: 4px 10px;
+  margin-right: 8px;
+}

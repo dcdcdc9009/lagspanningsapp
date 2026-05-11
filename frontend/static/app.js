@@ -2068,10 +2068,80 @@ document.querySelectorAll('[data-view]').forEach(el => {
 });
 
 // ----------------------------------------------------------------
+// LOGIN
+// ----------------------------------------------------------------
+function visaLoginSkarm() {
+  document.querySelector('.topnav').style.display = 'none';
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-logo">
+          <div class="login-logo-dot"></div>
+          <span class="login-logo-text">Oneco Networks AB</span>
+        </div>
+        <h1 class="login-title">Lågspänningsberedning</h1>
+        <p class="login-sub">Ange lösenord för att fortsätta</p>
+        <form id="loginForm" class="login-form">
+          <div class="form-group">
+            <input type="password" id="loginPw" class="form-control login-input"
+                   placeholder="Lösenord" autofocus required>
+          </div>
+          <div id="loginFel" class="login-fel hidden">Fel lösenord. Försök igen.</div>
+          <button type="submit" class="btn btn-navy login-btn">Logga in</button>
+        </form>
+      </div>
+    </div>`;
+
+  document.getElementById('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const pw  = document.getElementById('loginPw').value;
+    const fel = document.getElementById('loginFel');
+    fel.classList.add('hidden');
+    try {
+      await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ losenord: pw }),
+      }).then(r => { if (!r.ok) throw new Error(); });
+      document.querySelector('.topnav').style.display = '';
+      await boot();
+    } catch {
+      fel.classList.remove('hidden');
+      document.getElementById('loginPw').value = '';
+      document.getElementById('loginPw').focus();
+    }
+  });
+}
+
+// ----------------------------------------------------------------
 // BOOT
 // ----------------------------------------------------------------
-(async function boot() {
-  // Check if already logged in
+async function boot() {
+  // Kolla app-inloggning
+  let loggedIn = false;
+  try {
+    const s = await fetch('/api/auth/status').then(r => r.json());
+    loggedIn = s.loggedin;
+  } catch {}
+
+  if (!loggedIn) { visaLoginSkarm(); return; }
+
+  // Visa navbar och logga ut-knapp
+  document.querySelector('.topnav').style.display = '';
+  const navRight = document.getElementById('navRight');
+  if (navRight && !navRight.querySelector('.btn-logout')) {
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'btn btn-outline btn-sm btn-logout';
+    logoutBtn.textContent = 'Logga ut';
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      visaLoginSkarm();
+    });
+    navRight.prepend(logoutBtn);
+  }
+
+  // Kolla admin-session
   try {
     await api('GET', '/admin/check');
     S.admin = true;
@@ -2081,4 +2151,6 @@ document.querySelectorAll('[data-view]').forEach(el => {
   const hash = location.hash.replace('#', '');
   const [view, ...rest] = hash.split('/');
   navigate(view || 'projekt', { id: rest[0] });
-})();
+}
+
+boot();

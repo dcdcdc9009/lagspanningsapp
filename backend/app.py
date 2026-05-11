@@ -35,6 +35,20 @@ def admin_required(f):
     return inner
 
 
+# Rutter som är tillgängliga utan app-inloggning
+_OPEN_ROUTES = {'/api/auth/login', '/api/auth/status', '/api/auth/logout',
+                '/api/admin/login', '/api/debug'}
+
+@app.before_request
+def kraver_inloggning():
+    if not request.path.startswith('/api/'):
+        return  # HTML/CSS/JS serveras alltid
+    if request.path in _OPEN_ROUTES:
+        return
+    if not session.get('loggedin'):
+        return fel('Inloggning krävs.', 401)
+
+
 # ============================================================
 # FRONTEND
 # ============================================================
@@ -85,6 +99,47 @@ def admin_login():
 @app.post('/api/admin/logout')
 def admin_logout():
     session.pop('admin', None)
+    return jsonify({'ok': True})
+
+
+# ============================================================
+# APP – AUTH (lösenordsskydd)
+# ============================================================
+
+def _app_losenord():
+    """Hämtar app-lösenordet: ENV > installningar > standardvärde."""
+    env_pw = os.environ.get('APP_PASSWORD', '').strip()
+    if env_pw:
+        return env_pw
+    try:
+        with get_db() as conn:
+            rad = conn.execute(
+                "SELECT varde FROM installningar WHERE nyckel='app_losenord'").fetchone()
+            if rad and rad['varde']:
+                return rad['varde']
+    except Exception:
+        pass
+    return 'oneco'   # standardlösenord om inget är satt
+
+
+@app.get('/api/auth/status')
+def auth_status():
+    return jsonify({'loggedin': bool(session.get('loggedin'))})
+
+
+@app.post('/api/auth/login')
+def auth_login():
+    d  = request.get_json(silent=True) or {}
+    pw = (d.get('losenord') or '').strip()
+    if pw == _app_losenord():
+        session['loggedin'] = True
+        return jsonify({'ok': True})
+    return fel('Fel lösenord.', 401)
+
+
+@app.post('/api/auth/logout')
+def auth_logout():
+    session.clear()
     return jsonify({'ok': True})
 
 
