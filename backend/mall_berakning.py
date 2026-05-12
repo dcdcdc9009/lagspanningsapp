@@ -183,10 +183,4 @@ def _mall4(inp, conn):
     if kabelskor:
         rader.append(_rad(kabelskor, 4, '3L + N'))
 
-    # Kabelgenomföring (vägg) – direkt från användarens val
-    from seed_data import STD_GENOMFORING_STOR
-    art = _hämta(conn, STD_GENOMFORING_STOR)
-    if art:
-        rader.append(_rad(art, n_genomforingar))
-
     return rader

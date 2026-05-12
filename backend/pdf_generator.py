@@ -1,4 +1,4 @@
-"""PDF-generering för byggprotokoll och materiallista. Tema: Oneco Networks AB."""
+"""PDF-generering för byggprotokoll och materiallista."""
 from io import BytesIO
 from datetime import datetime
 import os
@@ -10,11 +10,9 @@ from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph,
     Spacer, HRFlowable, KeepTogether
 )
-from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate
-from reportlab.platypus.frames import Frame
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
-# Logotyp
+# ── Logotyp ──────────────────────────────────────────────────────────────────
 _LOGO_PATH = os.path.join(os.path.dirname(__file__), 'static', 'oneco_logo.svg')
 _logo_drawing = None
 
@@ -27,8 +25,6 @@ def _get_logo():
             if drawing and drawing.width and drawing.height:
                 _logo_drawing = drawing
             else:
-                import sys
-                print(f"[PDF] Logo laddades men är tom: {drawing}", file=sys.stderr)
                 _logo_drawing = False
         except Exception as exc:
             import sys
@@ -36,110 +32,164 @@ def _get_logo():
             _logo_drawing = False
     return _logo_drawing if _logo_drawing else None
 
-# Oneco Networks AB – färgpalett
-PRIMARY  = colors.HexColor('#2e1065')   # Mörk lila (nav/header)
-ACCENT   = colors.HexColor('#7c3aed')   # Medium lila (accenter)
-LIGHT    = colors.HexColor('#ede9fe')   # Ljus lavendel (alternativa rader)
-GRAY     = colors.HexColor('#52525b')   # Neutral grå
-WHITE    = colors.white
-BLACK    = colors.black
-GREEN    = colors.HexColor('#16a34a')
-RED      = colors.HexColor('#dc2626')
+# ── Färgpalett (projektpärm-tema) ────────────────────────────────────────────
+PURPLE      = colors.HexColor('#5c2d90')   # Sektionsrubriker
+PURPLE_DARK = colors.HexColor('#331751')   # Sidhuvud
+PURPLE_MID  = colors.HexColor('#783cb6')   # Accentlinje / detaljer
+PURPLE_LITE = colors.HexColor('#E8E3F5')   # Panelkant
+PURPLE_PALE = colors.HexColor('#F5F2FA')   # Panelbakgrund
+LIGHT_GRAY  = colors.HexColor('#F1F1F3')   # Tabellrader (alternativt)
+MED_GRAY    = colors.HexColor('#C7C7CC')   # Kanter
+DARK        = colors.HexColor('#19191E')   # Mörk text
+GRAY        = colors.HexColor('#6B707A')   # Grå text (sidfot)
+WHITE       = colors.white
+GREEN       = colors.HexColor('#16a34a')
+GREEN_LIGHT = colors.HexColor('#dcfce7')
+GRAY_LIGHT  = colors.HexColor('#f1f5f9')
 
 W, H = A4
 MARGIN = 20 * mm
 
 
-# ----------------------------------------------------------------
-# SIDHUVUD / SIDFOT canvas
-# ----------------------------------------------------------------
+# ── Sidhuvud / Sidfot ────────────────────────────────────────────────────────
 
 def _bygg_header_footer(canvas, doc, foretag, titel):
     canvas.saveState()
-    # Toppbanderoll – mörk lila
-    canvas.setFillColor(PRIMARY)
-    canvas.rect(0, H - 22 * mm, W, 22 * mm, fill=1, stroke=0)
-    # Accent-linje under bannern
-    canvas.setFillColor(ACCENT)
-    canvas.rect(0, H - 23 * mm, W, 1 * mm, fill=1, stroke=0)
 
-    # Titel (vänster)
+    # Lila topaccent (tunn rand längst upp, som projektpärmen)
+    canvas.setFillColor(PURPLE_MID)
+    canvas.rect(0, H - 3, W, 3, fill=1, stroke=0)
+
+    # Mörklila huvudband
+    canvas.setFillColor(PURPLE_DARK)
+    canvas.rect(0, H - 22 * mm, W, 22 * mm - 3, fill=1, stroke=0)
+
+    # Dokumenttitel (vänster, vit)
     canvas.setFillColor(WHITE)
-    canvas.setFont('Helvetica-Bold', 13)
+    canvas.setFont('Helvetica-Bold', 14)
     canvas.drawString(MARGIN, H - 14 * mm, titel)
 
-    # Logotyp (höger i headern) – 13 mm hög, högerjusterad
+    # Höger sida: logotyp + företagsnamn
     logo = _get_logo()
+    right_x = W - MARGIN
     if logo:
         from reportlab.graphics import renderPDF
-        logo_h = 13 * mm
+        logo_h = 10 * mm
         scale  = logo_h / logo.height
         logo_w = logo.width * scale
-        x = W - MARGIN - logo_w
-        y = H - 22 * mm + (22 * mm - logo_h) / 2   # vertikalt centrerad i bannern
-        canvas.translate(x, y)
+        lx = right_x - logo_w
+        ly = H - 22 * mm + 8 * mm
+        canvas.translate(lx, ly)
         canvas.scale(scale, scale)
         renderPDF.draw(logo, canvas, 0, 0)
         canvas.scale(1 / scale, 1 / scale)
-        canvas.translate(-x, -y)
-    else:
-        canvas.setFont('Helvetica', 9)
-        canvas.drawRightString(W - MARGIN, H - 14 * mm, foretag)
+        canvas.translate(-lx, -ly)
 
-    # Sidfot
-    canvas.setFillColor(LIGHT)
-    canvas.rect(0, 0, W, 12 * mm, fill=1, stroke=0)
-    canvas.setFillColor(ACCENT)
-    canvas.rect(0, 12 * mm, W, 0.5 * mm, fill=1, stroke=0)
+    # Företagsnamn alltid synligt (under logotyp eller ensamt)
+    canvas.setFillColor(WHITE)
+    canvas.setFont('Helvetica-Bold' if not logo else 'Helvetica', 8 if logo else 10)
+    canvas.drawRightString(right_x, H - 22 * mm + 3 * mm, foretag)
+
+    # Sidfot – tunn linje + grå text (som projektpärmen)
+    fy = 18
+    canvas.setStrokeColor(MED_GRAY)
+    canvas.setLineWidth(0.6)
+    canvas.line(MARGIN, fy + 10, W - MARGIN, fy + 10)
     canvas.setFillColor(GRAY)
-    canvas.setFont('Helvetica', 8)
-    canvas.drawString(MARGIN, 4 * mm, f"Utskrivet {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    canvas.drawCentredString(W / 2, 4 * mm, foretag)
-    canvas.drawRightString(W - MARGIN, 4 * mm, f"Sida {doc.page}")
+    canvas.setFont('Helvetica', 7.5)
+    canvas.drawString(MARGIN, fy, f"Utskrivet {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    canvas.drawRightString(W - MARGIN, fy, f"{titel}  |  Sida {doc.page}")
+
     canvas.restoreState()
 
 
-# ----------------------------------------------------------------
-# HJÄLPFUNKTIONER
-# ----------------------------------------------------------------
+# ── Stilar ───────────────────────────────────────────────────────────────────
 
 def _styles():
     base = getSampleStyleSheet()
-    h1 = ParagraphStyle('h1', parent=base['Normal'],
-                         fontSize=12, textColor=PRIMARY, leading=16,
-                         spaceAfter=4, fontName='Helvetica-Bold')
-    title = ParagraphStyle('title', parent=base['Normal'],
-                            fontSize=22, textColor=PRIMARY, leading=28,
-                            spaceAfter=2, fontName='Helvetica-Bold',
-                            alignment=TA_LEFT)
-    normal = ParagraphStyle('norm', parent=base['Normal'],
-                             fontSize=9, leading=12)
-    small = ParagraphStyle('small', parent=base['Normal'],
+    normal = ParagraphStyle('norm', parent=base['Normal'], fontSize=9, leading=12)
+    small  = ParagraphStyle('small', parent=base['Normal'],
                             fontSize=8, textColor=GRAY, leading=11)
-    cell = ParagraphStyle('cell', parent=base['Normal'],
-                           fontSize=8, leading=10)
-    return h1, title, normal, small, cell
+    cell   = ParagraphStyle('cell', parent=base['Normal'], fontSize=8, leading=10)
+    label  = ParagraphStyle('label', parent=base['Normal'],
+                            fontSize=8, textColor=PURPLE_DARK,
+                            fontName='Helvetica-Bold', leading=11)
+    return normal, small, cell, label
 
 
-def _info_tabell(data, col_w=None):
-    """2-kolumns info-tabell (etikett: värde)."""
-    if col_w is None:
-        col_w = [55 * mm, 105 * mm]
-    t = Table(data, colWidths=col_w)
+# ── Sektionsrubrik (lila fylld rektangel med vit text) ───────────────────────
+
+def _sektion_rubrik(text, space_before=6):
+    hdr_style = ParagraphStyle('sec_hdr', fontName='Helvetica-Bold',
+                               fontSize=9, textColor=WHITE, leading=12)
+    t = Table([[Paragraph(text, hdr_style)]],
+              colWidths=[W - MARGIN * 2])
     t.setStyle(TableStyle([
-        ('FONTNAME',  (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE',  (0, 0), (-1, -1), 9),
-        ('FONTNAME',  (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('TEXTCOLOR', (0, 0), (0, -1), PRIMARY),
-        ('VALIGN',    (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 2),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('BACKGROUND',    (0, 0), (-1, -1), PURPLE),
+        ('TOPPADDING',    (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
     ]))
-    return t
+    return [Spacer(1, space_before * mm), t]
 
+
+# ── Informationspanel (ljus bakgrund + lila vänsteraccent) ───────────────────
+
+def _info_panel(rader):
+    """rader = lista av (etikett, värde) tupler."""
+    ACCENT_W = 4   # pixlar (lila vänsteraccent)
+    COL_LABEL = 45 * mm
+    COL_VALUE = W - MARGIN * 2 - COL_LABEL - ACCENT_W
+
+    label_style = ParagraphStyle('il', fontName='Helvetica-Bold', fontSize=8,
+                                 textColor=PURPLE_DARK, leading=11)
+    value_style = ParagraphStyle('iv', fontName='Helvetica', fontSize=8,
+                                 textColor=DARK, leading=11)
+
+    inner_rows = [[Paragraph(e, label_style), Paragraph(str(v), value_style)]
+                  for e, v in rader]
+
+    inner = Table(inner_rows, colWidths=[COL_LABEL, COL_VALUE])
+    inner.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), PURPLE_PALE),
+        ('TOPPADDING',    (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+        ('LINEBELOW',     (0, 0), (-1, -2), 0.4, MED_GRAY),
+        ('BOX',           (0, 0), (-1, -1), 0.6, PURPLE_LITE),
+    ]))
+
+    # Lila vänsteraccent som en smal kolumn
+    accent_cell = Table([['']], colWidths=[ACCENT_W],
+                         rowHeights=[len(rader) * 17])
+    accent_cell.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), PURPLE),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+
+    outer = Table([[accent_cell, inner]],
+                  colWidths=[ACCENT_W, COL_LABEL + COL_VALUE])
+    outer.setStyle(TableStyle([
+        ('LEFTPADDING',  (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING',   (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING',(0, 0), (-1, -1), 0),
+        ('VALIGN',       (0, 0), (-1, -1), 'TOP'),
+    ]))
+    return outer
+
+
+# ── Materialtabell ───────────────────────────────────────────────────────────
 
 def _material_tabell(rader, visa_pris=False):
-    """Materialtabell med samtliga rader. Priser visas ej som standard."""
+    hdr_s = ParagraphStyle('mh', fontName='Helvetica-Bold', fontSize=8,
+                            textColor=WHITE, leading=10)
+    cel_s = ParagraphStyle('mc', fontName='Helvetica', fontSize=8,
+                            textColor=DARK, leading=10)
+
     header = ['Artikel', 'Kategori', 'Enhet', 'Antal']
     col_w  = [80 * mm, 45 * mm, 20 * mm, 20 * mm]
     if visa_pris:
@@ -147,12 +197,12 @@ def _material_tabell(rader, visa_pris=False):
         col_w  += [20 * mm, 22 * mm]
     col_w[-1] = W - MARGIN * 2 - sum(col_w[:-1])
 
-    rows = [header]
+    rows = [[Paragraph(h, hdr_s) for h in header]]
     for r in rader:
         pris  = r.get('a_pris')
         antal = r.get('antal', 0)
         rad = [
-            r.get('artikelnamn', ''),
+            Paragraph(r.get('artikelnamn', ''), cel_s),
             r.get('kategori', ''),
             r.get('enhet', ''),
             f"{antal:g}",
@@ -164,16 +214,16 @@ def _material_tabell(rader, visa_pris=False):
 
     t = Table(rows, colWidths=col_w, repeatRows=1)
     style = [
-        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY),
-        ('TEXTCOLOR',  (0, 0), (-1, 0), WHITE),
-        ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE',   (0, 0), (-1, -1), 8),
-        ('ALIGN',      (3, 0), (-1, -1), 'RIGHT'),
-        ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT]),
+        ('BACKGROUND',    (0, 0), (-1, 0), PURPLE),
+        ('TEXTCOLOR',     (0, 0), (-1, 0), WHITE),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 8),
+        ('ALIGN',         (3, 0), (-1, -1), 'RIGHT'),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING',    (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('GRID',          (0, 0), (-1, -1), 0.4, MED_GRAY),
+        ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
     ]
     for i, r in enumerate(rader, start=1):
         if r.get('manuell'):
@@ -182,63 +232,78 @@ def _material_tabell(rader, visa_pris=False):
     return t
 
 
-def _egenkontroll_tabell(egenkontroll):
-    """Tabell med egenkontrollpunkter och deras status."""
-    punkt_style = ParagraphStyle('egk_punkt', fontName='Helvetica', fontSize=8, leading=11)
-    header_style = ParagraphStyle('egk_header', fontName='Helvetica-Bold', fontSize=8,
-                                  leading=11, textColor=WHITE)
+# ── Egenkontrolltabell ───────────────────────────────────────────────────────
 
-    header = [Paragraph('#', header_style), Paragraph('Kontrollpunkt', header_style),
-              Paragraph('Utförd', header_style), Paragraph('Ej rel.', header_style)]
-    col_w  = [8 * mm, None, 18 * mm, 18 * mm]
+def _egenkontroll_tabell(egenkontroll):
+    hdr_s  = ParagraphStyle('eh', fontName='Helvetica-Bold', fontSize=8,
+                             textColor=WHITE, leading=11)
+    cel_s  = ParagraphStyle('ec', fontName='Helvetica', fontSize=8,
+                             textColor=DARK, leading=11)
+
+    col_w = [8 * mm, None, 18 * mm, 18 * mm]
     col_w[1] = W - MARGIN * 2 - sum(x for x in col_w if x)
 
+    header = [Paragraph(h, hdr_s)
+              for h in ['#', 'Kontrollpunkt', 'Utförd', 'Ej rel.']]
     rows = [header]
     for i, e in enumerate(egenkontroll, start=1):
         utford = 'Ja' if e.get('utford')      else ''
         ej_rel = 'Ja' if e.get('ej_relevant') else ''
-        rows.append([str(i), Paragraph(e.get('punkt', ''), punkt_style), utford, ej_rel])
-
-    GREEN_LIGHT = colors.HexColor('#dcfce7')
-    GRAY_LIGHT  = colors.HexColor('#f1f5f9')
+        rows.append([str(i), Paragraph(e.get('punkt', ''), cel_s), utford, ej_rel])
 
     t = Table(rows, colWidths=col_w, repeatRows=1)
     style = [
-        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY),
-        ('TEXTCOLOR',  (0, 0), (-1, 0), WHITE),
-        ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE',   (0, 0), (-1, -1), 8),
-        ('ALIGN',      (0, 0), (0, -1), 'CENTER'),
-        ('ALIGN',      (2, 0), (-1, -1), 'CENTER'),
-        ('VALIGN',     (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND',    (0, 0), (-1, 0), PURPLE),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 8),
+        ('ALIGN',         (0, 0), (0, -1), 'CENTER'),
+        ('ALIGN',         (2, 0), (-1, -1), 'CENTER'),
+        ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING',    (0, 0), (-1, -1), 4),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT]),
+        ('GRID',          (0, 0), (-1, -1), 0.4, MED_GRAY),
+        ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
     ]
     for i, e in enumerate(egenkontroll, start=1):
         if e.get('utford'):
-            style.append(('BACKGROUND', (2, i), (2, i), GREEN_LIGHT))
-            style.append(('TEXTCOLOR',  (2, i), (2, i), GREEN))
-            style.append(('FONTNAME',   (2, i), (2, i), 'Helvetica-Bold'))
+            style += [('BACKGROUND', (2, i), (2, i), GREEN_LIGHT),
+                      ('TEXTCOLOR',  (2, i), (2, i), GREEN),
+                      ('FONTNAME',   (2, i), (2, i), 'Helvetica-Bold')]
         if e.get('ej_relevant'):
-            style.append(('BACKGROUND', (3, i), (3, i), GRAY_LIGHT))
-            style.append(('TEXTCOLOR',  (3, i), (3, i), GRAY))
+            style += [('BACKGROUND', (3, i), (3, i), GRAY_LIGHT),
+                      ('TEXTCOLOR',  (3, i), (3, i), GRAY)]
     t.setStyle(TableStyle(style))
     return t
 
 
-# ----------------------------------------------------------------
-# BYGGPROTOKOLL PDF
-# ----------------------------------------------------------------
+# ── Underskrift ──────────────────────────────────────────────────────────────
+
+def _underskrift():
+    sign = Table(
+        [['Utförd av:', '_' * 35, 'Datum:', '_' * 20]],
+        colWidths=[25 * mm, 75 * mm, 20 * mm, 45 * mm]
+    )
+    sign.setStyle(TableStyle([
+        ('FONTNAME',      (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 9),
+        ('FONTNAME',      (0, 0), (0,  0),  'Helvetica-Bold'),
+        ('FONTNAME',      (2, 0), (2,  0),  'Helvetica-Bold'),
+        ('TEXTCOLOR',     (0, 0), (0,  0),  PURPLE_DARK),
+        ('TEXTCOLOR',     (2, 0), (2,  0),  PURPLE_DARK),
+        ('ALIGN',         (0, 0), (-1, -1), 'LEFT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    return [
+        Spacer(1, 10 * mm),
+        HRFlowable(width='100%', thickness=0.6, color=MED_GRAY),
+        Spacer(1, 3 * mm),
+        sign,
+    ]
+
+
+# ── BYGGPROTOKOLL PDF ─────────────────────────────────────────────────────────
 
 def skapa_byggprotokoll_pdf(protokoll, projekt, installningar):
-    """
-    protokoll: dict med alla fält + 'rader' lista + 'egenkontroll' lista
-    projekt:   dict med projektnummer, projektnamn, beredare, status
-    installningar: dict  {nyckel: varde}
-    Returnerar bytes.
-    """
     foretag = installningar.get('foretagsnamn',
                installningar.get('foretag_namn', 'Oneco Networks AB'))
     buf = BytesIO()
@@ -249,104 +314,61 @@ def skapa_byggprotokoll_pdf(protokoll, projekt, installningar):
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
-        topMargin=28 * mm, bottomMargin=18 * mm,
-        onFirstPage=on_page, onLaterPages=on_page,
+        topMargin=28 * mm, bottomMargin=16 * mm,
     )
 
-    h1, title, normal, small, cell = _styles()
+    normal, small, cell, label = _styles()
     story = []
 
-    # Projektrubrik
-    story.append(Paragraph(
-        f"{projekt.get('projektnummer', '')} – {projekt.get('projektnamn', '')}",
-        h1
-    ))
-    story.append(HRFlowable(width='100%', thickness=1.5, color=ACCENT, spaceAfter=6))
-
-    # Projektinfo + protokollinfo sida vid sida
-    pi = [
-        ['Projektnummer:', projekt.get('projektnummer', '')],
-        ['Projektnamn:',   projekt.get('projektnamn', '')],
-        ['Beredare:',      projekt.get('beredare', '')],
-        ['Status:',        projekt.get('status', '')],
-        ['Startdatum:',    projekt.get('startdatum', '') or '–'],
-    ]
-    bp_info = [
-        ['Mall:',         protokoll.get('mall_namn', '')],
-        ['Prot.-status:', protokoll.get('status', '')],
-        ['Skapad:',       (protokoll.get('skapad', '') or '')[:16]],
-        ['Uppdaterad:',   (protokoll.get('uppdaterad', '') or '')[:16]],
+    # ── Projektinfo ──
+    story += _sektion_rubrik('Projektinformation', space_before=2)
+    pi_rader = [
+        ('Projektnummer:',  projekt.get('projektnummer', '')),
+        ('Projektnamn:',    projekt.get('projektnamn', '')),
+        ('Beredare:',       projekt.get('beredare', '')),
+        ('Status:',         projekt.get('status', '')),
+        ('Startdatum:',     projekt.get('startdatum', '') or '–'),
+        ('Mall:',           protokoll.get('mall_namn', '')),
+        ('Protokollstatus:',protokoll.get('status', '')),
+        ('Skapad:',         (protokoll.get('skapad', '') or '')[:16]),
+        ('Uppdaterad:',     (protokoll.get('uppdaterad', '') or '')[:16]),
     ]
     if protokoll.get('anteckningar'):
-        bp_info.append(['Anteckning:', protokoll['anteckningar']])
+        pi_rader.append(('Anteckning:', protokoll['anteckningar']))
+    story.append(Spacer(1, 1 * mm))
+    story.append(_info_panel(pi_rader))
 
-    left  = _info_tabell(pi,      col_w=[42 * mm, 48 * mm])
-    right = _info_tabell(bp_info, col_w=[38 * mm, 47 * mm])
-    combo = Table([[left, right]], colWidths=[95 * mm, 90 * mm])
-    combo.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    story.append(combo)
-    story.append(Spacer(1, 8 * mm))
-
-    # Materialrader
+    # ── Material ──
     rader = protokoll.get('rader', [])
+    story += _sektion_rubrik('Material')
     if rader:
-        story.append(Paragraph('Material', h1))
+        story.append(Spacer(1, 1 * mm))
         story.append(_material_tabell(rader, visa_pris=False))
     else:
+        story.append(Spacer(1, 1 * mm))
         story.append(Paragraph('Inga materialrader registrerade.', small))
 
-    # Egenkontroll
+    # ── Egenkontroll ──
     egenkontroll = protokoll.get('egenkontroll', [])
     if egenkontroll:
-        story.append(Spacer(1, 6 * mm))
-        story.append(Paragraph('Egenkontroll', h1))
-        story.append(HRFlowable(width='100%', thickness=0.5, color=ACCENT, spaceAfter=4))
+        story += _sektion_rubrik('Egenkontroll')
+        story.append(Spacer(1, 1 * mm))
         story.append(_egenkontroll_tabell(egenkontroll))
-
-        utforda   = sum(1 for e in egenkontroll if e.get('utford'))
-        ej_rel    = sum(1 for e in egenkontroll if e.get('ej_relevant'))
-        totalt    = len(egenkontroll)
-        summary   = f"Utförda: {utforda}/{totalt}  |  Ej relevanta: {ej_rel}"
+        utforda = sum(1 for e in egenkontroll if e.get('utford'))
+        ej_rel  = sum(1 for e in egenkontroll if e.get('ej_relevant'))
+        totalt  = len(egenkontroll)
         story.append(Spacer(1, 2 * mm))
-        story.append(Paragraph(summary, small))
+        story.append(Paragraph(
+            f"Utförda: {utforda}/{totalt}  |  Ej relevanta: {ej_rel}", small))
 
-    # Underskrift
-    story.append(Spacer(1, 12 * mm))
-    story.append(HRFlowable(width='100%', thickness=0.5, color=GRAY))
-    story.append(Spacer(1, 2 * mm))
-    sign = Table(
-        [['Utförd av:', '_' * 35, 'Datum:', '_' * 20]],
-        colWidths=[25 * mm, 75 * mm, 20 * mm, 45 * mm]
-    )
-    sign.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
-        ('FONTNAME', (2, 0), (2, 0), 'Helvetica-Bold'),
-        ('ALIGN',    (0, 0), (-1, -1), 'LEFT'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    story.append(sign)
-
-    doc.build(story)
+    story += _underskrift()
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()
 
 
-# ----------------------------------------------------------------
-# MATERIALLISTA PDF  (aggregerad för hela projektet)
-# ----------------------------------------------------------------
+# ── MATERIALLISTA PDF (projekt) ───────────────────────────────────────────────
 
 def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
-    """
-    projekt:         dict
-    protokoll_lista: lista av dicts, varje med 'rader'
-    installningar:   dict
-    Returnerar bytes.
-    """
     foretag = installningar.get('foretagsnamn',
                installningar.get('foretag_namn', 'Oneco Networks AB'))
     buf = BytesIO()
@@ -357,83 +379,59 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
-        topMargin=28 * mm, bottomMargin=18 * mm,
-        onFirstPage=on_page, onLaterPages=on_page,
+        topMargin=28 * mm, bottomMargin=16 * mm,
     )
 
-    h1, title, normal, small, cell = _styles()
+    normal, small, cell, label = _styles()
     story = []
 
-    # Stor rubrik "Materiallista"
-    story.append(Paragraph('Materiallista', title))
-    story.append(HRFlowable(width='100%', thickness=2, color=PRIMARY, spaceAfter=6))
-
-    # Projektrubrik
-    story.append(Paragraph(
-        f"{projekt.get('projektnummer', '')} – {projekt.get('projektnamn', '')}",
-        h1
-    ))
-    story.append(HRFlowable(width='100%', thickness=1.5, color=ACCENT, spaceAfter=4))
-    pi = [
-        ['Projektnummer:', projekt.get('projektnummer', '')],
-        ['Projektnamn:',   projekt.get('projektnamn', '')],
-        ['Beredare:',      projekt.get('beredare', '')],
-        ['Antal protokoll:', str(len(protokoll_lista))],
+    # ── Projektinfo ──
+    story += _sektion_rubrik('Projektinformation', space_before=2)
+    pi_rader = [
+        ('Projektnummer:',    projekt.get('projektnummer', '')),
+        ('Projektnamn:',      projekt.get('projektnamn', '')),
+        ('Beredare:',         projekt.get('beredare', '')),
+        ('Antal protokoll:',  str(len(protokoll_lista))),
     ]
-    story.append(_info_tabell(pi))
-    story.append(Spacer(1, 6 * mm))
+    story.append(Spacer(1, 1 * mm))
+    story.append(_info_panel(pi_rader))
 
-    # Aggregera rader per artikel_id + artikelnamn
+    # Aggregera per artikel
     aggregat = {}
     for bp in protokoll_lista:
         for r in bp.get('rader', []):
             key = (r.get('artikel_id'), r.get('artikelnamn', ''))
             if key not in aggregat:
-                aggregat[key] = {
-                    'artikel_id':      r.get('artikel_id'),
-                    'artikelnamn':     r.get('artikelnamn', ''),
-                    'kategori':        r.get('kategori', ''),
-                    'enhet':           r.get('enhet', ''),
-                    'antal':           0.0,
-                    'a_pris':          r.get('a_pris'),
-                    'leverantor_namn': r.get('leverantor_namn'),
-                    'artikelnummer':   r.get('artikelnummer'),
-                    'manuell':         0,
-                }
+                aggregat[key] = {**r, 'antal': 0.0, 'manuell': 0}
             aggregat[key]['antal'] += r.get('antal', 0)
 
-    sorterade = sorted(aggregat.values(), key=lambda x: (x['kategori'], x['artikelnamn']))
+    sorterade = sorted(aggregat.values(),
+                       key=lambda x: (x['kategori'], x['artikelnamn']))
 
     if not sorterade:
+        story += _sektion_rubrik('Material')
+        story.append(Spacer(1, 1 * mm))
         story.append(Paragraph('Inga materialrader finns för detta projekt.', small))
-        doc.build(story)
+        doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
         return buf.getvalue()
 
     # Gruppera per kategori
-    kategori_grupper = {}
+    grupper = {}
     for r in sorterade:
-        kat = r['kategori'] or 'Övrigt'
-        kategori_grupper.setdefault(kat, []).append(r)
+        grupper.setdefault(r['kategori'] or 'Övrigt', []).append(r)
 
-    for kat, rader in kategori_grupper.items():
-        story.append(Paragraph(kat, h1))
+    for kat, rader in grupper.items():
+        story += _sektion_rubrik(kat)
+        story.append(Spacer(1, 1 * mm))
         story.append(_material_tabell(rader, visa_pris=False))
-        story.append(Spacer(1, 6 * mm))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()
 
 
-# ----------------------------------------------------------------
-# KONSTRUKTIONER MATERIALLISTA PDF  (aggregerad för alla konstruktioner)
-# ----------------------------------------------------------------
+# ── KONSTRUKTIONER MATERIALLISTA PDF ─────────────────────────────────────────
 
 def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar):
-    """
-    konstruktioner: lista av dicts med 'typ', 'namn', 'rader'
-    installningar:  dict {nyckel: varde}
-    Returnerar bytes.
-    """
     foretag = installningar.get('foretagsnamn',
                installningar.get('foretag_namn', 'Oneco Networks AB'))
     buf = BytesIO()
@@ -444,57 +442,49 @@ def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar):
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
-        topMargin=28 * mm, bottomMargin=18 * mm,
-        onFirstPage=on_page, onLaterPages=on_page,
+        topMargin=28 * mm, bottomMargin=16 * mm,
     )
 
-    h1, title, normal, small, cell = _styles()
+    normal, small, cell, label = _styles()
     story = []
 
-    # Stor rubrik
-    story.append(Paragraph('Materiallista', title))
-    story.append(HRFlowable(width='100%', thickness=2, color=PRIMARY, spaceAfter=6))
-    story.append(Paragraph('Byggprotokoll – sammanställt material', h1))
-    story.append(HRFlowable(width='100%', thickness=1.5, color=ACCENT, spaceAfter=4))
+    antal_konstr   = len(konstruktioner)
+    antal_med_rad  = sum(1 for k in konstruktioner if k.get('rader'))
 
-    antal_konstr = len(konstruktioner)
-    antal_med_rad = sum(1 for k in konstruktioner if k.get('rader'))
-    pi = [
-        ['Antal protokoll:', str(antal_konstr)],
-        ['Med material:',    str(antal_med_rad)],
-    ]
-    story.append(_info_tabell(pi))
-    story.append(Spacer(1, 6 * mm))
+    story += _sektion_rubrik('Sammanställning', space_before=2)
+    story.append(Spacer(1, 1 * mm))
+    story.append(_info_panel([
+        ('Antal protokoll:', str(antal_konstr)),
+        ('Med material:',    str(antal_med_rad)),
+    ]))
 
-    # Gruppera per typ
     typer_ordning = ['Kabelskåp', 'Kabelförläggning', 'Nätstation', 'Övrigt']
     grupper = {}
     for k in konstruktioner:
-        typ = k.get('typ', 'Övrigt')
-        grupper.setdefault(typ, []).append(k)
+        grupper.setdefault(k.get('typ', 'Övrigt'), []).append(k)
 
-    # Sortera typer efter ordning, resterande sist
-    sorterade_typer = [t for t in typer_ordning if t in grupper]
+    sorterade_typer  = [t for t in typer_ordning if t in grupper]
     sorterade_typer += [t for t in grupper if t not in sorterade_typer]
+
+    hdr_s = ParagraphStyle('kh', fontName='Helvetica-Bold', fontSize=8,
+                            textColor=WHITE, leading=10)
+    cel_s = ParagraphStyle('kc', fontName='Helvetica', fontSize=8,
+                            textColor=DARK, leading=10)
+    anv_s = ParagraphStyle('ka', fontName='Helvetica', fontSize=7,
+                            textColor=GRAY, leading=9)
 
     har_innehall = False
     for typ in sorterade_typer:
-        konstr_i_grupp = grupper[typ]
-
-        # Aggregera rader per artikelnamn inom typen
         aggregat = {}
-        for k in konstr_i_grupp:
+        for k in grupper[typ]:
             for r in k.get('rader', []):
                 key = r.get('artikelnamn', '').strip()
                 if not key:
                     continue
                 if key not in aggregat:
-                    aggregat[key] = {
-                        'artikelnamn': key,
-                        'enhet':       r.get('enhet', ''),
-                        'antal':       0.0,
-                        'konstruktioner': [],
-                    }
+                    aggregat[key] = {'artikelnamn': key,
+                                     'enhet': r.get('enhet', ''),
+                                     'antal': 0.0, 'konstruktioner': []}
                 aggregat[key]['antal'] += float(r.get('antal', 0) or 0)
                 knamn = k.get('namn', '')
                 if knamn not in aggregat[key]['konstruktioner']:
@@ -504,69 +494,53 @@ def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar):
             continue
 
         har_innehall = True
-        story.append(Paragraph(typ, h1))
+        story += _sektion_rubrik(typ)
 
-        # Rubrikrad + rader
-        header = ['Artikel', 'Enhet', 'Antal', 'Används i']
-        col_enhet  = 18 * mm
-        col_antal  = 18 * mm
         col_anvands = 65 * mm
+        col_enhet   = 18 * mm
+        col_antal   = 18 * mm
         col_artikel = W - MARGIN * 2 - col_enhet - col_antal - col_anvands
-
         col_w = [col_artikel, col_enhet, col_antal, col_anvands]
-        rows = [header]
 
-        punkt_s = ParagraphStyle('mat_punkt', fontName='Helvetica', fontSize=8, leading=10)
-        anvands_s = ParagraphStyle('mat_anvands', fontName='Helvetica', fontSize=7,
-                                   leading=9, textColor=GRAY)
-        header_s  = ParagraphStyle('mat_hdr', fontName='Helvetica-Bold', fontSize=8,
-                                   leading=10, textColor=WHITE)
-
-        rows = [[Paragraph(h, header_s) for h in header]]
+        rows = [[Paragraph(h, hdr_s)
+                 for h in ['Artikel', 'Enhet', 'Antal', 'Används i']]]
         for art in sorted(aggregat.values(), key=lambda x: x['artikelnamn']):
-            anvands_text = ', '.join(art['konstruktioner'][:5])
+            anv = ', '.join(art['konstruktioner'][:5])
             if len(art['konstruktioner']) > 5:
-                anvands_text += f" +{len(art['konstruktioner'])-5} till"
+                anv += f" +{len(art['konstruktioner'])-5} till"
             rows.append([
-                Paragraph(art['artikelnamn'], punkt_s),
+                Paragraph(art['artikelnamn'], cel_s),
                 art['enhet'],
                 f"{art['antal']:g}",
-                Paragraph(anvands_text, anvands_s),
+                Paragraph(anv, anv_s),
             ])
 
         t = Table(rows, colWidths=col_w, repeatRows=1)
         t.setStyle(TableStyle([
-            ('BACKGROUND',    (0, 0), (-1, 0), PRIMARY),
-            ('TEXTCOLOR',     (0, 0), (-1, 0), WHITE),
+            ('BACKGROUND',    (0, 0), (-1, 0), PURPLE),
             ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE',      (0, 0), (-1, -1), 8),
             ('ALIGN',         (2, 0), (2, -1), 'RIGHT'),
             ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
             ('TOPPADDING',    (0, 0), (-1, -1), 4),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-            ('GRID',          (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
-            ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, LIGHT]),
+            ('GRID',          (0, 0), (-1, -1), 0.4, MED_GRAY),
+            ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
         ]))
+        story.append(Spacer(1, 1 * mm))
         story.append(t)
-        story.append(Spacer(1, 6 * mm))
 
     if not har_innehall:
+        story.append(Spacer(1, 4 * mm))
         story.append(Paragraph('Inga materialrader finns för några konstruktioner.', small))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()
 
 
-# ----------------------------------------------------------------
-# KONSTRUKTIONSPROTOKOLL PDF
-# ----------------------------------------------------------------
+# ── BYGGPROTOKOLL (Konstruktion) PDF ─────────────────────────────────────────
 
 def skapa_konstruktion_pdf(konstruktion, installningar):
-    """
-    konstruktion: dict med alla fält + 'rader' lista + 'egenkontroll' lista
-    installningar: dict {nyckel: varde}
-    Returnerar bytes.
-    """
     foretag = installningar.get('foretagsnamn',
                installningar.get('foretag_namn', 'Oneco Networks AB'))
     buf = BytesIO()
@@ -577,126 +551,81 @@ def skapa_konstruktion_pdf(konstruktion, installningar):
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
-        topMargin=28 * mm, bottomMargin=18 * mm,
-        onFirstPage=on_page, onLaterPages=on_page,
+        topMargin=28 * mm, bottomMargin=16 * mm,
     )
 
-    h1, title, normal, small, cell = _styles()
+    normal, small, cell, label = _styles()
     story = []
 
-    # Stor rubrik
-    story.append(Paragraph('Byggprotokoll', title))
-    story.append(HRFlowable(width='100%', thickness=2, color=PRIMARY, spaceAfter=6))
-
-    # Info-tabell
+    # ── Info ──
+    story += _sektion_rubrik('Konstruktionsinformation', space_before=2)
     pi = [
-        ['Typ:',        konstruktion.get('typ', '')],
-        ['Byggnr:',     konstruktion.get('byggnr', '') or '–'],
-        ['Namn:',       konstruktion.get('namn', '')],
-        ['Fri ID:',     konstruktion.get('fri_id', '') or '–'],
-        ['Status:',     konstruktion.get('status', '')],
-        ['Datum:',      (konstruktion.get('skapad', '') or '')[:16]],
+        ('Typ:',       konstruktion.get('typ', '')),
+        ('Byggnr:',    konstruktion.get('byggnr', '') or '–'),
+        ('Namn:',      konstruktion.get('namn', '')),
+        ('Fri ID:',    konstruktion.get('fri_id', '') or '–'),
+        ('Status:',    konstruktion.get('status', '')),
+        ('Datum:',     (konstruktion.get('skapad', '') or '')[:16]),
     ]
     if konstruktion.get('anmarkning'):
-        pi.append(['Anmarkning:', konstruktion['anmarkning']])
-    story.append(_info_tabell(pi))
-    story.append(Spacer(1, 6 * mm))
+        pi.append(('Anmärkning:', konstruktion['anmarkning']))
+    story.append(Spacer(1, 1 * mm))
+    story.append(_info_panel(pi))
 
-    # Materialtabell
+    # ── Material ──
     rader = konstruktion.get('rader', [])
-    if rader:
-        story.append(Paragraph('Material', h1))
-        story.append(HRFlowable(width='100%', thickness=0.5, color=ACCENT, spaceAfter=4))
+    story += _sektion_rubrik('Material')
+    story.append(Spacer(1, 1 * mm))
 
-        # Bygg en materialtabell med moduler-kolumn
-        header = ['Artikel', 'Enhet', 'Antal', 'Moduler']
-        col_w  = [100 * mm, 22 * mm, 22 * mm, 22 * mm]
+    if rader:
+        hdr_s = ParagraphStyle('bh', fontName='Helvetica-Bold', fontSize=8,
+                               textColor=WHITE, leading=10)
+        cel_s = ParagraphStyle('bc', fontName='Helvetica', fontSize=8,
+                               textColor=DARK, leading=10)
+
+        col_w = [100 * mm, 22 * mm, 22 * mm, 22 * mm]
         col_w[-1] = W - MARGIN * 2 - sum(col_w[:-1])
 
-        rows = [header]
+        rows = [[Paragraph(h, hdr_s) for h in ['Artikel', 'Enhet', 'Antal', 'Moduler']]]
         for r in rader:
             moduler_val = r.get('moduler', 0)
-            moduler_str = str(int(moduler_val)) if moduler_val else '-'
             rows.append([
-                r.get('artikelnamn', ''),
+                Paragraph(r.get('artikelnamn', ''), cel_s),
                 r.get('enhet', ''),
                 f"{r.get('antal', 0):g}",
-                moduler_str,
+                str(int(moduler_val)) if moduler_val else '-',
             ])
 
         t = Table(rows, colWidths=col_w, repeatRows=1)
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), PRIMARY),
-            ('TEXTCOLOR',  (0, 0), (-1, 0), WHITE),
-            ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE',   (0, 0), (-1, -1), 8),
-            ('ALIGN',      (2, 0), (-1, -1), 'RIGHT'),
-            ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#d4d4d8')),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, LIGHT]),
+            ('BACKGROUND',    (0, 0), (-1, 0), PURPLE),
+            ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0, 0), (-1, -1), 8),
+            ('ALIGN',         (2, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING',    (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('GRID',          (0, 0), (-1, -1), 0.4, MED_GRAY),
+            ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
         ]))
         story.append(t)
 
-        # Modulsammanfattning (endast Kabelskåp)
-        if konstruktion.get('typ') == 'Kabelskåp':
-            story.append(Spacer(1, 3 * mm))
-            kapacitet = sum((r.get('moduler', 0) or 0) * (r.get('antal', 1) or 1)
-                            for r in rader if (r.get('moduler', 0) or 0) > 0)
-            anvant    = abs(sum((r.get('moduler', 0) or 0) * (r.get('antal', 1) or 1)
-                               for r in rader if (r.get('moduler', 0) or 0) < 0))
-            kvar      = kapacitet - anvant
-            modul_data = [
-                ['Kapacitet:', f"{int(kapacitet)} moduler"],
-                ['Anvant:',    f"{int(anvant)} moduler"],
-                ['Kvar:',      f"{int(kvar)} moduler"],
-            ]
-            modul_t = Table(modul_data, colWidths=[40 * mm, 50 * mm])
-            modul_t.setStyle(TableStyle([
-                ('FONTNAME',  (0, 0), (-1, -1), 'Helvetica'),
-                ('FONTSIZE',  (0, 0), (-1, -1), 9),
-                ('FONTNAME',  (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('TEXTCOLOR', (0, 0), (0, -1), PRIMARY),
-                ('TOPPADDING', (0, 0), (-1, -1), 2),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-            ]))
-            story.append(modul_t)
     else:
         story.append(Paragraph('Inga materialrader registrerade.', small))
 
-    # Egenkontroll
+    # ── Egenkontroll ──
     egenkontroll = konstruktion.get('egenkontroll', [])
     if egenkontroll:
-        story.append(Spacer(1, 6 * mm))
-        story.append(Paragraph('Egenkontroll', h1))
-        story.append(HRFlowable(width='100%', thickness=0.5, color=ACCENT, spaceAfter=4))
+        story += _sektion_rubrik('Egenkontroll')
+        story.append(Spacer(1, 1 * mm))
         story.append(_egenkontroll_tabell(egenkontroll))
-
         utforda = sum(1 for e in egenkontroll if e.get('utford'))
         ej_rel  = sum(1 for e in egenkontroll if e.get('ej_relevant'))
         totalt  = len(egenkontroll)
-        summary = f"Utforda: {utforda}/{totalt}  |  Ej relevanta: {ej_rel}"
         story.append(Spacer(1, 2 * mm))
-        story.append(Paragraph(summary, small))
+        story.append(Paragraph(
+            f"Utförda: {utforda}/{totalt}  |  Ej relevanta: {ej_rel}", small))
 
-    # Underskrift
-    story.append(Spacer(1, 12 * mm))
-    story.append(HRFlowable(width='100%', thickness=0.5, color=GRAY))
-    story.append(Spacer(1, 2 * mm))
-    sign = Table(
-        [['Utford av:', '_' * 35, 'Datum:', '_' * 20]],
-        colWidths=[25 * mm, 75 * mm, 20 * mm, 45 * mm]
-    )
-    sign.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
-        ('FONTNAME', (2, 0), (2, 0), 'Helvetica-Bold'),
-        ('ALIGN',    (0, 0), (-1, -1), 'LEFT'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    story.append(sign)
-
-    doc.build(story)
+    story += _underskrift()
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()

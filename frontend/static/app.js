@@ -2015,7 +2015,7 @@ async function adminInstallningar(cont) {
       <div class="card-body">
         <form id="instForm">
           <div class="form-group"><label class="form-label">Företagsnamn</label>
-            <input name="foretag_namn" class="form-control" value="${escHtml(inst.foretag_namn||'')}"></div>
+            <input name="foretagsnamn" class="form-control" value="${escHtml(inst.foretagsnamn||'')}"></div>
           <div class="form-group"><label class="form-label">Organisationsnummer</label>
             <input name="org_nummer" class="form-control" value="${escHtml(inst.org_nummer||'')}"></div>
           <div class="form-group"><label class="form-label">Telefon</label>
@@ -2078,7 +2078,6 @@ function visaLoginSkarm() {
       <div class="login-card">
         <div class="login-logo">
           <div class="login-logo-dot"></div>
-          <span class="login-logo-text">Oneco Networks AB</span>
         </div>
         <h1 class="login-title">Lågspänningsberedning</h1>
         <p class="login-sub">Ange lösenord för att fortsätta</p>
@@ -2109,6 +2108,7 @@ function visaLoginSkarm() {
         body: JSON.stringify({ losenord: pw }),
       });
       if (!r.ok) throw new Error('fel');
+      sessionStorage.setItem('logged_in', '1');
       document.querySelector('.topnav').style.display = '';
       await boot();
     } catch {
@@ -2125,6 +2125,13 @@ function visaLoginSkarm() {
 // BOOT
 // ----------------------------------------------------------------
 async function boot() {
+  // Kräv inloggning vid varje ny webbläsarsession (ny flik/fönster)
+  if (!sessionStorage.getItem('logged_in')) {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    visaLoginSkarm();
+    return;
+  }
+
   // Kolla app-inloggning
   let loggedIn = false;
   try {
@@ -2143,7 +2150,8 @@ async function boot() {
     logoutBtn.className = 'btn btn-outline btn-sm btn-logout';
     logoutBtn.textContent = 'Logga ut';
     logoutBtn.addEventListener('click', async () => {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      sessionStorage.removeItem('logged_in');
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
       visaLoginSkarm();
     });
     navRight.prepend(logoutBtn);
