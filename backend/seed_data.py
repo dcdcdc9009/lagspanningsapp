@@ -53,6 +53,7 @@ def fyll_i_startdata(conn):
     # KABLAR
     # ================================================================
     for i, (namn, enhet) in enumerate([
+        ('AML 4G10 1KV SV',    'm'),
         ('AML 4G25 1KV SV',    'm'),
         ('AML 4G50 1KV SV',    'm'),
         ('AML 4G95 1KV SV',    'm'),
@@ -76,22 +77,22 @@ def fyll_i_startdata(conn):
         'ANSLUTNINGSDON ISOLERAD Z-SKENA CIZ 95',
         'ANSLUTNINGSDON ISOLERAD Z-SKENA CIZ 300',
     ]):
-        _art(conn, namn, kat_ansl, 'st', i)
+        _art(conn, namn, kat_ansl, 'st', i, moduler=-1)
 
     # ================================================================
     # SÄKRINGSLASTFRÅNSKILJARE
     # ================================================================
-    for i, namn in enumerate([
-        'SÄKRINGSLASTFRÅNSKILJARE SLD 00 500V',
-        'SÄKRINGSLASTFRÅNSKILJARE SLD 000 500V',
-        'SÄKRINGSLASTFRÅNSKILJARE SLE 1 690V',
-        'SÄKRINGSLASTFRÅNSKILJARE SLE 2 690V',
-        'SÄKRINGSLASFRÅNSK SLF160P',
-        'SÄKRINGSLASFRÅNSK SLF250P',
-        'SÄKRINGSLASFRÅNSK SLF400P',
-        'SÄKRINGSLASFRÅNSK SLF630P',
+    for i, (namn, moduler) in enumerate([
+        ('SÄKRINGSLASTFRÅNSKILJARE SLD 00 500V',  -3),
+        ('SÄKRINGSLASTFRÅNSKILJARE SLD 000 500V', -3),
+        ('SÄKRINGSLASTFRÅNSKILJARE SLE 1 690V',   -3),
+        ('SÄKRINGSLASTFRÅNSKILJARE SLE 2 690V',   -3),
+        ('SÄKRINGSLASFRÅNSK SLF160P',             -4),
+        ('SÄKRINGSLASFRÅNSK SLF250P',             -4),
+        ('SÄKRINGSLASFRÅNSK SLF400P',             -4),
+        ('SÄKRINGSLASFRÅNSK SLF630P',             -4),
     ]):
-        _art(conn, namn, kat_sak, 'st', i)
+        _art(conn, namn, kat_sak, 'st', i, moduler=moduler)
 
     # ================================================================
     # KNIVSSÄKRINGAR
@@ -300,7 +301,7 @@ def fyll_i_startdata(conn):
         ('foretagsnamn',   'Oneco Networks AB'),
         ('admin_losenord', hashlib.sha256(b'admin').hexdigest()),
         ('logotyptext',    'LÅGSPÄNNINGSBEREDNING'),
-        ('db_version',     '15'),
+        ('db_version',     '17'),
     ]:
         conn.execute("INSERT OR IGNORE INTO installningar (nyckel, varde) VALUES (?,?)",
                      (nyckel, varde))

@@ -526,6 +526,60 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','15')")
         conn.commit()
 
+    if v < 16:
+        # v16: Sätt moduler för anslutningsdon (-1) och säkringslastfrånskiljare (-3/-4)
+        modul_map = {
+            'ANSLUTNINGSDON ABB ADI 300 ISOLERAT':     -1,
+            'ANSLUTNINGSDON ABB ADU 300 OISOLERAT':    -1,
+            'ANSLUTNINGSDON ABB ADI 95 ISOLERAT':      -1,
+            'ANSLUTNINGSDON ABB ADU 95 OISOLERAT':     -1,
+            'ANSLUTNINGSDON AD 350':                   -1,
+            'ANSLUTNINGSDON PEN/PE CUZ 95':            -1,
+            'ANSLUTNINGSDON PEN/PE CUZ 300':           -1,
+            'ANSLUTNINGSDON ISOLERAD Z-SKENA CIZ 95':  -1,
+            'ANSLUTNINGSDON ISOLERAD Z-SKENA CIZ 300': -1,
+            'SÄKRINGSLASTFRÅNSKILJARE SLD 00 500V':    -3,
+            'SÄKRINGSLASTFRÅNSKILJARE SLD 000 500V':   -3,
+            'SÄKRINGSLASTFRÅNSKILJARE SLE 1 690V':     -3,
+            'SÄKRINGSLASTFRÅNSKILJARE SLE 2 690V':     -3,
+            'SÄKRINGSLASFRÅNSK SLF160P':               -4,
+            'SÄKRINGSLASFRÅNSK SLF250P':               -4,
+            'SÄKRINGSLASFRÅNSK SLF400P':               -4,
+            'SÄKRINGSLASFRÅNSK SLF630P':               -4,
+        }
+        for namn, moduler in modul_map.items():
+            conn.execute(
+                "UPDATE artiklar SET moduler=? WHERE artikelnamn=? AND moduler=0",
+                (moduler, namn)
+            )
+            conn.execute(
+                "UPDATE konstruktion_rader SET moduler=? WHERE artikelnamn=? AND moduler=0",
+                (moduler, namn)
+            )
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','16')")
+        conn.commit()
+
+
+    if v < 17:
+        # v17: Lägg till AML 4G10 1KV SV som kabel
+        kat = conn.execute(
+            "SELECT id FROM kategorier WHERE namn='Kablar'"
+        ).fetchone()
+        if kat:
+            kat_id = kat['id']
+            exists = conn.execute(
+                "SELECT 1 FROM artiklar WHERE artikelnamn='AML 4G10 1KV SV' AND kategori_id=?",
+                (kat_id,)
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO artiklar (artikelnamn, kategori_id, enhet, sortering) "
+                    "VALUES ('AML 4G10 1KV SV', ?, 'm', -1)",
+                    (kat_id,)
+                )
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','17')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
