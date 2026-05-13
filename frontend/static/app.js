@@ -980,8 +980,9 @@ async function renderKonstruktioner(app) {
     </div>
     <div id="konstrInnehall"></div>`;
 
+  let allaProjekt = [];
+
   async function laddaProjektDropdown(valjId) {
-    let allaProjekt = [];
     try {
       allaProjekt = (await api('GET', '/projekt')).projekt || [];
     } catch(e) { toast(e.message, 'error'); }
