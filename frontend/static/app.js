@@ -969,30 +969,55 @@ async function renderKonstruktioner(app) {
         <select class="form-control" id="projektValjare" style="max-width:320px;">
           <option value="">– välj projekt –</option>
         </select>
+        <button class="btn btn-navy btn-sm" id="btnNyttProjektKonstr" style="white-space:nowrap;">+ Nytt projekt</button>
       </div>
     </div>
     <div id="konstrInnehall"></div>`;
 
-  // Ladda projekt i dropdown
-  let allaProjekt = [];
-  try {
-    allaProjekt = (await api('GET', '/projekt')).projekt || [];
-  } catch(e) { toast(e.message, 'error'); }
+  async function laddaProjektDropdown(valjId) {
+    let allaProjekt = [];
+    try {
+      allaProjekt = (await api('GET', '/projekt')).projekt || [];
+    } catch(e) { toast(e.message, 'error'); }
+    const sel = document.getElementById('projektValjare');
+    // Behåll bara default-option, rensa resten
+    while (sel.options.length > 1) sel.remove(1);
+    allaProjekt.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.projektnummer} – ${p.projektnamn}`;
+      sel.appendChild(opt);
+    });
+    if (valjId) sel.value = valjId;
+  }
+
+  await laddaProjektDropdown(S.valtProjektKonstr);
 
   const sel = document.getElementById('projektValjare');
-  allaProjekt.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = `${p.projektnummer} – ${p.projektnamn}`;
-    sel.appendChild(opt);
-  });
-
-  // Återställ senast valt projekt om möjligt
-  if (S.valtProjektKonstr) sel.value = S.valtProjektKonstr;
 
   sel.addEventListener('change', () => {
     S.valtProjektKonstr = sel.value;
     renderKonstrKontainer(sel.value);
+  });
+
+  document.getElementById('btnNyttProjektKonstr').addEventListener('click', () => {
+    modalNyttProjekt();
+    // Lyssna på när modalen stängs och ladda om dropdown med nytt projekt valt
+    const orig = Modal.close.bind(Modal);
+    Modal.close = async () => {
+      orig();
+      Modal.close = orig;
+      // Hämta senaste projektet (nyss skapat = högst id)
+      try {
+        const lista = (await api('GET', '/projekt')).projekt || [];
+        const nyast = lista[0]; // sorterat skapad DESC
+        if (nyast) {
+          S.valtProjektKonstr = String(nyast.id);
+          await laddaProjektDropdown(S.valtProjektKonstr);
+          renderKonstrKontainer(S.valtProjektKonstr);
+        }
+      } catch {}
+    };
   });
 
   renderKonstrKontainer(sel.value);
