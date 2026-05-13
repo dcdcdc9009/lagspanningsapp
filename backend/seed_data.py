@@ -295,13 +295,105 @@ def fyll_i_startdata(conn):
     ])
 
     # ================================================================
+    # E-nummer (Onninen) för alla artiklar med känt E-nummer
+    # ================================================================
+    lev_onninen = conn.execute("SELECT id FROM leverantorer WHERE namn='Onninen'").fetchone()['id']
+    enr_map = [
+        ('ANSLUTNINGSDON ABB ADI 300 ISOLERAT',     'E0732794'),
+        ('ANSLUTNINGSDON ABB ADU 300 OISOLERAT',    'E0732796'),
+        ('ANSLUTNINGSDON ABB ADI 95 ISOLERAT',      'E0732795'),
+        ('ANSLUTNINGSDON ABB ADU 95 OISOLERAT',     'E0732797'),
+        ('ANSLUTNINGSDON AD 350',                   'E0732602'),
+        ('ANSLUTNINGSDON PEN/PE CUZ 95',            'E0731209'),
+        ('ANSLUTNINGSDON PEN/PE CUZ 300',           'E0731210'),
+        ('ANSLUTNINGSDON ISOLERAD Z-SKENA CIZ 95',  'E0731207'),
+        ('ANSLUTNINGSDON ISOLERAD Z-SKENA CIZ 300', 'E0731208'),
+        ('SÄKRINGSLASTFRÅNSKILJARE SLD 00 500V',    'E0732749'),
+        ('SÄKRINGSLASTFRÅNSKILJARE SLD 000 500V',   'E0732747'),
+        ('SÄKRINGSLASTFRÅNSKILJARE SLE 1 690V',     'E0732771'),
+        ('SÄKRINGSLASTFRÅNSKILJARE SLE 2 690V',     'E0732772'),
+        ('SÄKRINGSLASFRÅNSK SLF160P',               'E0733146'),
+        ('SÄKRINGSLASFRÅNSK SLF250P',               'E0733147'),
+        ('SÄKRINGSLASFRÅNSK SLF400P',               'E0733148'),
+        ('SÄKRINGSLASFRÅNSK SLF630P',               'E0733149'),
+        ('KNIVSSÄKRING ECO HICAP 000/10A GG 500V',  'E2044104'),
+        ('KNIVSSÄKRING ECO HICAP 000/16A GG 500V',  'E2044106'),
+        ('KNIVSSÄKRING ECO HICAP 000/25A GG 500V',  'E2044110'),
+        ('KNIVSSÄKRING ECO HICAP 000/35A GG 500V',  'E2044114'),
+        ('KNIVSSÄKRING ECO HICAP 000/50A GG 500V',  'E2044118'),
+        ('KNIVSSÄKRING ECO HICAP 000/63A GG 500V',  'E2044120'),
+        ('KNIVSSÄKRING ECO HICAP 000/80A GG 500V',  'E2044122'),
+        ('KNIVSSÄKRING ECO HICAP 000/100A GG 500V', 'E2044124'),
+        ('KNIVSSÄKRING ECO HICAP 00/125A GG 500V',  'E2044126'),
+        ('KNIVSSÄKRING ECO HICAP 00/160A GG 500V',  'E2044128'),
+        ('KNIVSSÄKRING ECO HICAP 1/63A GG 500V',   'E2044316'),
+        ('KNIVSSÄKRING ECO HICAP 1/80A GG 500V',   'E2044318'),
+        ('KNIVSSÄKRING ECO HICAP 1/100A GG 500V',  'E2044320'),
+        ('KNIVSSÄKRING ECO HICAP 1/125A GG 500V',  'E2044322'),
+        ('KNIVSSÄKRING ECO HICAP 1/160A GG 500V',  'E2044324'),
+        ('KNIVSSÄKRING ECO HICAP 1/200A GG 500V',  'E2044326'),
+        ('KNIVSSÄKRING ECO HICAP 1/250A GG 500V',  'E2044330'),
+        ('KNIVSSÄKRING ECO HICAP 2/100A GG 500V',  'E2044410'),
+        ('KNIVSSÄKRING ECO HICAP 2/160A GG 500V',  'E2044414'),
+        ('KNIVSSÄKRING ECO HICAP 2/200A GG 500V',  'E2044416'),
+        ('KNIVSSÄKRING ECO HICAP 2/250A GG 500V',  'E2044420'),
+        ('KNIVSSÄKRING ECO HICAP 2/315A GG 500V',  'E2044422'),
+        ('KNIVSSÄKRING ECO HICAP 2/355A GG 500V',  'E2044424'),
+        ('KOPPLINGSKNIV 1 KN 1 3ST',               'E0732776'),
+        ('KAPSLING CDC 420 K2',  'E0732130'),
+        ('KAPSLING CDC 440 K3',  'E0732131'),
+        ('KAPSLING CDC 460 K4',  'E0732132'),
+        ('KABELSKARV 4-LED 6-50 MM² 1KV',    'E0702026'),
+        ('KABELSKARV 1KV AL/CU 50-95MM²',    'E0718322'),
+        ('KABELSKARV 1KV AL/CU 95-240MM²',   'E0718323'),
+        ('KABELSKARV PXE-SU5-SE01',           'E0702128'),
+        ('KABELSKARV LJTM-W-4X035-150',       'E0716209'),
+        ('KABELSKARV 1KV 95-240 MM²',         'E0702134'),
+        ('AVGRENINGSHYLSA C25-50',            'E0825320'),
+        ('ÄNDHÄTTA KALLKRYMP 16-30MM',        'E0714382'),
+        ('ÄNDHÄTTA KALLKRYMP 26-49MM',        'E0714383'),
+        ('ÄNDHÄTTA KALLKRYMP 46-84MM',        'E0714384'),
+        ('KABELSKYDD PLANT 125-50', 'E0663009'),
+        ('KABELRÖR KORR UDV 160',   'E0663214'),
+        ('KABELRÖR UDV 110',        'E0663206'),
+        ('RAK-BÖJ 110 SRN',         'E0663185'),
+        ('RAK-BÖJ 160 SRN',         'E0663186'),
+        ('MÄRKSYST R5000 SIFFRA 0 DEKAL', 'E2988710'),
+        ('MÄRKSYST R5000 SIFFRA 1 DEKAL', 'E2988711'),
+        ('MÄRKSYST R5000 SIFFRA 2 DEKAL', 'E2988712'),
+        ('MÄRKSYST R5000 SIFFRA 3 DEKAL', 'E2988713'),
+        ('MÄRKSYST R5000 SIFFRA 4 DEKAL', 'E2988714'),
+        ('MÄRKSYST R5000 SIFFRA 5 DEKAL', 'E2988715'),
+        ('MÄRKSYST R5000 SIFFRA 6 DEKAL', 'E2988716'),
+        ('MÄRKSYST R5000 SIFFRA 7 DEKAL', 'E2988717'),
+        ('MÄRKSYST R5000 SIFFRA 8 DEKAL', 'E2988718'),
+        ('MÄRKSYST R5000 SIFFRA 9 DEKAL', 'E2988719'),
+        ('MÄRKLIST TRANSP SKYLTHÅLL PL',   'E0668132'),
+        ('MARKERINGSSTÅNG KSPS 7',          'E0731094'),
+        ('E.ON KABELSKÅPSLOGO KLISTER',     'E992373505'),
+        ('HÅRDAD STÅLSPETS FS-11',          'E0632207'),
+        ('FRÄMRE RÖR FS-21',                'E0632201'),
+        ('FÖRLÄNGNINGSRÖR FS-31',           'E0632233'),
+    ]
+    for artikelnamn, enr in enr_map:
+        art = conn.execute(
+            "SELECT id FROM artiklar WHERE artikelnamn=? AND aktiv=1", (artikelnamn,)
+        ).fetchone()
+        if art:
+            conn.execute(
+                "INSERT OR IGNORE INTO artikel_leverantor "
+                "(artikel_id, leverantor_id, artikelnummer) VALUES (?,?,?)",
+                (art['id'], lev_onninen, enr)
+            )
+
+    # ================================================================
     # Inställningar
     # ================================================================
     for nyckel, varde in [
         ('foretagsnamn',   'Oneco Networks AB'),
         ('admin_losenord', hashlib.sha256(b'admin').hexdigest()),
         ('logotyptext',    'LÅGSPÄNNINGSBEREDNING'),
-        ('db_version',     '17'),
+        ('db_version',     '18'),
     ]:
         conn.execute("INSERT OR IGNORE INTO installningar (nyckel, varde) VALUES (?,?)",
                      (nyckel, varde))
