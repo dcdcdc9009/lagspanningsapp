@@ -519,16 +519,6 @@ async function modalProjektFormEnkel(onSuccess) {
         <label class="form-label">Projektnamn <span class="req">*</span></label>
         <input name="projektnamn" class="form-control" required>
       </div>
-      <div class="form-row cols-2">
-        <div class="form-group">
-          <label class="form-label">Kund</label>
-          <input name="kund" class="form-control">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Anslutningspunkt</label>
-          <input name="anslutningspunkt" class="form-control">
-        </div>
-      </div>
       <div class="form-group">
         <label class="form-label">Anteckningar</label>
         <textarea name="anteckningar" class="form-control" rows="2"></textarea>
