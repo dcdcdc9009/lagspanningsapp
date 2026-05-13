@@ -393,7 +393,7 @@ def fyll_i_startdata(conn):
         ('foretagsnamn',   'Oneco Networks AB'),
         ('admin_losenord', hashlib.sha256(b'admin').hexdigest()),
         ('logotyptext',    'LÅGSPÄNNINGSBEREDNING'),
-        ('db_version',     '18'),
+        ('db_version',     '19'),
     ]:
         conn.execute("INSERT OR IGNORE INTO installningar (nyckel, varde) VALUES (?,?)",
                      (nyckel, varde))

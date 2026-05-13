@@ -686,6 +686,14 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','18')")
         conn.commit()
 
+    if v < 19:
+        try:
+            conn.execute("ALTER TABLE konstruktioner ADD COLUMN projekt_id INTEGER REFERENCES projekt(id)")
+        except Exception:
+            pass
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','19')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -814,6 +822,7 @@ def _create_tables(conn):
 
         CREATE TABLE IF NOT EXISTS konstruktioner (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id  INTEGER REFERENCES projekt(id),
             typ         TEXT NOT NULL,
             byggnr      TEXT,
             namn        TEXT NOT NULL,

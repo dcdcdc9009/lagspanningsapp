@@ -15,6 +15,7 @@ const S = {
   leverantorer: [],
   mallar: [],
   installningar: {},
+  valtProjektKonstr: null,
 };
 
 // ----------------------------------------------------------------
@@ -960,119 +961,165 @@ async function renderKonstruktioner(app) {
   app.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Konstruktioner</h1>
-      <div class="flex gap-2">
-        <a class="btn btn-outline" href="/api/konstruktioner/materiallista/pdf" target="_blank">⬇ Materiallista</a>
-        <button class="btn btn-navy" id="btnNyKonstr">+ Ny konstruktion</button>
+    </div>
+    <div class="card" style="margin-bottom:1rem;padding:1rem 1.25rem;">
+      <div class="flex gap-2 align-center">
+        <label class="form-label" style="margin:0;white-space:nowrap;font-weight:600;">Välj projekt:</label>
+        <select class="form-control" id="projektValjare" style="max-width:320px;">
+          <option value="">– välj projekt –</option>
+        </select>
       </div>
     </div>
-    <div class="filter-bar">
-      <input type="search" class="form-control" id="sokKonstr" placeholder="Sök namn, byggnr, fri ID…">
-      <select class="form-control" id="filtKonstrTyp">
-        <option value="">Alla typer</option>
-        <option>Kabelskåp</option>
-        <option>Kabelförläggning</option>
-        <option>Nätstation</option>
-        <option>Övrigt</option>
-      </select>
-      <select class="form-control" id="filtKonstrStatus">
-        <option value="">Alla statusar</option>
-        <option>Pågående</option>
-        <option>Klar</option>
-        <option>Pausad</option>
-        <option>Avbruten</option>
-      </select>
-    </div>
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Typ</th><th>Byggnr</th><th>Namn</th><th>Fri ID</th><th>Status</th><th>Skapad</th><th>Åtgärder</th>
-          </tr></thead>
-          <tbody id="konstrBody"></tbody>
-        </table>
-      </div>
-    </div>`;
+    <div id="konstrInnehall"></div>`;
 
-  let konstruktioner = [];
+  // Ladda projekt i dropdown
+  let allaProjekt = [];
+  try {
+    allaProjekt = (await api('GET', '/projekt')).projekt || [];
+  } catch(e) { toast(e.message, 'error'); }
 
-  async function ladda() {
-    const sok    = document.getElementById('sokKonstr').value.trim();
-    const typ    = document.getElementById('filtKonstrTyp').value;
-    const status = document.getElementById('filtKonstrStatus').value;
-    let url = '/konstruktioner?';
-    if (sok)    url += `sok=${encodeURIComponent(sok)}&`;
-    if (typ)    url += `typ=${encodeURIComponent(typ)}&`;
-    if (status) url += `status=${encodeURIComponent(status)}&`;
-    try {
-      konstruktioner = (await api('GET', url)).konstruktioner || [];
-    } catch (e) { toast(e.message, 'error'); return; }
-    renderKonstrRader();
-  }
+  const sel = document.getElementById('projektValjare');
+  allaProjekt.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${p.projektnummer} – ${p.projektnamn}`;
+    sel.appendChild(opt);
+  });
 
-  function renderKonstrRader() {
-    const tbody = document.getElementById('konstrBody');
-    if (!konstruktioner.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="muted text-center">Inga konstruktioner hittades</td></tr>`;
+  // Återställ senast valt projekt om möjligt
+  if (S.valtProjektKonstr) sel.value = S.valtProjektKonstr;
+
+  sel.addEventListener('change', () => {
+    S.valtProjektKonstr = sel.value;
+    renderKonstrKontainer(sel.value);
+  });
+
+  renderKonstrKontainer(sel.value);
+
+  async function renderKonstrKontainer(projektId) {
+    const div = document.getElementById('konstrInnehall');
+    if (!projektId) {
+      div.innerHTML = `<div class="card text-center muted" style="padding:2rem;">Välj ett projekt ovan för att se och skapa konstruktioner.</div>`;
       return;
     }
-    tbody.innerHTML = konstruktioner.map(k => `
-      <tr style="cursor:pointer">
-        <td>${badgeTyp(k.typ)}</td>
-        <td>${escHtml(k.byggnr || '–')}</td>
-        <td><strong>${escHtml(k.namn)}</strong></td>
-        <td>${escHtml(k.fri_id || '–')}</td>
-        <td>${badge(k.status)}</td>
-        <td>${(k.skapad || '').slice(0, 10)}</td>
-        <td class="flex gap-1">
-          <button class="btn btn-sm btn-navy" data-id="${k.id}" data-action="oppna">Öppna</button>
-          <button class="btn btn-sm btn-outline" data-id="${k.id}" data-action="redigera">Redigera</button>
-          <button class="btn btn-sm btn-danger" data-id="${k.id}" data-action="radera">Ta bort</button>
-        </td>
-      </tr>`).join('');
 
-    tbody.querySelectorAll('button[data-action]').forEach(btn => {
-      btn.addEventListener('click', async e => {
-        e.stopPropagation();
-        const id = btn.dataset.id;
-        const k  = konstruktioner.find(x => x.id == id);
-        if (btn.dataset.action === 'oppna') {
-          await modalVisaKonstruktion(id, ladda);
-        } else if (btn.dataset.action === 'redigera') {
-          await modalKonstruktionForm(k, ladda);
-        } else if (btn.dataset.action === 'radera') {
-          const ok = await confirm('Ta bort konstruktion', `Ta bort "${k.namn}"?`);
-          if (!ok) return;
-          try {
-            await api('DELETE', `/konstruktioner/${id}`);
-            toast('Konstruktion borttagen', 'success');
-            await ladda();
-          } catch (e) { toast(e.message, 'error'); }
-        }
-      });
-    });
+    div.innerHTML = `
+      <div class="page-header" style="margin-top:0;">
+        <div></div>
+        <div class="flex gap-2">
+          <a class="btn btn-outline" id="btnMaterlista" href="/api/konstruktioner/materiallista/pdf?projekt_id=${projektId}" target="_blank">⬇ Materiallista</a>
+          <button class="btn btn-navy" id="btnNyKonstr">+ Ny konstruktion</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <input type="search" class="form-control" id="sokKonstr" placeholder="Sök namn, byggnr, fri ID…">
+        <select class="form-control" id="filtKonstrTyp">
+          <option value="">Alla typer</option>
+          <option>Kabelskåp</option>
+          <option>Kabelförläggning</option>
+          <option>Nätstation</option>
+          <option>Övrigt</option>
+        </select>
+        <select class="form-control" id="filtKonstrStatus">
+          <option value="">Alla statusar</option>
+          <option>Pågående</option>
+          <option>Klar</option>
+          <option>Pausad</option>
+          <option>Avbruten</option>
+        </select>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Typ</th><th>Byggnr</th><th>Namn</th><th>Fri ID</th><th>Status</th><th>Skapad</th><th>Åtgärder</th>
+            </tr></thead>
+            <tbody id="konstrBody"></tbody>
+          </table>
+        </div>
+      </div>`;
 
-    // Klick på rad öppnar konstruktionen
-    tbody.querySelectorAll('tr').forEach(row => {
-      row.addEventListener('click', async e => {
-        if (e.target.closest('button')) return;
-        const btn = row.querySelector('button[data-action="oppna"]');
-        if (btn) await modalVisaKonstruktion(btn.dataset.id, ladda);
+    let konstruktioner = [];
+
+    async function ladda() {
+      const sok    = document.getElementById('sokKonstr').value.trim();
+      const typ    = document.getElementById('filtKonstrTyp').value;
+      const status = document.getElementById('filtKonstrStatus').value;
+      let url = `/konstruktioner?projekt_id=${projektId}`;
+      if (sok)    url += `&sok=${encodeURIComponent(sok)}`;
+      if (typ)    url += `&typ=${encodeURIComponent(typ)}`;
+      if (status) url += `&status=${encodeURIComponent(status)}`;
+      try {
+        konstruktioner = (await api('GET', url)).konstruktioner || [];
+      } catch (e) { toast(e.message, 'error'); return; }
+      renderKonstrRader();
+    }
+
+    function renderKonstrRader() {
+      const tbody = document.getElementById('konstrBody');
+      if (!tbody) return;
+      if (!konstruktioner.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="muted text-center">Inga konstruktioner hittades</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = konstruktioner.map(k => `
+        <tr style="cursor:pointer">
+          <td>${badgeTyp(k.typ)}</td>
+          <td>${escHtml(k.byggnr || '–')}</td>
+          <td><strong>${escHtml(k.namn)}</strong></td>
+          <td>${escHtml(k.fri_id || '–')}</td>
+          <td>${badge(k.status)}</td>
+          <td>${(k.skapad || '').slice(0, 10)}</td>
+          <td class="flex gap-1">
+            <button class="btn btn-sm btn-navy" data-id="${k.id}" data-action="oppna">Öppna</button>
+            <button class="btn btn-sm btn-outline" data-id="${k.id}" data-action="redigera">Redigera</button>
+            <button class="btn btn-sm btn-danger" data-id="${k.id}" data-action="radera">Ta bort</button>
+          </td>
+        </tr>`).join('');
+
+      tbody.querySelectorAll('button[data-action]').forEach(btn => {
+        btn.addEventListener('click', async e => {
+          e.stopPropagation();
+          const id = btn.dataset.id;
+          const k  = konstruktioner.find(x => x.id == id);
+          if (btn.dataset.action === 'oppna') {
+            await modalVisaKonstruktion(id, ladda);
+          } else if (btn.dataset.action === 'redigera') {
+            await modalKonstruktionForm(k, ladda, projektId);
+          } else if (btn.dataset.action === 'radera') {
+            const ok = await confirm('Ta bort konstruktion', `Ta bort "${k.namn}"?`);
+            if (!ok) return;
+            try {
+              await api('DELETE', `/konstruktioner/${id}`);
+              toast('Konstruktion borttagen', 'success');
+              await ladda();
+            } catch (e) { toast(e.message, 'error'); }
+          }
+        });
       });
-    });
+
+      tbody.querySelectorAll('tr').forEach(row => {
+        row.addEventListener('click', async e => {
+          if (e.target.closest('button')) return;
+          const btn = row.querySelector('button[data-action="oppna"]');
+          if (btn) await modalVisaKonstruktion(btn.dataset.id, ladda);
+        });
+      });
+    }
+
+    document.getElementById('sokKonstr').addEventListener('input', ladda);
+    document.getElementById('filtKonstrTyp').addEventListener('change', ladda);
+    document.getElementById('filtKonstrStatus').addEventListener('change', ladda);
+    document.getElementById('btnNyKonstr').addEventListener('click', () => modalKonstruktionForm(null, ladda, projektId));
+
+    await ladda();
   }
-
-  document.getElementById('sokKonstr').addEventListener('input', ladda);
-  document.getElementById('filtKonstrTyp').addEventListener('change', ladda);
-  document.getElementById('filtKonstrStatus').addEventListener('change', ladda);
-  document.getElementById('btnNyKonstr').addEventListener('click', () => modalKonstruktionForm(null, ladda));
-
-  await ladda();
 }
 
 // ----------------------------------------------------------------
 // MODAL: KONSTRUKTION FORMULÄR (skapa/redigera)
 // ----------------------------------------------------------------
-async function modalKonstruktionForm(existing, onDone) {
+async function modalKonstruktionForm(existing, onDone, projektId) {
   const typer = ['Kabelskåp', 'Kabelförläggning', 'Nätstation', 'Övrigt'];
   const statusar = ['Pågående', 'Klar', 'Pausad', 'Avbruten'];
   const d = existing || {};
@@ -1133,7 +1180,7 @@ async function modalKonstruktionForm(existing, onDone) {
         await api('PUT', `/konstruktioner/${existing.id}`, body);
         toast('Konstruktion sparad', 'success');
       } else {
-        await api('POST', '/konstruktioner', body);
+        await api('POST', '/konstruktioner', {...body, projekt_id: projektId});
         toast('Konstruktion skapad', 'success');
       }
       Modal.close();

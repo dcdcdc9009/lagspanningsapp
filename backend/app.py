@@ -1006,13 +1006,15 @@ def _hamta_konstruktion_komplett(conn, kid):
 
 @app.get('/api/konstruktioner')
 def lista_konstruktioner():
-    typ    = request.args.get('typ', '').strip()
-    status = request.args.get('status', '').strip()
-    sok    = request.args.get('sok', '').strip()
+    typ        = request.args.get('typ', '').strip()
+    status     = request.args.get('status', '').strip()
+    sok        = request.args.get('sok', '').strip()
+    projekt_id = request.args.get('projekt_id', '').strip()
     sql = "SELECT * FROM konstruktioner WHERE 1=1"
     params = []
-    if typ:    sql += " AND typ=?";    params.append(typ)
-    if status: sql += " AND status=?"; params.append(status)
+    if projekt_id: sql += " AND projekt_id=?"; params.append(int(projekt_id))
+    if typ:        sql += " AND typ=?";         params.append(typ)
+    if status:     sql += " AND status=?";      params.append(status)
     if sok:
         sql += " AND (namn LIKE ? OR byggnr LIKE ? OR fri_id LIKE ?)"
         params += [f'%{sok}%'] * 3
@@ -1032,9 +1034,10 @@ def skapa_konstruktion():
     tidpunkt = nu()
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO konstruktioner (typ,byggnr,namn,fri_id,anmarkning,status,skapad,uppdaterad)"
-            " VALUES (?,?,?,?,?,?,?,?)",
-            (typ, (d.get('byggnr') or '').strip() or None,
+            "INSERT INTO konstruktioner (projekt_id,typ,byggnr,namn,fri_id,anmarkning,status,skapad,uppdaterad)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            (d.get('projekt_id') or None,
+             typ, (d.get('byggnr') or '').strip() or None,
              namn,
              (d.get('fri_id') or '').strip() or None,
              (d.get('anmarkning') or '').strip() or None,
@@ -1131,15 +1134,24 @@ def konstruktion_pdf(kid):
 @app.get('/api/konstruktioner/materiallista/pdf')
 def konstruktioner_materiallista_pdf():
     from pdf_generator import skapa_konstruktioner_materiallista_pdf
+    projekt_id = request.args.get('projekt_id', '').strip()
     with get_db() as conn:
         inst = {r['nyckel']: r['varde'] for r in
                 conn.execute("SELECT nyckel,varde FROM installningar").fetchall()}
-        ids = [r[0] for r in conn.execute(
-            "SELECT id FROM konstruktioner ORDER BY typ, namn").fetchall()]
+        if projekt_id:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM konstruktioner WHERE projekt_id=? ORDER BY typ, namn",
+                (int(projekt_id),)).fetchall()]
+            projekt = conn.execute("SELECT * FROM projekt WHERE id=?", (int(projekt_id),)).fetchone()
+            filnamn = f"{projekt['projektnummer']}_konstruktioner_materiallista.pdf" if projekt else "konstruktioner_materiallista.pdf"
+        else:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM konstruktioner ORDER BY typ, namn").fetchall()]
+            filnamn = "konstruktioner_materiallista.pdf"
         konstruktioner = [_hamta_konstruktion_komplett(conn, kid) for kid in ids]
     pdf = skapa_konstruktioner_materiallista_pdf(konstruktioner, inst)
     return Response(pdf, mimetype='application/pdf',
-                    headers={'Content-Disposition': 'attachment; filename="konstruktioner_materiallista.pdf"'})
+                    headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
 
 
 # ============================================================
