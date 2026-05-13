@@ -344,8 +344,8 @@ def ta_bort_projekt(pid):
     with get_db() as conn:
         rad = conn.execute("SELECT projektnummer FROM projekt WHERE id=?", (pid,)).fetchone()
         if not rad: return fel('Projektet hittades inte.', 404)
-        # Koppla loss konstruktioner (bevaras men kopplas bort från projektet)
-        conn.execute("UPDATE konstruktioner SET projekt_id=NULL WHERE projekt_id=?", (pid,))
+        # Radera konstruktioner kopplade till projektet (och deras rader/egenkontroll via CASCADE)
+        conn.execute("DELETE FROM konstruktioner WHERE projekt_id=?", (pid,))
         conn.execute("DELETE FROM projekt WHERE id=?", (pid,))
         conn.commit()
     return jsonify({'meddelande': f'Projekt {rad["projektnummer"]} borttaget.'})
