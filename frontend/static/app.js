@@ -2388,7 +2388,12 @@ function visaLoginSkarm() {
             <input type="password" id="loginPw" class="form-control login-input"
                    placeholder="Lösenord" autofocus required>
           </div>
-          <div id="loginFel" class="login-fel hidden">Fel lösenord. Försök igen.</div>
+          <div id="loginFel" class="login-fel hidden">
+            <img id="gandalfGif" src="https://media.giphy.com/media/njYrp176NQsHS/giphy.gif"
+                 alt="You shall not pass!"
+                 style="width:180px;display:block;margin:0 auto 8px;border-radius:8px;">
+            <span>YOU SHALL NOT PASS! 🧙 Fel lösenord.</span>
+          </div>
           <button type="submit" class="btn btn-navy login-btn">Logga in</button>
         </form>
       </div>
@@ -2415,6 +2420,10 @@ function visaLoginSkarm() {
       await boot();
     } catch {
       felDiv.classList.remove('hidden');
+      // Starta om GIF:en genom att byta src
+      const gif = document.getElementById('gandalfGif');
+      gif.src = '';
+      gif.src = 'https://media.giphy.com/media/njYrp176NQsHS/giphy.gif';
       document.getElementById('loginPw').value = '';
       document.getElementById('loginPw').focus();
       btn.disabled = false;
