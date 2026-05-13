@@ -99,6 +99,8 @@ window.addEventListener('hashchange', () => {
 function render(view, params = {}) {
   const app = document.getElementById('app');
   app.innerHTML = '';
+  app.dataset.view = view;
+  document.body.dataset.view = view;
   switch (view) {
     case 'projekt':         renderProjekt(app); break;
     case 'projekt-detail':  renderProjektDetail(app, params.id); break;
