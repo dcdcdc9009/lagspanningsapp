@@ -225,10 +225,10 @@ function rodFlaggHtml(fas, dagar) {
 }
 
 // ----------------------------------------------------------------
-// VIEW: PROJEKT (matrix dashboard)
+// VIEW: PROJEKT (card dashboard)
 // ----------------------------------------------------------------
 async function renderProjekt(app) {
-  app.innerHTML = `<div class="text-muted" style="padding:32px;text-align:center">Laddar dashboard…</div>`;
+  app.innerHTML = `<div class="text-muted" style="padding:48px;text-align:center">Laddar dashboard…</div>`;
   let checklistor = {};
   try {
     const [pr, ck] = await Promise.all([
@@ -248,68 +248,69 @@ async function renderProjekt(app) {
     ckMap[parseInt(pid)] = new Set(doneArr);
   }
   const N = CHECKLISTA.length;
-  function getDone(p) {
-    return ckMap[p.id] ? ckMap[p.id].size : (parseInt(p.checklista_klar) || 0);
-  }
+
+  function getDone(p)        { return ckMap[p.id] ? ckMap[p.id].size : (parseInt(p.checklista_klar) || 0); }
+  function getGruppDone(p,g) { return CHECKLISTA.filter(c => c.grupp === g).filter(c => ckMap[p.id]?.has(c.nr)).length; }
+
+  const FAS_COLOR = { 'Beredning': '#d97706', 'Projektledning': '#7c3aed', 'Utförda': '#16a34a' };
 
   app.innerHTML = `
-    <div class="page-header">
-      <h1 class="page-title">Projektöversikt</h1>
-      <button class="btn btn-navy" id="btnNyttProjekt">+ Nytt projekt</button>
+    <div class="pk-banner">
+      <div class="pk-banner-left">
+        <div class="pk-banner-title">Projektöversikt</div>
+        <div class="pk-banner-sub" id="pkSub"></div>
+      </div>
+      <div class="pk-fas-stats" id="pkFasStat"></div>
+      <button class="btn btn-primary btn-lg" id="btnNyttProjekt" style="flex-shrink:0">+ Nytt projekt</button>
     </div>
-    <div id="pmStats" class="pm-stats"></div>
-    <div class="filter-bar" style="margin-bottom:12px">
-      <input type="search" class="form-control" id="pmSok" placeholder="Sök projekt…" style="max-width:220px">
-      <select class="form-control" id="pmFas" style="max-width:160px">
+
+    <div class="pk-controls">
+      <input type="search" class="form-control pk-search" id="pkSok" placeholder="🔍  Sök projekt, IB-nummer, beredare…">
+      <select class="form-control" id="pkFas" style="max-width:155px">
         <option value="">Alla faser</option>
         ${FASER.map(f => `<option>${escHtml(f)}</option>`).join('')}
       </select>
-      <select class="form-control" id="pmBer" style="max-width:180px">
+      <select class="form-control" id="pkBer" style="max-width:170px">
         <option value="">Alla beredare</option>
         ${S.beredare.map(b => `<option>${escHtml(b.namn)}</option>`).join('')}
       </select>
+      <div class="pk-toggle">
+        <button class="pk-tb active" id="pkTKort" title="Kortvyn">▦ Kort</button>
+        <button class="pk-tb" id="pkTLista" title="Listvy">☰ Lista</button>
+      </div>
     </div>
-    <div class="pm-wrap">
-      <table class="pm-table">
-        <thead>
-          <tr>
-            <th class="pm-sticky pm-th-info" rowspan="2">Projekt</th>
-            <th rowspan="2" style="min-width:70px">IB Nr</th>
-            <th rowspan="2" style="min-width:100px">Tilldelat</th>
-            <th rowspan="2" style="min-width:130px">Beredning</th>
-            <th rowspan="2" style="min-width:85px">Framsteg</th>
-            <th rowspan="2">Fas</th>
-            ${GRUPPER.map(g => `<th colspan="${g.count}" class="pm-grp" style="background:${g.color}">${escHtml(g.namn)}</th>`).join('')}
-            <th rowspan="2" style="min-width:56px"></th>
-          </tr>
-          <tr>
-            ${CHECKLISTA.map(c => `<th class="pm-item" title="${escHtml(c.namn)}" style="border-bottom-color:${GRUPPER[c.grupp].color}">${escHtml(c.kort)}</th>`).join('')}
-          </tr>
-        </thead>
-        <tbody id="pmBody"></tbody>
-      </table>
-    </div>`;
 
-  function uppdateraStats() {
+    <div id="pkContent"></div>`;
+
+  let viewMode = 'kort';
+
+  function updateBanner() {
     const tot = S.projekt.length;
     const totDone = S.projekt.reduce((s, p) => s + getDone(p), 0);
     const pct = (tot * N) ? Math.round(100 * totDone / (tot * N)) : 0;
-    document.getElementById('pmStats').innerHTML = `
-      <div class="pm-stat-box"><div class="pm-stat-val">${tot}</div><div class="pm-stat-lbl">Projekt</div></div>
-      <div class="pm-stat-box pm-stat-green"><div class="pm-stat-val">${pct}%</div><div class="pm-stat-lbl">Klara checklistpunkter</div></div>
-      ${FASER.map(f => {
-        const cnt = S.projekt.filter(p => p.fas === f).length;
-        return `<div class="pm-stat-box"><div class="pm-stat-val">${cnt}</div><div class="pm-stat-lbl">${escHtml(f)}</div></div>`;
-      }).join('')}
-      <div class="pm-stat-box"><div class="pm-stat-val">${S.projekt.filter(p => !p.fas).length}</div><div class="pm-stat-lbl">Ingen fas</div></div>`;
+    document.getElementById('pkSub').innerHTML =
+      `<span class="pk-stat-chip">${tot} projekt</span> <span class="pk-stat-chip pk-green">${pct}% klara checklistpunkter</span>`;
+    document.getElementById('pkFasStat').innerHTML = FASER.map(f => {
+      const cnt = S.projekt.filter(p => p.fas === f).length;
+      const col = FAS_COLOR[f] || 'var(--gray-400)';
+      return `<div class="pk-fas-box" style="border-color:${col}40">
+        <span class="pk-fas-num" style="color:${col}">${cnt}</span>
+        <span class="pk-fas-lbl">${escHtml(f)}</span>
+      </div>`;
+    }).join('') + (() => {
+      const ing = S.projekt.filter(p => !p.fas).length;
+      return `<div class="pk-fas-box" style="border-color:#ffffff30">
+        <span class="pk-fas-num" style="color:rgba(255,255,255,.6)">${ing}</span>
+        <span class="pk-fas-lbl">Ingen fas</span>
+      </div>`;
+    })();
   }
-  uppdateraStats();
 
-  function renderRader() {
-    const sok = document.getElementById('pmSok').value.toLowerCase();
-    const fas = document.getElementById('pmFas').value;
-    const ber = document.getElementById('pmBer').value;
-    const lista = S.projekt.filter(p => {
+  function getFiltered() {
+    const sok = document.getElementById('pkSok').value.toLowerCase();
+    const fas = document.getElementById('pkFas').value;
+    const ber = document.getElementById('pkBer').value;
+    return S.projekt.filter(p => {
       if (fas && p.fas !== fas) return false;
       if (ber && p.beredare !== ber) return false;
       if (sok) {
@@ -318,63 +319,115 @@ async function renderProjekt(app) {
       }
       return true;
     });
-    const tbody = document.getElementById('pmBody');
+  }
+
+  function kortHtml(p) {
+    const done = getDone(p);
+    const pct  = Math.round(100 * done / N);
+    const tc   = FAS_COLOR[p.fas] || '#a1a1aa';
+    const period = (p.beredning_start || p.beredning_slut)
+      ? `${p.beredning_start || '?'} → ${p.beredning_slut || '?'}` : null;
+    const grupper = GRUPPER.map(g => {
+      const kl  = getGruppDone(p, g.id);
+      const gPct = Math.round(100 * kl / g.count);
+      return `<div class="pk-grp">
+        <span class="pk-grp-lbl" style="color:${g.color}">${escHtml(g.namn)}</span>
+        <div class="pk-grp-track"><div class="pk-grp-fill" style="width:${gPct}%;background:${g.color}"></div></div>
+        <span class="pk-grp-num">${kl}/${g.count}</span>
+      </div>`;
+    }).join('');
+    const tags = [
+      p.ib_nummer    && `<span class="pk-tag">IB ${escHtml(p.ib_nummer)}</span>`,
+      p.tilldelat_till && `<span class="pk-tag">👤 ${escHtml(p.tilldelat_till)}</span>`,
+      p.omrade       && `<span class="pk-tag">📍 ${escHtml(p.omrade)}</span>`,
+    ].filter(Boolean).join('');
+    return `<div class="pk-card" style="--tc:${tc}">
+      <div class="pk-card-head">
+        <span class="pk-card-nr">${escHtml(p.projektnummer)}</span>
+        ${badgeFas(p.fas)}
+      </div>
+      <div class="pk-card-name">${escHtml(p.projektnamn)}</div>
+      ${tags ? `<div class="pk-tags">${tags}</div>` : ''}
+      ${period ? `<div class="pk-period">📅 ${escHtml(period)}</div>` : ''}
+      <div class="pk-grps">${grupper}</div>
+      <div class="pk-tot-row">
+        <div class="pk-tot-track"><div class="pk-tot-fill" style="width:${pct}%"></div></div>
+        <span class="pk-tot-txt">${done}/${N} (${pct}%)</span>
+      </div>
+      <div class="pk-card-foot">
+        <span class="pk-card-ber">👷 ${escHtml(p.beredare)}</span>
+        <div class="pk-card-btns">
+          <button class="btn btn-sm btn-navy" data-id="${p.id}" data-a="oppna">Öppna</button>
+          <button class="btn btn-sm btn-outline" data-id="${p.id}" data-a="red">✎</button>
+          <button class="btn btn-sm btn-danger" data-id="${p.id}" data-a="del">✕</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function renderKort() {
+    const lista = getFiltered();
+    const c = document.getElementById('pkContent');
     if (!lista.length) {
-      tbody.innerHTML = `<tr><td colspan="${6 + N + 1}" class="muted text-center" style="padding:32px">Inga projekt hittades</td></tr>`;
+      c.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-title">Inga projekt hittades</div></div>`;
       return;
     }
-    tbody.innerHTML = lista.map(p => {
-      const done = getDone(p);
-      const pct  = Math.round(100 * done / N);
-      const period = (p.beredning_start || p.beredning_slut)
-        ? `${p.beredning_start || '?'} – ${p.beredning_slut || '?'}` : '–';
-      const dots = CHECKLISTA.map(c => {
-        const ok = ckMap[p.id] && ckMap[p.id].has(c.nr);
-        const gc = GRUPPER[c.grupp].color;
-        return `<td class="pm-dot-td"><div class="pm-dot${ok ? ' on' : ''}" data-pid="${p.id}" data-nr="${c.nr}"
-          style="${ok ? `background:${gc};border-color:${gc}` : `border-color:${gc}55`}" title="${escHtml(c.namn)}"></div></td>`;
-      }).join('');
-      return `<tr>
-        <td class="pm-sticky pm-proj-td">
-          <div class="pm-pnr">${escHtml(p.projektnummer)}</div>
-          <div class="pm-pnamn">${escHtml(p.projektnamn)}</div>
-          <div class="pm-pber">${escHtml(p.beredare)}</div>
-        </td>
-        <td class="text-sm">${escHtml(p.ib_nummer || '–')}</td>
-        <td class="text-sm">${escHtml(p.tilldelat_till || '–')}</td>
-        <td class="text-sm" style="white-space:nowrap">${escHtml(period)}</td>
-        <td>
-          <div class="pm-prog"><div class="pm-prog-fill" style="width:${pct}%"></div></div>
-          <div style="font-size:10px;color:var(--gray-400);margin-top:2px">${done}/${N}</div>
-        </td>
-        <td>${badgeFas(p.fas)}</td>
-        ${dots}
-        <td>
-          <div style="display:flex;flex-direction:column;gap:3px">
+    c.innerHTML = `<div class="pk-grid">${lista.map(kortHtml).join('')}</div>`;
+    wireActions(c);
+  }
+
+  function renderLista() {
+    const lista = getFiltered();
+    const c = document.getElementById('pkContent');
+    if (!lista.length) {
+      c.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-title">Inga projekt hittades</div></div>`;
+      return;
+    }
+    c.innerHTML = `<div class="card"><div class="table-wrap"><table>
+      <thead><tr>
+        <th>Projektnr</th><th>Projektnamn</th><th>IB Nr</th><th>Tilldelat</th><th>Beredning</th><th>Fas</th>
+        ${GRUPPER.map(g => `<th style="min-width:90px">${escHtml(g.namn)}</th>`).join('')}
+        <th style="min-width:80px">Totalt</th><th></th>
+      </tr></thead>
+      <tbody>${lista.map(p => {
+        const done = getDone(p);
+        const pct  = Math.round(100 * done / N);
+        const period = (p.beredning_start || p.beredning_slut)
+          ? `${(p.beredning_start||'').slice(5) || '?'} – ${(p.beredning_slut||'').slice(5) || '?'}` : '–';
+        const grpCols = GRUPPER.map(g => {
+          const kl = getGruppDone(p, g.id);
+          const gp = Math.round(100 * kl / g.count);
+          return `<td>
+            <div style="font-size:11px;font-weight:700;color:${g.color}">${kl}/${g.count}</div>
+            <div style="height:4px;background:${g.color}22;border-radius:2px;margin-top:3px">
+              <div style="height:100%;width:${gp}%;background:${g.color};border-radius:2px"></div>
+            </div></td>`;
+        }).join('');
+        return `<tr>
+          <td class="mono">${escHtml(p.projektnummer)}</td>
+          <td><strong>${escHtml(p.projektnamn)}</strong></td>
+          <td>${escHtml(p.ib_nummer || '–')}</td>
+          <td>${escHtml(p.tilldelat_till || '–')}</td>
+          <td style="font-size:11px;white-space:nowrap">${escHtml(period)}</td>
+          <td>${badgeFas(p.fas)}</td>
+          ${grpCols}
+          <td>
+            <div style="font-size:12px;font-weight:700;color:var(--navy-d)">${pct}%</div>
+            <div class="pm-prog" style="margin-top:3px"><div class="pm-prog-fill" style="width:${pct}%"></div></div>
+          </td>
+          <td><div class="flex gap-1">
             <button class="btn btn-sm btn-navy" data-id="${p.id}" data-a="oppna">Öppna</button>
             <button class="btn btn-sm btn-outline" data-id="${p.id}" data-a="red">✎</button>
             <button class="btn btn-sm btn-danger" data-id="${p.id}" data-a="del">✕</button>
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
+          </div></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div></div>`;
+    wireActions(c);
+  }
 
-    tbody.querySelectorAll('.pm-dot').forEach(dot => {
-      dot.addEventListener('click', async () => {
-        const pid = parseInt(dot.dataset.pid);
-        const nr  = parseInt(dot.dataset.nr);
-        const nytt = dot.classList.contains('on') ? 0 : 1;
-        try {
-          await api('PUT', `/projekt/${pid}/checklista/${nr}`, { utford: nytt });
-          if (!ckMap[pid]) ckMap[pid] = new Set();
-          nytt ? ckMap[pid].add(nr) : ckMap[pid].delete(nr);
-          renderRader();
-          uppdateraStats();
-        } catch (e) { toast(e.message, 'error'); }
-      });
-    });
-
-    tbody.querySelectorAll('button[data-a]').forEach(btn => {
+  function wireActions(container) {
+    container.querySelectorAll('button[data-a]').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
         const id = btn.dataset.id;
@@ -391,19 +444,37 @@ async function renderProjekt(app) {
             toast('Projekt borttaget', 'success');
             S.projekt = S.projekt.filter(x => x.id != id);
             delete ckMap[id];
-            renderRader();
-            uppdateraStats();
+            updateBanner();
+            renderAll();
           } catch (e2) { toast(e2.message, 'error'); }
         }
       });
     });
   }
 
-  renderRader();
-  document.getElementById('pmSok').addEventListener('input', renderRader);
-  document.getElementById('pmFas').addEventListener('change', renderRader);
-  document.getElementById('pmBer').addEventListener('change', renderRader);
+  function renderAll() {
+    viewMode === 'kort' ? renderKort() : renderLista();
+  }
+
+  updateBanner();
+  renderAll();
+
+  document.getElementById('pkSok').addEventListener('input', renderAll);
+  document.getElementById('pkFas').addEventListener('change', renderAll);
+  document.getElementById('pkBer').addEventListener('change', renderAll);
   document.getElementById('btnNyttProjekt').addEventListener('click', () => modalNyttProjekt());
+  document.getElementById('pkTKort').addEventListener('click', () => {
+    viewMode = 'kort';
+    document.getElementById('pkTKort').classList.add('active');
+    document.getElementById('pkTLista').classList.remove('active');
+    renderAll();
+  });
+  document.getElementById('pkTLista').addEventListener('click', () => {
+    viewMode = 'lista';
+    document.getElementById('pkTLista').classList.add('active');
+    document.getElementById('pkTKort').classList.remove('active');
+    renderAll();
+  });
 }
 
 async function laddaProjekt() {
