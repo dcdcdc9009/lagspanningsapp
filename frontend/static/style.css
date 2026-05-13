@@ -1233,14 +1233,28 @@ hr.divider { border: none; border-top: 1px solid var(--gray-200); margin: 16px 0
   gap: 8px;
   padding: 7px 14px;
   border-bottom: 1px solid var(--gray-100);
-  cursor: pointer;
   transition: background .1s;
   font-size: 13px;
-  user-select: none;
 }
 .ck-item:last-child { border-bottom: none; }
 .ck-item:hover { background: var(--gray-50); }
 .ck-item.ok { background: #f0fdf4; }
 .ck-item.ok .ck-text { color: var(--gray-400); text-decoration: line-through; }
-.ck-cb { flex-shrink: 0; width: 15px; height: 15px; cursor: pointer; }
+.ck-item.ej-rel { background: #f8f8f8; }
+.ck-item.ej-rel .ck-text { color: var(--gray-400); text-decoration: line-through; font-style: italic; }
 .ck-text { flex: 1; }
+.ck-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.ck-lbl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--gray-500);
+  user-select: none;
+}
+.ck-lbl:hover { color: var(--gray-700); }
+.ck-lbl-utford input { accent-color: #16a34a; }
+.ck-lbl-ejrel input { accent-color: #9ca3af; }
+.ck-cb { width: 13px; height: 13px; cursor: pointer; flex-shrink: 0; }

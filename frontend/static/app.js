@@ -244,7 +244,8 @@ async function renderProjekt(app) {
   await laddaBeredare();
 
   const ckMap = {};
-  for (const [pid, doneArr] of Object.entries(checklistor)) {
+  for (const [pid, data] of Object.entries(checklistor)) {
+    const doneArr = Array.isArray(data) ? data : (data.done || []);
     ckMap[parseInt(pid)] = new Set(doneArr);
   }
   const N = CHECKLISTA.length;
@@ -624,7 +625,8 @@ async function renderProjektDetail(app, id) {
 
   const fasHistorik = fasData.historik || [];
   const aktuellFas = p.fas || null;
-  const ckSet = new Set(checklista.filter(c => c.utford).map(c => c.item_nr));
+  const ckSet    = new Set(checklista.filter(c => c.utford).map(c => c.item_nr));
+  const ejRelSet = new Set(checklista.filter(c => c.ej_relevant).map(c => c.item_nr));
 
   function fasTidslinjeHtml() {
     return `<div class="fas-tidslinje" id="fasTidslinje">` +
@@ -730,10 +732,12 @@ async function renderProjektDetail(app, id) {
     </div>`;
 
   function renderCk() {
-    const done = ckSet.size;
-    const pct  = Math.round(100 * done / CHECKLISTA.length);
+    const done   = ckSet.size;
+    const ejRels = ejRelSet.size;
+    const pct    = Math.round(100 * done / CHECKLISTA.length);
     document.getElementById('ckBar').style.width = pct + '%';
-    document.getElementById('ckProg').textContent = `${done}/${CHECKLISTA.length} (${pct}%)`;
+    document.getElementById('ckProg').textContent =
+      `${done}/${CHECKLISTA.length} utförda${ejRels ? ` · ${ejRels} ej relevant` : ''}`;
     document.getElementById('ckLista').innerHTML = GRUPPER.map(g => {
       const items = CHECKLISTA.filter(c => c.grupp === g.id);
       const doneG = items.filter(c => ckSet.has(c.nr)).length;
@@ -743,25 +747,47 @@ async function renderProjektDetail(app, id) {
           <span class="text-sm text-muted">${doneG}/${items.length}</span>
         </div>
         ${items.map(c => {
-          const ok = ckSet.has(c.nr);
-          return `<label class="ck-item${ok ? ' ok' : ''}">
-            <input type="checkbox" class="ck-cb" data-nr="${c.nr}" ${ok ? 'checked' : ''} style="accent-color:${g.color}">
+          const ok    = ckSet.has(c.nr);
+          const ejRel = ejRelSet.has(c.nr);
+          return `<div class="ck-item${ok ? ' ok' : ejRel ? ' ej-rel' : ''}">
             <span class="ck-text">${escHtml(c.namn)}</span>
-            ${ok ? `<span style="color:${g.color};font-size:13px;flex-shrink:0">✓</span>` : ''}
-          </label>`;
+            <div class="ck-actions">
+              <label class="ck-lbl ck-lbl-utford" title="Markera som utförd">
+                <input type="checkbox" class="ck-cb" data-nr="${c.nr}" data-type="utford"
+                  ${ok ? 'checked' : ''} style="accent-color:${g.color}">
+                <span>Utförd</span>
+              </label>
+              <label class="ck-lbl ck-lbl-ejrel" title="Markera som ej relevant">
+                <input type="checkbox" class="ck-cb" data-nr="${c.nr}" data-type="ejrel"
+                  ${ejRel ? 'checked' : ''}>
+                <span>Ej relevant</span>
+              </label>
+            </div>
+          </div>`;
         }).join('')}
       </div>`;
     }).join('');
 
     document.getElementById('ckLista').querySelectorAll('.ck-cb').forEach(cb => {
       cb.addEventListener('change', async () => {
-        const nr = parseInt(cb.dataset.nr);
-        const utford = cb.checked ? 1 : 0;
+        const nr   = parseInt(cb.dataset.nr);
+        const type = cb.dataset.type;
+        const item = cb.closest('.ck-item');
+        const cbUtford = item.querySelector('[data-type="utford"]');
+        const cbEjrel  = item.querySelector('[data-type="ejrel"]');
+        if (type === 'utford' && cb.checked) cbEjrel.checked = false;
+        if (type === 'ejrel'  && cb.checked) cbUtford.checked = false;
+        const utford    = cbUtford.checked ? 1 : 0;
+        const ej_relevant = cbEjrel.checked ? 1 : 0;
         try {
-          await api('PUT', `/projekt/${id}/checklista/${nr}`, { utford });
-          utford ? ckSet.add(nr) : ckSet.delete(nr);
+          await api('PUT', `/projekt/${id}/checklista/${nr}`, { utford, ej_relevant });
+          utford      ? ckSet.add(nr)    : ckSet.delete(nr);
+          ej_relevant ? ejRelSet.add(nr) : ejRelSet.delete(nr);
           renderCk();
-        } catch (e) { cb.checked = !cb.checked; toast(e.message, 'error'); }
+        } catch (e) {
+          cb.checked = !cb.checked;
+          toast(e.message, 'error');
+        }
       });
     });
   }

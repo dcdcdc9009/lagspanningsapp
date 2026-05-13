@@ -387,17 +387,20 @@ def ta_bort_projekt(pid):
 
 @app.get('/api/projekt/checklistor')
 def alla_checklistor():
-    """Returnerar alla checklistepunkter för alla projekt som {pid: [item_nrs_done]}."""
+    """Returnerar alla checklistepunkter för alla projekt som {pid: {done:[...], ej_rel:[...]}}."""
     with get_db() as conn:
         rader = conn.execute(
-            "SELECT projekt_id, item_nr FROM projekt_checklistor WHERE utford=1"
+            "SELECT projekt_id, item_nr, utford, ej_relevant FROM projekt_checklistor"
         ).fetchall()
     result = {}
     for r in rader:
         pid = r['projekt_id']
         if pid not in result:
-            result[pid] = []
-        result[pid].append(r['item_nr'])
+            result[pid] = {'done': [], 'ej_rel': []}
+        if r['utford']:
+            result[pid]['done'].append(r['item_nr'])
+        if r['ej_relevant']:
+            result[pid]['ej_rel'].append(r['item_nr'])
     return jsonify({'checklistor': result})
 
 
@@ -419,16 +422,19 @@ def uppdatera_checklistepunkt(pid, item_nr):
         return fel('Ogiltigt item_nr.')
     d = request.get_json(silent=True) or {}
     utford = 1 if d.get('utford') else 0
+    ej_relevant = 1 if d.get('ej_relevant') else 0
+    if utford and ej_relevant:
+        ej_relevant = 0
     with get_db() as conn:
         if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
             return fel('Projektet hittades inte.', 404)
         conn.execute(
-            "INSERT INTO projekt_checklistor (projekt_id, item_nr, utford) VALUES (?,?,?) "
-            "ON CONFLICT(projekt_id, item_nr) DO UPDATE SET utford=excluded.utford",
-            (pid, item_nr, utford)
+            "INSERT INTO projekt_checklistor (projekt_id, item_nr, utford, ej_relevant) VALUES (?,?,?,?) "
+            "ON CONFLICT(projekt_id, item_nr) DO UPDATE SET utford=excluded.utford, ej_relevant=excluded.ej_relevant",
+            (pid, item_nr, utford, ej_relevant)
         )
         conn.commit()
-    return jsonify({'item_nr': item_nr, 'utford': utford})
+    return jsonify({'item_nr': item_nr, 'utford': utford, 'ej_relevant': ej_relevant})
 
 
 # ============================================================

@@ -765,6 +765,14 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','21')")
         conn.commit()
 
+    if v < 22:
+        try:
+            conn.execute("ALTER TABLE projekt_checklistor ADD COLUMN ej_relevant INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','22')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -965,10 +973,11 @@ def _create_tables(conn):
         );
 
         CREATE TABLE IF NOT EXISTS projekt_checklistor (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            projekt_id INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
-            item_nr    INTEGER NOT NULL,
-            utford     INTEGER NOT NULL DEFAULT 0,
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+            item_nr     INTEGER NOT NULL,
+            utford      INTEGER NOT NULL DEFAULT 0,
+            ej_relevant INTEGER NOT NULL DEFAULT 0,
             UNIQUE(projekt_id, item_nr)
         );
     """)
