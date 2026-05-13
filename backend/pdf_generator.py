@@ -445,7 +445,7 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar, enr_lookup=
 
 # ── KONSTRUKTIONER MATERIALLISTA PDF ─────────────────────────────────────────
 
-def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar):
+def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar, enr_lookup=None):
     foretag = installningar.get('foretagsnamn',
                installningar.get('foretag_namn', 'Oneco Networks AB'))
     buf = BytesIO()
@@ -484,6 +484,8 @@ def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar):
                             textColor=WHITE, leading=10)
     cel_s = ParagraphStyle('kc', fontName='Helvetica', fontSize=8,
                             textColor=DARK, leading=10)
+    enr_s = ParagraphStyle('ke', fontName='Helvetica', fontSize=7,
+                            textColor=GRAY, leading=9)
     anv_s = ParagraphStyle('ka', fontName='Helvetica', fontSize=7,
                             textColor=GRAY, leading=9)
 
@@ -498,11 +500,18 @@ def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar):
                 if key not in aggregat:
                     aggregat[key] = {'artikelnamn': key,
                                      'enhet': r.get('enhet', ''),
-                                     'antal': 0.0, 'konstruktioner': []}
+                                     'antal': 0.0, 'konstruktioner': [],
+                                     'artikelnummer': None}
                 aggregat[key]['antal'] += float(r.get('antal', 0) or 0)
                 knamn = k.get('namn', '')
                 if knamn not in aggregat[key]['konstruktioner']:
                     aggregat[key]['konstruktioner'].append(knamn)
+
+        # Berika med E-nummer
+        if enr_lookup:
+            for row in aggregat.values():
+                if not row.get('artikelnummer'):
+                    row['artikelnummer'] = enr_lookup.get(row['artikelnamn'])
 
         if not aggregat:
             continue
@@ -510,20 +519,22 @@ def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar):
         har_innehall = True
         story += _sektion_rubrik(typ)
 
-        col_anvands = 65 * mm
-        col_enhet   = 18 * mm
-        col_antal   = 18 * mm
-        col_artikel = W - MARGIN * 2 - col_enhet - col_antal - col_anvands
-        col_w = [col_artikel, col_enhet, col_antal, col_anvands]
+        col_anvands = 55 * mm
+        col_enhet   = 16 * mm
+        col_antal   = 16 * mm
+        col_enr     = 26 * mm
+        col_artikel = W - MARGIN * 2 - col_enr - col_enhet - col_antal - col_anvands
+        col_w = [col_artikel, col_enr, col_enhet, col_antal, col_anvands]
 
         rows = [[Paragraph(h, hdr_s)
-                 for h in ['Artikel', 'Enhet', 'Antal', 'Används i']]]
+                 for h in ['Artikel', 'E-nummer', 'Enhet', 'Antal', 'Används i']]]
         for art in sorted(aggregat.values(), key=lambda x: x['artikelnamn']):
             anv = ', '.join(art['konstruktioner'][:5])
             if len(art['konstruktioner']) > 5:
                 anv += f" +{len(art['konstruktioner'])-5} till"
             rows.append([
                 Paragraph(art['artikelnamn'], cel_s),
+                Paragraph(art.get('artikelnummer') or '–', enr_s),
                 art['enhet'],
                 f"{art['antal']:g}",
                 Paragraph(anv, anv_s),
@@ -534,7 +545,7 @@ def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar):
             ('BACKGROUND',    (0, 0), (-1, 0), PURPLE),
             ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE',      (0, 0), (-1, -1), 8),
-            ('ALIGN',         (2, 0), (2, -1), 'RIGHT'),
+            ('ALIGN',         (3, 0), (3, -1), 'RIGHT'),
             ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
             ('TOPPADDING',    (0, 0), (-1, -1), 4),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),

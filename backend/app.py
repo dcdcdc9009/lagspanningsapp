@@ -1364,6 +1364,12 @@ def konstruktioner_materiallista_pdf():
     with get_db() as conn:
         inst = {r['nyckel']: r['varde'] for r in
                 conn.execute("SELECT nyckel,varde FROM installningar").fetchall()}
+        enr_lookup = {r['artikelnamn']: r['artikelnummer'] for r in conn.execute(
+            "SELECT a.artikelnamn, al.artikelnummer FROM artikel_leverantor al "
+            "JOIN artiklar a ON a.id = al.artikel_id "
+            "JOIN leverantorer l ON l.id = al.leverantor_id "
+            "WHERE l.namn = 'Onninen' AND al.artikelnummer IS NOT NULL"
+        ).fetchall()}
         if projekt_id:
             ids = [r[0] for r in conn.execute(
                 "SELECT id FROM konstruktioner WHERE projekt_id=? ORDER BY typ, namn",
@@ -1375,7 +1381,7 @@ def konstruktioner_materiallista_pdf():
                 "SELECT id FROM konstruktioner ORDER BY typ, namn").fetchall()]
             filnamn = "konstruktioner_materiallista.pdf"
         konstruktioner = [_hamta_konstruktion_komplett(conn, kid) for kid in ids]
-    pdf = skapa_konstruktioner_materiallista_pdf(konstruktioner, inst)
+    pdf = skapa_konstruktioner_materiallista_pdf(konstruktioner, inst, enr_lookup)
     return Response(pdf, mimetype='application/pdf',
                     headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
 
