@@ -409,21 +409,17 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
 // ----------------------------------------------------------------
 async function renderProjektDetail(app, id) {
   app.innerHTML = `<div class="text-muted">Laddar…</div>`;
-  let p, fasData, tillstandLista, aktiviteter, protokoll;
+  let p, fasData, tillstandLista, aktiviteter;
   try {
-    [p, fasData, tillstandLista, aktiviteter, protokoll] = await Promise.all([
+    [p, fasData, tillstandLista, aktiviteter] = await Promise.all([
       api('GET', `/projekt/${id}`).then(r => r.projekt),
       api('GET', `/projekt/${id}/fas`).catch(() => ({ fas: null, historik: [] })),
       api('GET', `/projekt/${id}/tillstand`).then(r => r.tillstand || []).catch(() => []),
       api('GET', `/projekt/${id}/aktiviteter`).then(r => r.aktiviteter || []).catch(() => []),
-      api('GET', `/byggprotokoll?projekt_id=${id}`).then(r => r.byggprotokoll || []).catch(() => []),
     ]);
   } catch (e) {
     app.innerHTML = `<p class="text-red">Kunde inte ladda projekt: ${e.message}</p>`;
     return;
-  }
-  if (!S.mallar.length) {
-    try { S.mallar = (await api('GET', '/mallar')).mallar || []; } catch {}
   }
 
   const fasHistorik = fasData.historik || [];
@@ -480,9 +476,6 @@ async function renderProjektDetail(app, id) {
       </div>
       <div class="flex gap-1" style="flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" id="btnEditProjekt">Redigera</button>
-        <button class="btn btn-navy btn-sm" id="btnGaTillByggprotokoll">Byggprotokoll / Materiallista →</button>
-        <a class="btn btn-secondary btn-sm" href="/api/projekt/${id}/materiallista/pdf" target="_blank">⬇ PDF</a>
-        <a class="btn btn-outline btn-sm" href="/api/projekt/${id}/materiallista/excel" target="_blank">⬇ Excel</a>
       </div>
     </div>
 
@@ -497,7 +490,6 @@ async function renderProjektDetail(app, id) {
               <dt>Kund</dt><dd>${escHtml(p.kund || '–')}</dd>
               <dt>Anslutningspunkt</dt><dd>${escHtml(p.anslutningspunkt || '–')}</dd>
               <dt>Beredare</dt><dd>${escHtml(p.beredare)}</dd>
-              <dt>Status</dt><dd>${badge(p.status)}</dd>
               <dt>Startdatum</dt><dd>${p.startdatum || '–'}</dd>
               <dt>Skapad</dt><dd>${(p.skapad||'').slice(0,16)}</dd>
             </dl>
@@ -529,26 +521,12 @@ async function renderProjektDetail(app, id) {
         </div>
 
         <!-- AKTIVITETSLOGG -->
-        <div class="card mb-2">
+        <div class="card">
           <div class="card-header">
             <span class="card-title">Aktivitetslogg</span>
             <button class="btn btn-outline btn-sm" id="btnNyAktivitet">+ Anteckning</button>
           </div>
           <div id="aktivitetKontainer">${aktivitetHtml(aktiviteter)}</div>
-        </div>
-
-        <!-- BYGGPROTOKOLL -->
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">Byggprotokoll (${protokoll.length})</span>
-            <button class="btn btn-navy btn-sm" id="btnNyttProtokoll">+ Nytt protokoll</button>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Mall</th><th>Status</th><th>Skapad</th><th>Åtgärder</th></tr></thead>
-              <tbody id="protokollBody"></tbody>
-            </table>
-          </div>
         </div>
       </div>
     </div>`;
@@ -559,16 +537,6 @@ async function renderProjektDetail(app, id) {
   // ── Redigera projekt ──
   document.getElementById('btnEditProjekt').addEventListener('click', () =>
     modalRedigeraProjekt(p));
-
-  // ── Gå till Byggprotokoll/Materiallista-fliken ──
-  document.getElementById('btnGaTillByggprotokoll').addEventListener('click', () => {
-    S.valtProjektKonstr = String(id);
-    navigate('konstruktioner');
-  });
-
-  // ── Nytt protokoll ──
-  document.getElementById('btnNyttProtokoll').addEventListener('click', () =>
-    modalNyttProtokoll(id, () => renderProjektDetail(app, id)));
 
   // ── Fas-tidslinje klick ──
   document.getElementById('fasTidslinje').querySelectorAll('.fas-steg').forEach(el => {
@@ -609,44 +577,6 @@ async function renderProjektDetail(app, id) {
   // ── Ny aktivitet ──
   document.getElementById('btnNyAktivitet').addEventListener('click', () =>
     modalNyAktivitet(id, () => renderProjektDetail(app, id)));
-
-  // ── Byggprotokoll-lista ──
-  function renderProtokollRader() {
-    const tbody = document.getElementById('protokollBody');
-    if (!protokoll.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="muted text-center">Inga protokoll ännu</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = protokoll.map(bp => `
-      <tr>
-        <td>${escHtml(bp.mall_namn)}</td>
-        <td>${badge(bp.status)}</td>
-        <td>${(bp.skapad||'').slice(0,16)}</td>
-        <td class="flex gap-1">
-          <button class="btn btn-sm btn-navy" data-id="${bp.id}" data-action="oppna">Öppna</button>
-          <a class="btn btn-sm btn-secondary" href="/api/byggprotokoll/${bp.id}/pdf" target="_blank">PDF</a>
-          <button class="btn btn-sm btn-danger" data-id="${bp.id}" data-action="radera">✕</button>
-        </td>
-      </tr>`).join('');
-    tbody.querySelectorAll('button[data-action]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const bpid = btn.dataset.id;
-        if (btn.dataset.action === 'oppna') {
-          modalVisaProtokoll(bpid, id, protokoll, renderProtokollRader);
-        } else if (btn.dataset.action === 'radera') {
-          const ok = await confirm('Ta bort protokoll', 'Ta bort detta byggprotokoll?');
-          if (!ok) return;
-          try {
-            await api('DELETE', `/byggprotokoll/${bpid}`);
-            protokoll = protokoll.filter(x => x.id != bpid);
-            toast('Protokoll borttaget', 'success');
-            renderProtokollRader();
-          } catch (e) { toast(e.message, 'error'); }
-        }
-      });
-    });
-  }
-  renderProtokollRader();
 }
 
 // ----------------------------------------------------------------
