@@ -184,14 +184,20 @@ def _info_panel(rader):
 
 # ── Materialtabell ───────────────────────────────────────────────────────────
 
-def _material_tabell(rader, visa_pris=False):
+def _material_tabell(rader, visa_pris=False, visa_enr=False):
     hdr_s = ParagraphStyle('mh', fontName='Helvetica-Bold', fontSize=8,
                             textColor=WHITE, leading=10)
     cel_s = ParagraphStyle('mc', fontName='Helvetica', fontSize=8,
                             textColor=DARK, leading=10)
+    enr_s = ParagraphStyle('me', fontName='Helvetica', fontSize=7,
+                            textColor=GRAY, leading=10)
 
-    header = ['Artikel', 'Kategori', 'Enhet', 'Antal']
-    col_w  = [80 * mm, 45 * mm, 20 * mm, 20 * mm]
+    if visa_enr:
+        header = ['Artikel', 'E-nummer', 'Kategori', 'Enhet', 'Antal']
+        col_w  = [60 * mm, 28 * mm, 38 * mm, 16 * mm, 16 * mm]
+    else:
+        header = ['Artikel', 'Kategori', 'Enhet', 'Antal']
+        col_w  = [80 * mm, 45 * mm, 20 * mm, 20 * mm]
     if visa_pris:
         header += ['À-pris', 'Totalt']
         col_w  += [20 * mm, 22 * mm]
@@ -201,8 +207,10 @@ def _material_tabell(rader, visa_pris=False):
     for r in rader:
         pris  = r.get('a_pris')
         antal = r.get('antal', 0)
-        rad = [
-            Paragraph(r.get('artikelnamn', ''), cel_s),
+        rad = [Paragraph(r.get('artikelnamn', ''), cel_s)]
+        if visa_enr:
+            rad.append(Paragraph(r.get('artikelnummer') or '–', enr_s))
+        rad += [
             r.get('kategori', ''),
             r.get('enhet', ''),
             f"{antal:g}",
@@ -423,7 +431,7 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
     for kat, rader in grupper.items():
         story += _sektion_rubrik(kat)
         story.append(Spacer(1, 1 * mm))
-        story.append(_material_tabell(rader, visa_pris=False))
+        story.append(_material_tabell(rader, visa_pris=False, visa_enr=True))
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()

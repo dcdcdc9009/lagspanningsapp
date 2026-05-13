@@ -630,6 +630,16 @@ def materiallista_pdf(pid):
         protokoll_ids = [r[0] for r in
                          conn.execute("SELECT id FROM byggprotokoll WHERE projekt_id=?", (pid,)).fetchall()]
         protokoll_lista = [_hamta_protokoll_komplett(conn, bpid) for bpid in protokoll_ids]
+        # Berika rader med E-nummer från artikel_leverantor om artikelnummer saknas
+        enr_lookup = {r['artikel_id']: r['artikelnummer'] for r in conn.execute(
+            "SELECT al.artikel_id, al.artikelnummer FROM artikel_leverantor al "
+            "JOIN leverantorer l ON l.id = al.leverantor_id "
+            "WHERE l.namn = 'Onninen' AND al.artikelnummer IS NOT NULL"
+        ).fetchall()}
+        for bp in protokoll_lista:
+            for rad in bp.get('rader', []):
+                if not rad.get('artikelnummer') and rad.get('artikel_id'):
+                    rad['artikelnummer'] = enr_lookup.get(rad['artikel_id'])
     pdf = skapa_materiallista_pdf(row_to_dict(projekt), protokoll_lista, inst)
     return Response(pdf, mimetype='application/pdf',
                     headers={'Content-Disposition':
