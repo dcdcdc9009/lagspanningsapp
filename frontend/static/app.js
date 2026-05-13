@@ -147,120 +147,168 @@ function escHtml(s) {
 }
 
 // ----------------------------------------------------------------
-// VIEW: PROJEKT (list)
+// FAS-HJÄLPFUNKTIONER
+// ----------------------------------------------------------------
+const FASER = ['Förfrågan', 'Beredning', 'Offert', 'Genomförande', 'Drifttagning'];
+const FAS_TROSKEL = { 'Förfrågan': 14, 'Beredning': 30, 'Offert': 21, 'Genomförande': 60, 'Drifttagning': 30 };
+const FAS_CSS = {
+  'Förfrågan': 'badge-forfrågan', 'Beredning': 'badge-beredning',
+  'Offert': 'badge-offert', 'Genomförande': 'badge-genomforande', 'Drifttagning': 'badge-drifttagning',
+};
+
+function badgeFas(fas) {
+  if (!fas) return '<span class="text-muted" style="font-size:12px">Ingen fas</span>';
+  return `<span class="badge ${FAS_CSS[fas] || ''}">${escHtml(fas)}</span>`;
+}
+
+function dagarIFas(fasStartdatum) {
+  if (!fasStartdatum) return null;
+  const ms = Date.now() - new Date(fasStartdatum).getTime();
+  return Math.floor(ms / 86400000);
+}
+
+function rodFlaggHtml(fas, dagar) {
+  if (dagar === null || !fas) return '';
+  const troskel = FAS_TROSKEL[fas];
+  if (!troskel || dagar <= troskel) return '';
+  return `<span class="rod-flagg" title="${dagar} dagar – gräns ${troskel}d">⚑ ${dagar}d</span>`;
+}
+
+// ----------------------------------------------------------------
+// VIEW: PROJEKT (dashboard + lista)
 // ----------------------------------------------------------------
 async function renderProjekt(app) {
   app.innerHTML = `
     <div class="page-header">
-      <h1 class="page-title">Projekt</h1>
+      <h1 class="page-title">Projektöversikt</h1>
       <button class="btn btn-navy" id="btnNyttProjekt">+ Nytt projekt</button>
     </div>
-    <div id="statGrid" class="stat-grid"></div>
+    <div id="fasDashboard" class="fas-dashboard"></div>
     <div class="filter-bar">
       <input type="search" class="form-control" id="sokProjekt" placeholder="Sök projekt…">
-      <select class="form-control" id="filtStatus">
-        <option value="">Alla statusar</option>
-        <option>Planerat</option><option>Pågående</option><option>Klart</option>
-      </select>
       <select class="form-control" id="filtBeredare">
         <option value="">Alla beredare</option>
       </select>
+      <button class="btn btn-outline btn-sm" id="btnRensaFas" style="display:none">✕ Rensa fasfilter</button>
     </div>
     <div class="card">
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Projektnummer</th><th>Projektnamn</th><th>Beredare</th>
-            <th>Status</th><th>Startdatum</th><th>Åtgärder</th>
+            <th>Projektnr</th><th>Projektnamn</th><th>Kund</th>
+            <th>Fas</th><th>Dagar i fas</th><th>Beredare</th><th>Åtgärder</th>
           </tr></thead>
           <tbody id="projektBody"></tbody>
         </table>
       </div>
     </div>`;
 
-  // Load stats
-  try {
-    const stat = await api('GET', '/projekt/statistik');
-    document.getElementById('statGrid').innerHTML = `
-      <div class="stat-card"><div class="stat-value">${stat.totalt}</div><div class="stat-label">Totalt</div></div>
-      <div class="stat-card"><div class="stat-value">${stat.planerat}</div><div class="stat-label">Planerat</div></div>
-      <div class="stat-card"><div class="stat-value">${stat.pagaende}</div><div class="stat-label">Pågående</div></div>
-      <div class="stat-card"><div class="stat-value">${stat.klart}</div><div class="stat-label">Klart</div></div>`;
-  } catch {}
+  let aktivFasFilter = '';
 
-  // Load beredare filter
   await laddaBeredare();
   const filtBer = document.getElementById('filtBeredare');
-  S.beredare.forEach(b => {
-    filtBer.innerHTML += `<option>${escHtml(b.namn)}</option>`;
+  S.beredare.forEach(b => { filtBer.innerHTML += `<option>${escHtml(b.namn)}</option>`; });
+
+  // Fas-dashboard
+  let fasStatistik = {};
+  try {
+    const fs = await api('GET', '/projekt/fas-statistik');
+    fasStatistik = fs.fas_statistik || {};
+  } catch {}
+  const fasDash = document.getElementById('fasDashboard');
+  fasDash.innerHTML = FASER.map(fas => `
+    <div class="fas-kort" data-fas="${escHtml(fas)}">
+      <div class="fas-kort-antal">${fasStatistik[fas] ?? 0}</div>
+      <div class="fas-kort-namn">${escHtml(fas)}</div>
+    </div>`).join('');
+  fasDash.querySelectorAll('.fas-kort').forEach(k => {
+    k.addEventListener('click', () => {
+      const fas = k.dataset.fas;
+      if (aktivFasFilter === fas) {
+        aktivFasFilter = '';
+        fasDash.querySelectorAll('.fas-kort').forEach(x => x.classList.remove('aktiv-filter'));
+        document.getElementById('btnRensaFas').style.display = 'none';
+      } else {
+        aktivFasFilter = fas;
+        fasDash.querySelectorAll('.fas-kort').forEach(x => x.classList.toggle('aktiv-filter', x.dataset.fas === fas));
+        document.getElementById('btnRensaFas').style.display = '';
+      }
+      renderProjektRader();
+    });
+  });
+  document.getElementById('btnRensaFas').addEventListener('click', () => {
+    aktivFasFilter = '';
+    fasDash.querySelectorAll('.fas-kort').forEach(x => x.classList.remove('aktiv-filter'));
+    document.getElementById('btnRensaFas').style.display = 'none';
+    renderProjektRader();
   });
 
   await laddaProjekt();
   renderProjektRader();
 
   document.getElementById('sokProjekt').addEventListener('input', renderProjektRader);
-  document.getElementById('filtStatus').addEventListener('change', renderProjektRader);
   document.getElementById('filtBeredare').addEventListener('change', renderProjektRader);
   document.getElementById('btnNyttProjekt').addEventListener('click', () => modalNyttProjekt());
+
+  function renderProjektRader() {
+    const sok = document.getElementById('sokProjekt').value.toLowerCase();
+    const ber = document.getElementById('filtBeredare').value;
+    let lista = S.projekt.filter(p => {
+      if (aktivFasFilter && p.fas !== aktivFasFilter) return false;
+      if (ber && p.beredare !== ber) return false;
+      if (sok && !(`${p.projektnummer} ${p.projektnamn} ${p.beredare} ${p.kund||''}`).toLowerCase().includes(sok)) return false;
+      return true;
+    });
+    const tbody = document.getElementById('projektBody');
+    if (!lista.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="muted text-center">Inga projekt hittades</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = lista.map(p => {
+      const dagar = dagarIFas(p.fas_startdatum);
+      const flagg = rodFlaggHtml(p.fas, dagar);
+      const dagarTxt = dagar !== null ? `${dagar}d ${flagg}` : '–';
+      return `<tr>
+        <td class="mono">${escHtml(p.projektnummer)}</td>
+        <td><strong>${escHtml(p.projektnamn)}</strong></td>
+        <td>${escHtml(p.kund || '–')}</td>
+        <td>${badgeFas(p.fas)}</td>
+        <td>${dagarTxt}</td>
+        <td>${escHtml(p.beredare)}</td>
+        <td class="flex gap-1">
+          <button class="btn btn-sm btn-navy" data-id="${p.id}" data-action="oppna">Öppna</button>
+          <button class="btn btn-sm btn-outline" data-id="${p.id}" data-action="redigera">Redigera</button>
+          <button class="btn btn-sm btn-danger" data-id="${p.id}" data-action="radera">✕</button>
+        </td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('button[data-action]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const action = btn.dataset.action;
+        if (action === 'oppna') {
+          navigate('projekt-detail', { id });
+        } else if (action === 'redigera') {
+          const p = S.projekt.find(x => x.id == id);
+          modalRedigeraProjekt(p);
+        } else if (action === 'radera') {
+          const p = S.projekt.find(x => x.id == id);
+          const ok = await confirm('Ta bort projekt', `Ta bort "${p.projektnamn}"? Alla byggprotokoll tas också bort.`);
+          if (!ok) return;
+          try {
+            await api('DELETE', `/projekt/${id}`);
+            toast('Projekt borttaget', 'success');
+            await laddaProjekt();
+            renderProjektRader();
+          } catch (e) { toast(e.message, 'error'); }
+        }
+      });
+    });
+  }
 }
 
 async function laddaProjekt() {
   S.projekt = (await api('GET', '/projekt')).projekt || [];
-}
-
-function renderProjektRader() {
-  const sok    = document.getElementById('sokProjekt').value.toLowerCase();
-  const status = document.getElementById('filtStatus').value;
-  const ber    = document.getElementById('filtBeredare').value;
-
-  let lista = S.projekt.filter(p => {
-    if (status && p.status !== status) return false;
-    if (ber    && p.beredare !== ber)  return false;
-    if (sok && !(`${p.projektnummer} ${p.projektnamn} ${p.beredare}`).toLowerCase().includes(sok)) return false;
-    return true;
-  });
-
-  const tbody = document.getElementById('projektBody');
-  if (!lista.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="muted text-center">Inga projekt hittades</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = lista.map(p => `
-    <tr>
-      <td class="mono">${escHtml(p.projektnummer)}</td>
-      <td><strong>${escHtml(p.projektnamn)}</strong></td>
-      <td>${escHtml(p.beredare)}</td>
-      <td>${badge(p.status)}</td>
-      <td>${p.startdatum || '–'}</td>
-      <td class="flex gap-1">
-        <button class="btn btn-sm btn-navy" data-id="${p.id}" data-action="oppna">Öppna</button>
-        <button class="btn btn-sm btn-outline" data-id="${p.id}" data-action="redigera">Redigera</button>
-        <button class="btn btn-sm btn-danger" data-id="${p.id}" data-action="radera">Ta bort</button>
-      </td>
-    </tr>`).join('');
-
-  tbody.querySelectorAll('button[data-action]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
-      const action = btn.dataset.action;
-      if (action === 'oppna') {
-        navigate('projekt-detail', { id });
-      } else if (action === 'redigera') {
-        const p = S.projekt.find(x => x.id == id);
-        modalRedigeraProjekt(p);
-      } else if (action === 'radera') {
-        const p = S.projekt.find(x => x.id == id);
-        const ok = await confirm('Ta bort projekt', `Ta bort "${p.projektnamn}"? Alla byggprotokoll tas också bort.`);
-        if (!ok) return;
-        try {
-          await api('DELETE', `/projekt/${id}`);
-          toast('Projekt borttaget', 'success');
-          await laddaProjekt();
-          renderProjektRader();
-        } catch (e) { toast(e.message, 'error'); }
-      }
-    });
-  });
 }
 
 async function laddaBeredare() {
@@ -280,6 +328,8 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
   const nasta = existing ? '' : ((await api('GET', '/projekt/nasta-nummer')).projektnummer || '');
   const berOptions = S.beredare.map(b =>
     `<option ${data.beredare === b.namn ? 'selected' : ''}>${escHtml(b.namn)}</option>`).join('');
+  const fasOptions = ['', ...FASER].map(f =>
+    `<option value="${f}" ${(data.fas||'')=== f ? 'selected' : ''}>${f || '– ingen fas –'}</option>`).join('');
 
   Modal.open(
     existing ? 'Redigera projekt' : 'Nytt projekt',
@@ -290,15 +340,23 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
           <input name="projektnummer" class="form-control" value="${escHtml(data.projektnummer || nasta)}" ${existing ? '' : 'required'}>
         </div>
         <div class="form-group">
-          <label class="form-label">Status</label>
-          <select name="status" class="form-control">
-            ${['Planerat','Pågående','Klart'].map(s => `<option ${(data.status||'Planerat')===s?'selected':''}>${s}</option>`).join('')}
-          </select>
+          <label class="form-label">Fas</label>
+          <select name="fas" class="form-control">${fasOptions}</select>
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">Projektnamn <span class="req">*</span></label>
         <input name="projektnamn" class="form-control" value="${escHtml(data.projektnamn||'')}" required>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Kund</label>
+          <input name="kund" class="form-control" value="${escHtml(data.kund||'')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Anslutningspunkt</label>
+          <input name="anslutningspunkt" class="form-control" value="${escHtml(data.anslutningspunkt||'')}">
+        </div>
       </div>
       <div class="form-row cols-2">
         <div class="form-group">
@@ -353,48 +411,135 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
 // ----------------------------------------------------------------
 async function renderProjektDetail(app, id) {
   app.innerHTML = `<div class="text-muted">Laddar…</div>`;
-  let p;
-  try { p = (await api('GET', `/projekt/${id}`)).projekt; }
-  catch (e) { app.innerHTML = `<p class="text-red">Kunde inte ladda projekt: ${e.message}</p>`; return; }
-
-  let protokoll = [];
-  try { protokoll = (await api('GET', `/byggprotokoll?projekt_id=${id}`)).byggprotokoll || []; } catch {}
-
+  let p, fasData, tillstandLista, aktiviteter, protokoll;
+  try {
+    [p, fasData, tillstandLista, aktiviteter, protokoll] = await Promise.all([
+      api('GET', `/projekt/${id}`).then(r => r.projekt),
+      api('GET', `/projekt/${id}/fas`).catch(() => ({ fas: null, historik: [] })),
+      api('GET', `/projekt/${id}/tillstand`).then(r => r.tillstand || []).catch(() => []),
+      api('GET', `/projekt/${id}/aktiviteter`).then(r => r.aktiviteter || []).catch(() => []),
+      api('GET', `/byggprotokoll?projekt_id=${id}`).then(r => r.byggprotokoll || []).catch(() => []),
+    ]);
+  } catch (e) {
+    app.innerHTML = `<p class="text-red">Kunde inte ladda projekt: ${e.message}</p>`;
+    return;
+  }
   if (!S.mallar.length) {
     try { S.mallar = (await api('GET', '/mallar')).mallar || []; } catch {}
   }
 
+  const fasHistorik = fasData.historik || [];
+  const aktuellFas = p.fas || null;
+
+  function fasTidslinjeHtml() {
+    return `<div class="fas-tidslinje" id="fasTidslinje">` +
+      FASER.map((fas, i) => {
+        const hrad = fasHistorik.find(h => h.fas === fas);
+        const arAktiv = fas === aktuellFas;
+        const arKlar  = fasHistorik.some(h => h.fas === fas && h.slutdatum);
+        let cls = arAktiv ? 'aktiv' : arKlar ? 'klar' : '';
+        const datumTxt = hrad ? `<span class="fas-steg-datum">${hrad.startdatum || ''}</span>` : '';
+        return `<div class="fas-steg ${cls}" data-fas="${escHtml(fas)}" title="Klicka för att sätta fas: ${escHtml(fas)}">
+          <span class="fas-steg-nr">${i + 1}.</span>${escHtml(fas)}${datumTxt}
+        </div>`;
+      }).join('') +
+    `</div>`;
+  }
+
+  function tillstandHtml(lista) {
+    if (!lista.length) return `<p class="text-muted" style="padding:12px;font-size:13px">Inga tillstånd registrerade</p>`;
+    const badgeTill = { 'Inväntas': 'badge-inväntas', 'Mottaget': 'badge-mottaget', 'Ej krävs': 'badge-ej-kravs' };
+    return `<ul class="tillstand-lista">` + lista.map(t => `
+      <li class="tillstand-rad" data-tid="${t.id}">
+        <span class="tillstand-namn">${escHtml(t.namn)}</span>
+        ${t.datum ? `<span class="tillstand-datum">${t.datum}</span>` : ''}
+        <span class="badge ${badgeTill[t.status] || ''}">${escHtml(t.status)}</span>
+        <button class="btn btn-sm btn-outline" data-tid="${t.id}" data-action="edit-till">✎</button>
+        <button class="btn btn-sm btn-danger" data-tid="${t.id}" data-action="del-till">✕</button>
+      </li>`).join('') + `</ul>`;
+  }
+
+  function aktivitetIkon(typ) {
+    return { 'fas-byte': '🔄', 'anteckning': '📝' }[typ] || '•';
+  }
+
+  function aktivitetHtml(lista) {
+    if (!lista.length) return `<p class="text-muted" style="padding:12px;font-size:13px">Inga aktiviteter ännu</p>`;
+    return `<ul class="aktivitets-lista">` + lista.map(a => `
+      <li class="aktivitets-rad">
+        <span class="aktivitets-tid">${(a.tidpunkt||'').slice(0,16)}</span>
+        <span class="aktivitets-ikon">${aktivitetIkon(a.typ)}</span>
+        <span class="aktivitets-text">${escHtml(a.beskrivning)}</span>
+      </li>`).join('') + `</ul>`;
+  }
+
   app.innerHTML = `
     <div class="page-header">
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2" style="flex-wrap:wrap;gap:8px">
         <button class="btn btn-outline btn-sm" id="btnBack">← Tillbaka</button>
         <h1 class="page-title">${escHtml(p.projektnummer)} – ${escHtml(p.projektnamn)}</h1>
-        ${badge(p.status)}
+        ${badgeFas(aktuellFas)}
       </div>
-      <div class="flex gap-1">
-        <button class="btn btn-outline btn-sm" id="btnEditProjekt">Redigera projekt</button>
-        <a class="btn btn-secondary btn-sm" href="/api/projekt/${id}/materiallista/pdf" target="_blank">⬇ Materiallista PDF</a>
-        <a class="btn btn-outline btn-sm" href="/api/projekt/${id}/materiallista/excel" target="_blank">⬇ Materiallista Excel</a>
+      <div class="flex gap-1" style="flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" id="btnEditProjekt">Redigera</button>
+        <button class="btn btn-navy btn-sm" id="btnGaTillByggprotokoll">Byggprotokoll / Materiallista →</button>
+        <a class="btn btn-secondary btn-sm" href="/api/projekt/${id}/materiallista/pdf" target="_blank">⬇ PDF</a>
+        <a class="btn btn-outline btn-sm" href="/api/projekt/${id}/materiallista/excel" target="_blank">⬇ Excel</a>
       </div>
     </div>
 
     <div class="detail-layout">
-      <div class="card">
-        <div class="card-header"><span class="card-title">Projektinfo</span></div>
-        <div class="card-body">
-          <dl class="info-dl">
-            <dt>Projektnummer</dt><dd>${escHtml(p.projektnummer)}</dd>
-            <dt>Beredare</dt><dd>${escHtml(p.beredare)}</dd>
-            <dt>Status</dt><dd>${badge(p.status)}</dd>
-            <dt>Startdatum</dt><dd>${p.startdatum||'–'}</dd>
-            <dt>Skapad</dt><dd>${(p.skapad||'').slice(0,16)}</dd>
-            <dt>Uppdaterad</dt><dd>${(p.uppdaterad||'').slice(0,16)}</dd>
-          </dl>
-          ${p.anteckningar ? `<p class="mt-2 text-sm text-muted">${escHtml(p.anteckningar)}</p>` : ''}
+      <!-- VÄNSTER: Grundinfo -->
+      <div>
+        <div class="card mb-2">
+          <div class="card-header"><span class="card-title">Projektinfo</span></div>
+          <div class="card-body">
+            <dl class="info-dl">
+              <dt>Projektnummer</dt><dd class="mono">${escHtml(p.projektnummer)}</dd>
+              <dt>Kund</dt><dd>${escHtml(p.kund || '–')}</dd>
+              <dt>Anslutningspunkt</dt><dd>${escHtml(p.anslutningspunkt || '–')}</dd>
+              <dt>Beredare</dt><dd>${escHtml(p.beredare)}</dd>
+              <dt>Status</dt><dd>${badge(p.status)}</dd>
+              <dt>Startdatum</dt><dd>${p.startdatum || '–'}</dd>
+              <dt>Skapad</dt><dd>${(p.skapad||'').slice(0,16)}</dd>
+            </dl>
+            ${p.anteckningar ? `<p class="mt-2 text-sm text-muted">${escHtml(p.anteckningar)}</p>` : ''}
+          </div>
         </div>
       </div>
 
+      <!-- HÖGER: Fas, Tillstånd, Aktiviteter -->
       <div>
+        <!-- FAS-TIDSLINJE -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <span class="card-title">Fas</span>
+            <span class="text-sm text-muted">Klicka för att byta fas</span>
+          </div>
+          <div class="card-body" style="padding:12px">
+            ${fasTidslinjeHtml()}
+          </div>
+        </div>
+
+        <!-- TILLSTÅND -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <span class="card-title">Tillstånd</span>
+            <button class="btn btn-navy btn-sm" id="btnNyttTillstand">+ Lägg till</button>
+          </div>
+          <div id="tillstandKontainer">${tillstandHtml(tillstandLista)}</div>
+        </div>
+
+        <!-- AKTIVITETSLOGG -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <span class="card-title">Aktivitetslogg</span>
+            <button class="btn btn-outline btn-sm" id="btnNyAktivitet">+ Anteckning</button>
+          </div>
+          <div id="aktivitetKontainer">${aktivitetHtml(aktiviteter)}</div>
+        </div>
+
+        <!-- BYGGPROTOKOLL -->
         <div class="card">
           <div class="card-header">
             <span class="card-title">Byggprotokoll (${protokoll.length})</span>
@@ -402,9 +547,7 @@ async function renderProjektDetail(app, id) {
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr>
-                <th>Mall</th><th>Status</th><th>Skapad</th><th>Uppdaterad</th><th>Åtgärder</th>
-              </tr></thead>
+              <thead><tr><th>Mall</th><th>Status</th><th>Skapad</th><th>Åtgärder</th></tr></thead>
               <tbody id="protokollBody"></tbody>
             </table>
           </div>
@@ -412,14 +555,68 @@ async function renderProjektDetail(app, id) {
       </div>
     </div>`;
 
+  // ── Tillbaka ──
   document.getElementById('btnBack').addEventListener('click', () => navigate('projekt'));
-  document.getElementById('btnEditProjekt').addEventListener('click', () => modalRedigeraProjekt(p));
-  document.getElementById('btnNyttProtokoll').addEventListener('click', () => modalNyttProtokoll(id, renderProtokollRader));
 
+  // ── Redigera projekt ──
+  document.getElementById('btnEditProjekt').addEventListener('click', () =>
+    modalRedigeraProjekt(p));
+
+  // ── Gå till Byggprotokoll/Materiallista-fliken ──
+  document.getElementById('btnGaTillByggprotokoll').addEventListener('click', () => {
+    S.valtProjektKonstr = String(id);
+    navigate('konstruktioner');
+  });
+
+  // ── Nytt protokoll ──
+  document.getElementById('btnNyttProtokoll').addEventListener('click', () =>
+    modalNyttProtokoll(id, () => renderProjektDetail(app, id)));
+
+  // ── Fas-tidslinje klick ──
+  document.getElementById('fasTidslinje').querySelectorAll('.fas-steg').forEach(el => {
+    el.addEventListener('click', async () => {
+      const nyFas = el.dataset.fas;
+      if (nyFas === aktuellFas) return;
+      try {
+        await api('POST', `/projekt/${id}/fas`, { fas: nyFas });
+        toast(`Fas satt: ${nyFas}`, 'success');
+        renderProjektDetail(app, id);
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  });
+
+  // ── Nytt tillstånd ──
+  document.getElementById('btnNyttTillstand').addEventListener('click', () =>
+    modalTillstandForm(id, null, () => renderProjektDetail(app, id)));
+
+  // ── Tillstånd åtgärder (edit/delete) ──
+  document.getElementById('tillstandKontainer').addEventListener('click', async e => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const tid = btn.dataset.tid;
+    if (btn.dataset.action === 'edit-till') {
+      const t = tillstandLista.find(x => x.id == tid);
+      modalTillstandForm(id, t, () => renderProjektDetail(app, id));
+    } else if (btn.dataset.action === 'del-till') {
+      const ok = await confirm('Ta bort tillstånd', 'Ta bort detta tillstånd?');
+      if (!ok) return;
+      try {
+        await api('DELETE', `/projekt/${id}/tillstand/${tid}`);
+        toast('Tillstånd borttaget', 'success');
+        renderProjektDetail(app, id);
+      } catch (e) { toast(e.message, 'error'); }
+    }
+  });
+
+  // ── Ny aktivitet ──
+  document.getElementById('btnNyAktivitet').addEventListener('click', () =>
+    modalNyAktivitet(id, () => renderProjektDetail(app, id)));
+
+  // ── Byggprotokoll-lista ──
   function renderProtokollRader() {
     const tbody = document.getElementById('protokollBody');
     if (!protokoll.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="muted text-center">Inga protokoll ännu</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="muted text-center">Inga protokoll ännu</td></tr>`;
       return;
     }
     tbody.innerHTML = protokoll.map(bp => `
@@ -427,14 +624,12 @@ async function renderProjektDetail(app, id) {
         <td>${escHtml(bp.mall_namn)}</td>
         <td>${badge(bp.status)}</td>
         <td>${(bp.skapad||'').slice(0,16)}</td>
-        <td>${(bp.uppdaterad||'').slice(0,16)}</td>
         <td class="flex gap-1">
           <button class="btn btn-sm btn-navy" data-id="${bp.id}" data-action="oppna">Öppna</button>
           <a class="btn btn-sm btn-secondary" href="/api/byggprotokoll/${bp.id}/pdf" target="_blank">PDF</a>
-          <button class="btn btn-sm btn-danger" data-id="${bp.id}" data-action="radera">Ta bort</button>
+          <button class="btn btn-sm btn-danger" data-id="${bp.id}" data-action="radera">✕</button>
         </td>
       </tr>`).join('');
-
     tbody.querySelectorAll('button[data-action]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const bpid = btn.dataset.id;
@@ -454,6 +649,86 @@ async function renderProjektDetail(app, id) {
     });
   }
   renderProtokollRader();
+}
+
+// ----------------------------------------------------------------
+// MODAL: TILLSTÅND
+// ----------------------------------------------------------------
+function modalTillstandForm(projektId, existing, onDone) {
+  const d = existing || {};
+  const statusOpts = ['Inväntas', 'Mottaget', 'Ej krävs'].map(s =>
+    `<option ${(d.status || 'Inväntas') === s ? 'selected' : ''}>${s}</option>`).join('');
+  Modal.open(
+    existing ? 'Redigera tillstånd' : 'Nytt tillstånd',
+    `<form id="tillstandForm">
+      <div class="form-group">
+        <label class="form-label">Tillståndsnamn <span class="req">*</span></label>
+        <input name="namn" class="form-control" value="${escHtml(d.namn || '')}" required>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select name="status" class="form-control">${statusOpts}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Datum</label>
+          <input type="date" name="datum" class="form-control" value="${d.datum || ''}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Anteckning</label>
+        <textarea name="anteckning" class="form-control" rows="2">${escHtml(d.anteckning || '')}</textarea>
+      </div>
+    </form>`,
+    `<button class="btn btn-navy" id="sparaTillstand">${existing ? 'Spara' : 'Lägg till'}</button>
+     <button class="btn btn-secondary" id="avbrytTillstand">Avbryt</button>`
+  );
+  document.getElementById('avbrytTillstand').addEventListener('click', Modal.close);
+  document.getElementById('sparaTillstand').addEventListener('click', async () => {
+    const f = document.getElementById('tillstandForm');
+    if (!f.reportValidity()) return;
+    const body = Object.fromEntries(new FormData(f).entries());
+    try {
+      if (existing) {
+        await api('PUT', `/projekt/${projektId}/tillstand/${existing.id}`, body);
+        toast('Tillstånd sparat', 'success');
+      } else {
+        await api('POST', `/projekt/${projektId}/tillstand`, body);
+        toast('Tillstånd tillagt', 'success');
+      }
+      Modal.close();
+      if (onDone) onDone();
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+// ----------------------------------------------------------------
+// MODAL: NY AKTIVITET (anteckning)
+// ----------------------------------------------------------------
+function modalNyAktivitet(projektId, onDone) {
+  Modal.open(
+    'Lägg till anteckning',
+    `<form id="aktivitetForm">
+      <div class="form-group">
+        <label class="form-label">Anteckning <span class="req">*</span></label>
+        <textarea name="beskrivning" class="form-control" rows="3" required></textarea>
+      </div>
+    </form>`,
+    `<button class="btn btn-navy" id="sparaAktivitet">Spara</button>
+     <button class="btn btn-secondary" id="avbrytAktivitet">Avbryt</button>`
+  );
+  document.getElementById('avbrytAktivitet').addEventListener('click', Modal.close);
+  document.getElementById('sparaAktivitet').addEventListener('click', async () => {
+    const f = document.getElementById('aktivitetForm');
+    if (!f.reportValidity()) return;
+    const body = Object.fromEntries(new FormData(f).entries());
+    try {
+      await api('POST', `/projekt/${projektId}/aktiviteter`, body);
+      toast('Anteckning sparad', 'success');
+      Modal.close();
+      if (onDone) onDone();
+    } catch (e) { toast(e.message, 'error'); }
+  });
 }
 
 // ----------------------------------------------------------------

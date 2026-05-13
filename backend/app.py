@@ -208,14 +208,23 @@ def lista_projekt():
     status   = request.args.get('status')
     beredare = request.args.get('beredare')
     sok      = request.args.get('sok', '').strip()
-    sql = "SELECT * FROM projekt WHERE 1=1"
+    sql = """
+        SELECT p.*, pfd.fas_startdatum
+        FROM projekt p
+        LEFT JOIN (
+            SELECT projekt_id, MAX(startdatum) AS fas_startdatum
+            FROM projekt_fas_datum WHERE slutdatum IS NULL
+            GROUP BY projekt_id
+        ) pfd ON pfd.projekt_id = p.id
+        WHERE 1=1
+    """
     params = []
-    if status:   sql += " AND status=?";   params.append(status)
-    if beredare: sql += " AND beredare=?"; params.append(beredare)
+    if status:   sql += " AND p.status=?";   params.append(status)
+    if beredare: sql += " AND p.beredare=?"; params.append(beredare)
     if sok:
-        sql += " AND (projektnummer LIKE ? OR projektnamn LIKE ? OR beredare LIKE ?)"
+        sql += " AND (p.projektnummer LIKE ? OR p.projektnamn LIKE ? OR p.beredare LIKE ?)"
         params += [f'%{sok}%'] * 3
-    sql += " ORDER BY skapad DESC"
+    sql += " ORDER BY p.skapad DESC"
     with get_db() as conn:
         return jsonify({'projekt': rows_to_list(conn.execute(sql, params).fetchall())})
 
@@ -230,6 +239,22 @@ def projekt_statistik():
             'planerat': c("WHERE status='Planerat'"),
             'klart':    c("WHERE status='Klart'"),
         })
+
+
+@app.get('/api/projekt/fas-statistik')
+def fas_statistik():
+    FASER = ['Förfrågan', 'Beredning', 'Offert', 'Genomförande', 'Drifttagning']
+    with get_db() as conn:
+        result = {}
+        for fas in FASER:
+            result[fas] = conn.execute(
+                "SELECT COUNT(*) FROM projekt WHERE fas=?", (fas,)
+            ).fetchone()[0]
+        result['ingen_fas'] = conn.execute(
+            "SELECT COUNT(*) FROM projekt WHERE fas IS NULL"
+        ).fetchone()[0]
+        result['totalt'] = conn.execute("SELECT COUNT(*) FROM projekt").fetchone()[0]
+    return jsonify({'fas_statistik': result})
 
 
 @app.get('/api/projekt/nasta-nummer')
@@ -247,6 +272,9 @@ def hamta_projekt(pid):
     return jsonify({'projekt': row_to_dict(rad)})
 
 
+GILTIGA_FASER = ('Förfrågan', 'Beredning', 'Offert', 'Genomförande', 'Drifttagning')
+
+
 @app.post('/api/projekt')
 def skapa_projekt():
     d = request.get_json(silent=True) or {}
@@ -254,19 +282,35 @@ def skapa_projekt():
     beredare = (d.get('beredare') or '').strip()
     if not namn:     return fel('Projektnamn är obligatoriskt.')
     if not beredare: return fel('Beredare är obligatoriskt.')
+    fas = (d.get('fas') or '').strip() or None
+    if fas and fas not in GILTIGA_FASER:
+        return fel(f'Ogiltig fas.')
     tidpunkt = nu()
+    idag = tidpunkt[:10]
     with get_db() as conn:
         pnr = d.get('projektnummer') or nasta_projektnummer(conn)
         try:
             cur = conn.execute(
-                "INSERT INTO projekt (projektnummer,projektnamn,beredare,status,startdatum,anteckningar,skapad,uppdaterad)"
-                " VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO projekt "
+                "(projektnummer,projektnamn,beredare,status,startdatum,anteckningar,"
+                "kund,anslutningspunkt,fas,skapad,uppdaterad)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (pnr, namn, beredare, d.get('status', 'Planerat'),
                  d.get('startdatum') or None,
                  (d.get('anteckningar') or '').strip() or None,
-                 tidpunkt, tidpunkt))
+                 (d.get('kund') or '').strip() or None,
+                 (d.get('anslutningspunkt') or '').strip() or None,
+                 fas, tidpunkt, tidpunkt))
+            pid = cur.lastrowid
+            if fas:
+                conn.execute(
+                    "INSERT INTO projekt_fas_datum (projekt_id,fas,startdatum,skapad) VALUES (?,?,?,?)",
+                    (pid, fas, idag, tidpunkt))
+                conn.execute(
+                    "INSERT INTO projekt_aktiviteter (projekt_id,tidpunkt,typ,beskrivning) VALUES (?,?,?,?)",
+                    (pid, tidpunkt, 'fas-byte', f'Projekt skapat i fas: {fas}'))
             conn.commit()
-            return jsonify({'projekt': row_to_dict(conn.execute("SELECT * FROM projekt WHERE id=?", (cur.lastrowid,)).fetchone())}), 201
+            return jsonify({'projekt': row_to_dict(conn.execute("SELECT * FROM projekt WHERE id=?", (pid,)).fetchone())}), 201
         except Exception as e:
             return fel(f'Projektnummer {pnr} finns redan.') if 'UNIQUE' in str(e) else fel(str(e))
 
@@ -281,11 +325,16 @@ def uppdatera_projekt(pid):
         if not namn: return fel('Projektnamn får inte vara tomt.')
         status = d.get('status', bef['status'])
         if status not in ('Planerat', 'Pågående', 'Klart'): return fel('Ogiltigt statusvärde.')
+        tidpunkt = nu()
         conn.execute(
-            "UPDATE projekt SET projektnamn=?,beredare=?,status=?,startdatum=?,anteckningar=?,uppdaterad=? WHERE id=?",
+            "UPDATE projekt SET projektnamn=?,beredare=?,status=?,startdatum=?,anteckningar=?,"
+            "kund=?,anslutningspunkt=?,uppdaterad=? WHERE id=?",
             (namn, d.get('beredare', bef['beredare']), status,
              d.get('startdatum', bef['startdatum']) or None,
-             d.get('anteckningar', bef['anteckningar']), nu(), pid))
+             d.get('anteckningar', bef['anteckningar']),
+             (d.get('kund', bef['kund']) or '').strip() or None,
+             (d.get('anslutningspunkt', bef['anslutningspunkt']) or '').strip() or None,
+             tidpunkt, pid))
         conn.commit()
         return jsonify({'projekt': row_to_dict(conn.execute("SELECT * FROM projekt WHERE id=?", (pid,)).fetchone())})
 
@@ -298,6 +347,163 @@ def ta_bort_projekt(pid):
         conn.execute("DELETE FROM projekt WHERE id=?", (pid,))
         conn.commit()
     return jsonify({'meddelande': f'Projekt {rad["projektnummer"]} borttaget.'})
+
+
+# ============================================================
+# PROJEKT – FAS
+# ============================================================
+
+@app.get('/api/projekt/<int:pid>/fas')
+def hamta_fas(pid):
+    with get_db() as conn:
+        proj = conn.execute("SELECT fas FROM projekt WHERE id=?", (pid,)).fetchone()
+        if not proj: return fel('Projektet hittades inte.', 404)
+        historik = rows_to_list(conn.execute(
+            "SELECT * FROM projekt_fas_datum WHERE projekt_id=? ORDER BY startdatum",
+            (pid,)
+        ).fetchall())
+    return jsonify({'fas': proj['fas'], 'historik': historik})
+
+
+@app.post('/api/projekt/<int:pid>/fas')
+def uppdatera_fas(pid):
+    d = request.get_json(silent=True) or {}
+    ny_fas = (d.get('fas') or '').strip()
+    if ny_fas not in GILTIGA_FASER:
+        return fel(f'Ogiltig fas. Välj: {", ".join(GILTIGA_FASER)}')
+    tidpunkt = nu()
+    idag = tidpunkt[:10]
+    with get_db() as conn:
+        proj = conn.execute("SELECT fas FROM projekt WHERE id=?", (pid,)).fetchone()
+        if not proj: return fel('Projektet hittades inte.', 404)
+        gammal_fas = proj['fas']
+        if gammal_fas == ny_fas:
+            return jsonify({'fas': ny_fas, 'meddelande': 'Ingen förändring.'})
+        conn.execute(
+            "UPDATE projekt_fas_datum SET slutdatum=? WHERE projekt_id=? AND slutdatum IS NULL",
+            (idag, pid))
+        conn.execute(
+            "INSERT INTO projekt_fas_datum (projekt_id,fas,startdatum,skapad) VALUES (?,?,?,?)",
+            (pid, ny_fas, idag, tidpunkt))
+        conn.execute(
+            "UPDATE projekt SET fas=?,uppdaterad=? WHERE id=?",
+            (ny_fas, tidpunkt, pid))
+        conn.execute(
+            "INSERT INTO projekt_aktiviteter (projekt_id,tidpunkt,typ,beskrivning) VALUES (?,?,?,?)",
+            (pid, tidpunkt, 'fas-byte', f'Fas: {gammal_fas or "–"} → {ny_fas}'))
+        conn.commit()
+    return jsonify({'fas': ny_fas, 'meddelande': f'Fas uppdaterad till {ny_fas}.'})
+
+
+# ============================================================
+# PROJEKT – TILLSTÅND
+# ============================================================
+
+@app.get('/api/projekt/<int:pid>/tillstand')
+def lista_tillstand(pid):
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        t = rows_to_list(conn.execute(
+            "SELECT * FROM projekt_tillstand WHERE projekt_id=? ORDER BY skapad",
+            (pid,)
+        ).fetchall())
+    return jsonify({'tillstand': t})
+
+
+@app.post('/api/projekt/<int:pid>/tillstand')
+def skapa_tillstand(pid):
+    d = request.get_json(silent=True) or {}
+    namn = (d.get('namn') or '').strip()
+    if not namn: return fel('Namn är obligatoriskt.')
+    status = d.get('status', 'Inväntas')
+    if status not in ('Inväntas', 'Mottaget', 'Ej krävs'):
+        return fel('Ogiltigt status.')
+    tidpunkt = nu()
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        cur = conn.execute(
+            "INSERT INTO projekt_tillstand "
+            "(projekt_id,namn,status,datum,anteckning,skapad,uppdaterad) VALUES (?,?,?,?,?,?,?)",
+            (pid, namn, status, d.get('datum') or None,
+             (d.get('anteckning') or '').strip() or None, tidpunkt, tidpunkt))
+        conn.commit()
+        t = row_to_dict(conn.execute(
+            "SELECT * FROM projekt_tillstand WHERE id=?", (cur.lastrowid,)
+        ).fetchone())
+    return jsonify({'tillstand': t}), 201
+
+
+@app.put('/api/projekt/<int:pid>/tillstand/<int:tid>')
+def uppdatera_tillstand(pid, tid):
+    with get_db() as conn:
+        bef = conn.execute(
+            "SELECT * FROM projekt_tillstand WHERE id=? AND projekt_id=?", (tid, pid)
+        ).fetchone()
+        if not bef: return fel('Tillståndet hittades inte.', 404)
+        d = request.get_json(silent=True) or {}
+        status = d.get('status', bef['status'])
+        if status not in ('Inväntas', 'Mottaget', 'Ej krävs'):
+            return fel('Ogiltigt status.')
+        conn.execute(
+            "UPDATE projekt_tillstand SET namn=?,status=?,datum=?,anteckning=?,uppdaterad=? WHERE id=?",
+            ((d.get('namn') or bef['namn']).strip(), status,
+             d.get('datum', bef['datum']) or None,
+             d.get('anteckning', bef['anteckning']),
+             nu(), tid))
+        conn.commit()
+        t = row_to_dict(conn.execute(
+            "SELECT * FROM projekt_tillstand WHERE id=?", (tid,)
+        ).fetchone())
+    return jsonify({'tillstand': t})
+
+
+@app.delete('/api/projekt/<int:pid>/tillstand/<int:tid>')
+def ta_bort_tillstand(pid, tid):
+    with get_db() as conn:
+        rad = conn.execute(
+            "SELECT id FROM projekt_tillstand WHERE id=? AND projekt_id=?", (tid, pid)
+        ).fetchone()
+        if not rad: return fel('Tillståndet hittades inte.', 404)
+        conn.execute("DELETE FROM projekt_tillstand WHERE id=?", (tid,))
+        conn.commit()
+    return jsonify({'meddelande': 'Tillstånd borttaget.'})
+
+
+# ============================================================
+# PROJEKT – AKTIVITETSLOGG
+# ============================================================
+
+@app.get('/api/projekt/<int:pid>/aktiviteter')
+def lista_aktiviteter(pid):
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        a = rows_to_list(conn.execute(
+            "SELECT * FROM projekt_aktiviteter WHERE projekt_id=? ORDER BY tidpunkt DESC LIMIT 100",
+            (pid,)
+        ).fetchall())
+    return jsonify({'aktiviteter': a})
+
+
+@app.post('/api/projekt/<int:pid>/aktiviteter')
+def skapa_aktivitet(pid):
+    d = request.get_json(silent=True) or {}
+    beskrivning = (d.get('beskrivning') or '').strip()
+    if not beskrivning: return fel('Beskrivning är obligatorisk.')
+    tidpunkt = nu()
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        cur = conn.execute(
+            "INSERT INTO projekt_aktiviteter (projekt_id,tidpunkt,typ,beskrivning) VALUES (?,?,?,?)",
+            (pid, tidpunkt, d.get('typ', 'anteckning'), beskrivning))
+        conn.commit()
+        a = row_to_dict(conn.execute(
+            "SELECT * FROM projekt_aktiviteter WHERE id=?", (cur.lastrowid,)
+        ).fetchone())
+    return jsonify({'aktivitet': a}), 201
 
 
 # ============================================================

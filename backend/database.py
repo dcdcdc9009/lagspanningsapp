@@ -694,6 +694,50 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','19')")
         conn.commit()
 
+    if v < 20:
+        for kolumn in (
+            "ALTER TABLE projekt ADD COLUMN kund TEXT",
+            "ALTER TABLE projekt ADD COLUMN anslutningspunkt TEXT",
+            "ALTER TABLE projekt ADD COLUMN fas TEXT",
+        ):
+            try:
+                conn.execute(kolumn)
+            except Exception:
+                pass
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS projekt_fas_datum (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+                fas         TEXT NOT NULL,
+                startdatum  DATE NOT NULL,
+                slutdatum   DATE,
+                skapad      DATETIME NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS projekt_tillstand (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+                namn        TEXT NOT NULL,
+                status      TEXT NOT NULL DEFAULT 'Inväntas',
+                datum       DATE,
+                anteckning  TEXT,
+                skapad      DATETIME NOT NULL,
+                uppdaterad  DATETIME NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS projekt_aktiviteter (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+                tidpunkt    DATETIME NOT NULL,
+                typ         TEXT NOT NULL DEFAULT 'anteckning',
+                beskrivning TEXT NOT NULL
+            )
+        """)
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','20')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -742,16 +786,19 @@ def _create_tables(conn):
         );
 
         CREATE TABLE IF NOT EXISTS projekt (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            projektnummer TEXT UNIQUE NOT NULL,
-            projektnamn   TEXT NOT NULL,
-            beredare      TEXT NOT NULL,
-            status        TEXT NOT NULL DEFAULT 'Planerat'
-                          CHECK(status IN ('Planerat','Pågående','Klart')),
-            startdatum    DATE,
-            anteckningar  TEXT,
-            skapad        DATETIME NOT NULL,
-            uppdaterad    DATETIME NOT NULL
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            projektnummer    TEXT UNIQUE NOT NULL,
+            projektnamn      TEXT NOT NULL,
+            beredare         TEXT NOT NULL,
+            status           TEXT NOT NULL DEFAULT 'Planerat'
+                             CHECK(status IN ('Planerat','Pågående','Klart')),
+            startdatum       DATE,
+            anteckningar     TEXT,
+            kund             TEXT,
+            anslutningspunkt TEXT,
+            fas              TEXT,
+            skapad           DATETIME NOT NULL,
+            uppdaterad       DATETIME NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS mallar (
@@ -852,6 +899,34 @@ def _create_tables(conn):
             utford            INTEGER NOT NULL DEFAULT 0,
             ej_relevant       INTEGER NOT NULL DEFAULT 0,
             sortering         INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS projekt_fas_datum (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+            fas         TEXT NOT NULL,
+            startdatum  DATE NOT NULL,
+            slutdatum   DATE,
+            skapad      DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS projekt_tillstand (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+            namn        TEXT NOT NULL,
+            status      TEXT NOT NULL DEFAULT 'Inväntas',
+            datum       DATE,
+            anteckning  TEXT,
+            skapad      DATETIME NOT NULL,
+            uppdaterad  DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS projekt_aktiviteter (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+            tidpunkt    DATETIME NOT NULL,
+            typ         TEXT NOT NULL DEFAULT 'anteckning',
+            beskrivning TEXT NOT NULL
         );
     """)
 

@@ -794,3 +794,182 @@ hr.divider { border: none; border-top: 1px solid var(--gray-200); margin: 16px 0
   padding: 4px 10px;
   margin-right: 8px;
 }
+
+/* ----------------------------------------------------------------
+   FAS-TIDSLINJE
+   ---------------------------------------------------------------- */
+.fas-tidslinje {
+  display: flex;
+  gap: 0;
+  margin: 12px 0 16px;
+}
+
+.fas-steg {
+  flex: 1;
+  position: relative;
+  text-align: center;
+  padding: 10px 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-400);
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  border-right: none;
+  cursor: default;
+  transition: background .15s;
+}
+.fas-steg:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.fas-steg:last-child  { border-radius: 0 var(--radius) var(--radius) 0; border-right: 1px solid var(--gray-200); }
+
+.fas-steg::after {
+  content: '';
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 18px solid transparent;
+  border-bottom: 18px solid transparent;
+  border-left: 10px solid var(--gray-200);
+  z-index: 1;
+}
+.fas-steg:last-child::after { display: none; }
+
+.fas-steg.klar {
+  background: var(--blue-l);
+  color: var(--navy);
+  border-color: #c4b5fd;
+}
+.fas-steg.klar::after { border-left-color: #c4b5fd; }
+
+.fas-steg.aktiv {
+  background: var(--navy-d);
+  color: var(--white);
+  border-color: var(--navy-d);
+}
+.fas-steg.aktiv::after { border-left-color: var(--navy-d); }
+
+.fas-steg-nr {
+  display: block;
+  font-size: 9px;
+  font-weight: 400;
+  opacity: .7;
+  margin-bottom: 2px;
+}
+
+.fas-steg-datum {
+  display: block;
+  font-size: 9px;
+  font-weight: 400;
+  margin-top: 2px;
+  opacity: .75;
+}
+
+/* ----------------------------------------------------------------
+   PROJEKT-OVERSIKT DASHBOARD
+   ---------------------------------------------------------------- */
+.fas-dashboard {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .fas-dashboard { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 560px) {
+  .fas-dashboard { grid-template-columns: repeat(2, 1fr); }
+}
+
+.fas-kort {
+  background: var(--white);
+  border: 2px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.fas-kort:hover { border-color: var(--navy); box-shadow: 0 2px 8px rgba(91,33,182,.15); }
+.fas-kort.aktiv-filter { border-color: var(--navy-d); background: var(--blue-l); box-shadow: 0 2px 10px rgba(91,33,182,.2); }
+
+.fas-kort-antal {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--navy-d);
+  line-height: 1;
+}
+.fas-kort-namn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-600);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-top: 5px;
+}
+
+/* ----------------------------------------------------------------
+   PROJEKT-LISTA (ny version med fas)
+   ---------------------------------------------------------------- */
+.rod-flagg {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-forfrågan    { background: #ede9fe; color: #6d28d9; }
+.badge-beredning    { background: var(--amber-l); color: var(--amber); }
+.badge-offert       { background: #dbeafe; color: #1d4ed8; }
+.badge-genomforande { background: #dcfce7; color: var(--green); }
+.badge-drifttagning { background: #ecfdf5; color: #047857; }
+
+/* ----------------------------------------------------------------
+   TILLSTÅND-LISTA
+   ---------------------------------------------------------------- */
+.tillstand-lista { list-style: none; }
+.tillstand-rad {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  font-size: 13px;
+}
+.tillstand-rad:last-child { border-bottom: none; }
+.tillstand-namn { flex: 1; }
+.tillstand-datum { font-size: 11px; color: var(--gray-400); white-space: nowrap; }
+
+.badge-inväntas  { background: var(--amber-l); color: var(--amber); }
+.badge-mottaget  { background: var(--green-l); color: var(--green); }
+.badge-ej-kravs  { background: var(--gray-100); color: var(--gray-600); }
+
+/* ----------------------------------------------------------------
+   AKTIVITETSLOGG
+   ---------------------------------------------------------------- */
+.aktivitets-lista { list-style: none; }
+.aktivitets-rad {
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  font-size: 12px;
+  align-items: flex-start;
+}
+.aktivitets-rad:last-child { border-bottom: none; }
+.aktivitets-tid {
+  color: var(--gray-400);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  min-width: 110px;
+}
+.aktivitets-ikon {
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.aktivitets-text { flex: 1; color: var(--gray-800); }
