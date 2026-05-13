@@ -496,6 +496,61 @@ function modalRedigeraProjekt(p) {
   modalProjektForm(p, p);
 }
 
+async function modalProjektFormEnkel(onSuccess) {
+  await laddaBeredare();
+  const nasta = (await api('GET', '/projekt/nasta-nummer')).projektnummer || '';
+  const berOpts = S.beredare.map(b => `<option>${escHtml(b.namn)}</option>`).join('');
+  Modal.open(
+    'Nytt projekt',
+    `<form id="projektFormEnkel">
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Projektnummer <span class="req">*</span></label>
+          <input name="projektnummer" class="form-control" value="${escHtml(nasta)}" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Beredare <span class="req">*</span></label>
+          <select name="beredare" class="form-control" required>
+            <option value="">– välj –</option>${berOpts}
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Projektnamn <span class="req">*</span></label>
+        <input name="projektnamn" class="form-control" required>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Kund</label>
+          <input name="kund" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Anslutningspunkt</label>
+          <input name="anslutningspunkt" class="form-control">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Anteckningar</label>
+        <textarea name="anteckningar" class="form-control" rows="2"></textarea>
+      </div>
+    </form>`,
+    `<button class="btn btn-navy" id="sparaProjektEnkel">Skapa</button>
+     <button class="btn btn-secondary" id="avbrytProjektEnkel">Avbryt</button>`
+  );
+  document.getElementById('avbrytProjektEnkel').addEventListener('click', Modal.close);
+  document.getElementById('sparaProjektEnkel').addEventListener('click', async () => {
+    const f = document.getElementById('projektFormEnkel');
+    if (!f.reportValidity()) return;
+    const body = Object.fromEntries(new FormData(f).entries());
+    try {
+      const res = await api('POST', '/projekt', body);
+      toast('Projekt skapat', 'success');
+      Modal.close();
+      if (onSuccess) await onSuccess(res);
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
 async function modalProjektForm(existing, data = {}, onSuccess = null) {
   await laddaBeredare();
   const nasta = existing ? '' : ((await api('GET', '/projekt/nasta-nummer')).projektnummer || '');
@@ -1494,8 +1549,8 @@ async function renderKonstruktioner(app) {
   });
 
   document.getElementById('btnNyttProjektKonstr').addEventListener('click', () => {
-    modalProjektForm(null, {}, async (result) => {
-      const nyprojekt = result.projekt;
+    modalProjektFormEnkel(async (res) => {
+      const nyprojekt = res.projekt;
       if (nyprojekt) {
         S.valtProjektKonstr = String(nyprojekt.id);
         await laddaProjektDropdown(S.valtProjektKonstr);
