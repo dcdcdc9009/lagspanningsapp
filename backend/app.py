@@ -209,13 +209,19 @@ def lista_projekt():
     beredare = request.args.get('beredare')
     sok      = request.args.get('sok', '').strip()
     sql = """
-        SELECT p.*, pfd.fas_startdatum
+        SELECT p.*, pfd.fas_startdatum,
+            COALESCE(ck.klar, 0) AS checklista_klar
         FROM projekt p
         LEFT JOIN (
             SELECT projekt_id, MAX(startdatum) AS fas_startdatum
             FROM projekt_fas_datum WHERE slutdatum IS NULL
             GROUP BY projekt_id
         ) pfd ON pfd.projekt_id = p.id
+        LEFT JOIN (
+            SELECT projekt_id, CAST(SUM(utford) AS INTEGER) AS klar
+            FROM projekt_checklistor
+            GROUP BY projekt_id
+        ) ck ON ck.projekt_id = p.id
         WHERE 1=1
     """
     params = []
@@ -293,14 +299,27 @@ def skapa_projekt():
             cur = conn.execute(
                 "INSERT INTO projekt "
                 "(projektnummer,projektnamn,beredare,status,startdatum,anteckningar,"
-                "kund,anslutningspunkt,fas,skapad,uppdaterad)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "kund,anslutningspunkt,fas,"
+                "ib_nummer,kategori,tilldelat_till,omrade,"
+                "inkommande_bestallningar,bekraftade_bestallningar,"
+                "beredning_start,beredning_slut,"
+                "skapad,uppdaterad)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (pnr, namn, beredare, d.get('status', 'Planerat'),
                  d.get('startdatum') or None,
                  (d.get('anteckningar') or '').strip() or None,
                  (d.get('kund') or '').strip() or None,
                  (d.get('anslutningspunkt') or '').strip() or None,
-                 fas, tidpunkt, tidpunkt))
+                 fas,
+                 (d.get('ib_nummer') or '').strip() or None,
+                 (d.get('kategori') or '').strip() or None,
+                 (d.get('tilldelat_till') or '').strip() or None,
+                 (d.get('omrade') or '').strip() or None,
+                 (d.get('inkommande_bestallningar') or '').strip() or None,
+                 (d.get('bekraftade_bestallningar') or '').strip() or None,
+                 d.get('beredning_start') or None,
+                 d.get('beredning_slut') or None,
+                 tidpunkt, tidpunkt))
             pid = cur.lastrowid
             if fas:
                 conn.execute(
@@ -328,12 +347,24 @@ def uppdatera_projekt(pid):
         tidpunkt = nu()
         conn.execute(
             "UPDATE projekt SET projektnamn=?,beredare=?,status=?,startdatum=?,anteckningar=?,"
-            "kund=?,anslutningspunkt=?,uppdaterad=? WHERE id=?",
+            "kund=?,anslutningspunkt=?,"
+            "ib_nummer=?,kategori=?,tilldelat_till=?,omrade=?,"
+            "inkommande_bestallningar=?,bekraftade_bestallningar=?,"
+            "beredning_start=?,beredning_slut=?,"
+            "uppdaterad=? WHERE id=?",
             (namn, d.get('beredare', bef['beredare']), status,
              d.get('startdatum', bef['startdatum']) or None,
              d.get('anteckningar', bef['anteckningar']),
              (d.get('kund', bef['kund']) or '').strip() or None,
              (d.get('anslutningspunkt', bef['anslutningspunkt']) or '').strip() or None,
+             (d.get('ib_nummer', bef['ib_nummer']) or '').strip() or None,
+             (d.get('kategori', bef['kategori']) or '').strip() or None,
+             (d.get('tilldelat_till', bef['tilldelat_till']) or '').strip() or None,
+             (d.get('omrade', bef['omrade']) or '').strip() or None,
+             (d.get('inkommande_bestallningar', bef['inkommande_bestallningar']) or '').strip() or None,
+             (d.get('bekraftade_bestallningar', bef['bekraftade_bestallningar']) or '').strip() or None,
+             d.get('beredning_start', bef['beredning_start']) or None,
+             d.get('beredning_slut', bef['beredning_slut']) or None,
              tidpunkt, pid))
         conn.commit()
         return jsonify({'projekt': row_to_dict(conn.execute("SELECT * FROM projekt WHERE id=?", (pid,)).fetchone())})
@@ -344,11 +375,60 @@ def ta_bort_projekt(pid):
     with get_db() as conn:
         rad = conn.execute("SELECT projektnummer FROM projekt WHERE id=?", (pid,)).fetchone()
         if not rad: return fel('Projektet hittades inte.', 404)
-        # Radera konstruktioner kopplade till projektet (och deras rader/egenkontroll via CASCADE)
         conn.execute("DELETE FROM konstruktioner WHERE projekt_id=?", (pid,))
         conn.execute("DELETE FROM projekt WHERE id=?", (pid,))
         conn.commit()
     return jsonify({'meddelande': f'Projekt {rad["projektnummer"]} borttaget.'})
+
+
+# ============================================================
+# PROJEKT – CHECKLISTA
+# ============================================================
+
+@app.get('/api/projekt/checklistor')
+def alla_checklistor():
+    """Returnerar alla checklistepunkter för alla projekt som {pid: [item_nrs_done]}."""
+    with get_db() as conn:
+        rader = conn.execute(
+            "SELECT projekt_id, item_nr FROM projekt_checklistor WHERE utford=1"
+        ).fetchall()
+    result = {}
+    for r in rader:
+        pid = r['projekt_id']
+        if pid not in result:
+            result[pid] = []
+        result[pid].append(r['item_nr'])
+    return jsonify({'checklistor': result})
+
+
+@app.get('/api/projekt/<int:pid>/checklista')
+def hamta_checklista(pid):
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        rader = rows_to_list(conn.execute(
+            "SELECT item_nr, utford FROM projekt_checklistor WHERE projekt_id=? ORDER BY item_nr",
+            (pid,)
+        ).fetchall())
+    return jsonify({'checklista': rader})
+
+
+@app.put('/api/projekt/<int:pid>/checklista/<int:item_nr>')
+def uppdatera_checklistepunkt(pid, item_nr):
+    if item_nr < 0 or item_nr > 99:
+        return fel('Ogiltigt item_nr.')
+    d = request.get_json(silent=True) or {}
+    utford = 1 if d.get('utford') else 0
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        conn.execute(
+            "INSERT INTO projekt_checklistor (projekt_id, item_nr, utford) VALUES (?,?,?) "
+            "ON CONFLICT(projekt_id, item_nr) DO UPDATE SET utford=excluded.utford",
+            (pid, item_nr, utford)
+        )
+        conn.commit()
+    return jsonify({'item_nr': item_nr, 'utford': utford})
 
 
 # ============================================================

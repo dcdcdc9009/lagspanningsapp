@@ -970,3 +970,216 @@ hr.divider { border: none; border-top: 1px solid var(--gray-200); margin: 16px 0
   margin-top: 1px;
 }
 .aktivitets-text { flex: 1; color: var(--gray-800); }
+
+/* ================================================================
+   PROJEKT MATRIX DASHBOARD
+   ================================================================ */
+
+/* ── Stats bar ── */
+.pm-stats {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.pm-stat-box {
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  border-top: 3px solid var(--navy);
+  padding: 12px 16px;
+  text-align: center;
+  min-width: 100px;
+  box-shadow: var(--shadow);
+}
+.pm-stat-green { border-top-color: var(--green); }
+.pm-stat-val {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--navy-d);
+  line-height: 1;
+}
+.pm-stat-lbl {
+  font-size: 10px;
+  color: var(--gray-400);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-top: 4px;
+}
+
+/* ── Matrix wrapper & table ── */
+.pm-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.pm-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  background: var(--white);
+  min-width: 100%;
+}
+
+/* Fixed header row */
+.pm-table thead th {
+  background: var(--navy-d);
+  color: var(--white);
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255,255,255,.12);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Group header (colored) */
+.pm-grp {
+  text-align: center !important;
+  font-size: 11px !important;
+  letter-spacing: .3px;
+  border-bottom: 2px solid rgba(0,0,0,.15) !important;
+}
+
+/* Rotated item headers */
+.pm-item {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+  height: 88px;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  padding: 6px 3px !important;
+  text-align: left !important;
+  vertical-align: bottom !important;
+  background: #f5f3ff !important;
+  color: var(--navy-d) !important;
+  border-bottom: 3px solid transparent;
+  cursor: default;
+}
+
+/* Sticky project name column */
+.pm-th-info {
+  min-width: 180px;
+  z-index: 4 !important;
+}
+.pm-sticky {
+  position: sticky !important;
+  left: 0;
+  z-index: 3 !important;
+}
+.pm-table thead .pm-sticky { z-index: 5 !important; }
+
+/* Body rows */
+.pm-table tbody tr { border-bottom: 1px solid var(--gray-100); }
+.pm-table tbody td {
+  padding: 6px 8px;
+  vertical-align: middle;
+  border-right: 1px solid var(--gray-100);
+}
+.pm-table tbody .pm-sticky {
+  background: var(--white);
+  border-right: 2px solid var(--gray-200) !important;
+}
+.pm-table tbody tr:hover td { background: var(--blue-l); }
+.pm-table tbody tr:hover .pm-sticky { background: var(--blue-l) !important; }
+
+/* Project name cell */
+.pm-proj-td { min-width: 180px; }
+.pm-pnr  { font-size: 11px; font-family: monospace; color: var(--gray-600); }
+.pm-pnamn { font-weight: 600; color: var(--navy-d); font-size: 12px; line-height: 1.3; }
+.pm-pber  { font-size: 10px; color: var(--gray-400); margin-top: 1px; }
+
+/* Dot cells */
+.pm-dot-td {
+  padding: 3px 2px !important;
+  text-align: center;
+}
+.pm-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--gray-300);
+  background: var(--white);
+  cursor: pointer;
+  display: inline-block;
+  transition: transform .12s, opacity .12s;
+  vertical-align: middle;
+}
+.pm-dot.on { transform: scale(1.1); }
+.pm-dot:hover { opacity: .7; transform: scale(1.2); }
+
+/* Progress bar */
+.pm-prog {
+  height: 5px;
+  background: var(--gray-200);
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 60px;
+}
+.pm-prog-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--navy), var(--blue));
+  border-radius: 3px;
+  transition: width .3s;
+}
+
+/* ── Detail: info strip ── */
+.pm-info-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  box-shadow: var(--shadow);
+}
+.pm-info-cell { min-width: 120px; flex: 1; }
+.pm-info-lbl {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--gray-400);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.pm-info-val { font-size: 13px; color: var(--gray-800); font-weight: 500; }
+
+/* ── Detail: checklista ── */
+.ck-grupp { border-bottom: 1px solid var(--gray-100); }
+.ck-grupp:last-child { border-bottom: none; }
+
+.ck-grp-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 14px;
+  background: var(--gray-50);
+  border-left: 4px solid currentColor;
+  font-size: 12px;
+}
+
+.ck-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--gray-100);
+  cursor: pointer;
+  transition: background .1s;
+  font-size: 13px;
+  user-select: none;
+}
+.ck-item:last-child { border-bottom: none; }
+.ck-item:hover { background: var(--gray-50); }
+.ck-item.ok { background: #f0fdf4; }
+.ck-item.ok .ck-text { color: var(--gray-400); text-decoration: line-through; }
+.ck-cb { flex-shrink: 0; width: 15px; height: 15px; cursor: pointer; }
+.ck-text { flex: 1; }

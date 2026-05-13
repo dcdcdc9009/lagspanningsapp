@@ -155,6 +155,57 @@ const FAS_CSS = {
   'Beredning': 'badge-beredning', 'Projektledning': 'badge-offert', 'Utförda': 'badge-klart',
 };
 
+// ----------------------------------------------------------------
+// CHECKLISTA
+// ----------------------------------------------------------------
+const CHECKLISTA = [
+  { nr:  0, kort: 'PWB',         namn: 'Starta upp projekt i PWB',                               grupp: 0 },
+  { nr:  1, kort: 'Persl.',      namn: 'Personaliggare projekt över behövs >236800kr',            grupp: 0 },
+  { nr:  2, kort: 'Projna.',     namn: 'Starta upp projektet i projektnavet',                     grupp: 0 },
+  { nr:  3, kort: 'Beställn.',   namn: 'Gå igenom beställningen',                                grupp: 0 },
+  { nr:  4, kort: 'Inst.',       namn: 'Kontakta installatören',                                 grupp: 0 },
+  { nr:  5, kort: 'Upps.best.',  namn: 'Kontakta beställaren för uppstart av beredning',         grupp: 0 },
+  { nr:  6, kort: 'Pärmstr.',    namn: 'Skapa projektpärmstruktur',                              grupp: 0 },
+  { nr:  7, kort: 'Platsbek.',   namn: 'Platsbesök (bilder/markklass)',                          grupp: 0 },
+  { nr:  8, kort: 'Schaktk.',    namn: 'Schaktkarta',                                            grupp: 1 },
+  { nr:  9, kort: 'Markpr.',     namn: 'Markprover',                                             grupp: 1 },
+  { nr: 10, kort: 'Ledningk.',   namn: 'Ledningskarta',                                          grupp: 1 },
+  { nr: 11, kort: 'Återst.k.',   namn: 'Återställningskarta',                                    grupp: 1 },
+  { nr: 12, kort: 'Hinderk.',    namn: 'Hinderkarta',                                            grupp: 1 },
+  { nr: 13, kort: 'Rasering.',   namn: 'Raseringskarta',                                         grupp: 1 },
+  { nr: 14, kort: 'Byggprot.',   namn: 'Byggprotokoll',                                          grupp: 2 },
+  { nr: 15, kort: 'Bildbesk.',   namn: 'Bildbeskrivning',                                        grupp: 2 },
+  { nr: 16, kort: 'Matl.lista',  namn: 'Materiallista',                                          grupp: 2 },
+  { nr: 17, kort: 'Kalkyl',      namn: 'Kalkyl',                                                 grupp: 2 },
+  { nr: 18, kort: 'Mat.best.',   namn: 'Materialbeställning',                                    grupp: 2 },
+  { nr: 19, kort: 'Schaktprot.', namn: 'Schaktprotokoll',                                        grupp: 2 },
+  { nr: 20, kort: 'Ledningsk.',  namn: 'Ledningskollen',                                         grupp: 3 },
+  { nr: 21, kort: 'Trafikv.',    namn: 'Trafikverket',                                           grupp: 3 },
+  { nr: 22, kort: 'Rev avtal',   namn: 'Rev avtal',                                              grupp: 3 },
+  { nr: 23, kort: 'Grävtillst.', namn: 'Grävtillstånd',                                         grupp: 3 },
+  { nr: 24, kort: 'TA-plan',     namn: 'TA-plan',                                                grupp: 3 },
+  { nr: 25, kort: 'Vägfören.',   namn: 'Vägförening/Samfälligheter/Gemensamhetsanläggningar',   grupp: 3 },
+  { nr: 26, kort: 'Skyddad N.',  namn: 'Skyddad Natur',                                          grupp: 3 },
+  { nr: 27, kort: 'Skogens P.',  namn: 'Skogens Pärlor',                                        grupp: 3 },
+  { nr: 28, kort: 'Fornsök',     namn: 'Fornsök',                                                grupp: 3 },
+  { nr: 29, kort: 'Artport.',    namn: 'Artportalen',                                            grupp: 3 },
+  { nr: 30, kort: 'Samråd',      namn: 'Samråd',                                                 grupp: 3 },
+  { nr: 31, kort: 'Strandsk.',   namn: 'Strandskydd',                                            grupp: 3 },
+  { nr: 32, kort: 'Föror.mark',  namn: 'Förorenad mark',                                         grupp: 3 },
+  { nr: 33, kort: 'Markäg.',     namn: 'Kontakta markägaren',                                    grupp: 3 },
+  { nr: 34, kort: 'AMplan',      namn: 'Arbetsmiljöplan',                                        grupp: 4 },
+  { nr: 35, kort: 'Miljöplan',   namn: 'Miljöplan',                                              grupp: 4 },
+  { nr: 36, kort: 'Kval.plan',   namn: 'Kvalitetsplan',                                          grupp: 4 },
+  { nr: 37, kort: 'Masshant.',   namn: 'Masshanteringsplan',                                     grupp: 4 },
+];
+const GRUPPER = [
+  { id: 0, namn: 'Uppstart',     color: '#7c3aed', count: 8  },
+  { id: 1, namn: 'Kartläggning', color: '#d97706', count: 6  },
+  { id: 2, namn: 'Handlingar',   color: '#2563eb', count: 6  },
+  { id: 3, namn: 'Tillstånd',    color: '#16a34a', count: 14 },
+  { id: 4, namn: 'Kvalitet',     color: '#dc2626', count: 4  },
+];
+
 function badgeFas(fas) {
   if (!fas) return '<span class="text-muted" style="font-size:12px">Ingen fas</span>';
   return `<span class="badge ${FAS_CSS[fas] || ''}">${escHtml(fas)}</span>`;
@@ -174,136 +225,185 @@ function rodFlaggHtml(fas, dagar) {
 }
 
 // ----------------------------------------------------------------
-// VIEW: PROJEKT (dashboard + lista)
+// VIEW: PROJEKT (matrix dashboard)
 // ----------------------------------------------------------------
 async function renderProjekt(app) {
+  app.innerHTML = `<div class="text-muted" style="padding:32px;text-align:center">Laddar dashboard…</div>`;
+  let checklistor = {};
+  try {
+    const [pr, ck] = await Promise.all([
+      api('GET', '/projekt'),
+      api('GET', '/projekt/checklistor').catch(() => ({ checklistor: {} })),
+    ]);
+    S.projekt = pr.projekt || [];
+    checklistor = ck.checklistor || {};
+  } catch (e) {
+    app.innerHTML = `<p class="text-red" style="padding:24px">Fel: ${e.message}</p>`;
+    return;
+  }
+  await laddaBeredare();
+
+  const ckMap = {};
+  for (const [pid, doneArr] of Object.entries(checklistor)) {
+    ckMap[parseInt(pid)] = new Set(doneArr);
+  }
+  const N = CHECKLISTA.length;
+  function getDone(p) {
+    return ckMap[p.id] ? ckMap[p.id].size : (parseInt(p.checklista_klar) || 0);
+  }
+
   app.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Projektöversikt</h1>
       <button class="btn btn-navy" id="btnNyttProjekt">+ Nytt projekt</button>
     </div>
-    <div id="fasDashboard" class="fas-dashboard"></div>
-    <div class="filter-bar">
-      <input type="search" class="form-control" id="sokProjekt" placeholder="Sök projekt…">
-      <select class="form-control" id="filtBeredare">
-        <option value="">Alla beredare</option>
+    <div id="pmStats" class="pm-stats"></div>
+    <div class="filter-bar" style="margin-bottom:12px">
+      <input type="search" class="form-control" id="pmSok" placeholder="Sök projekt…" style="max-width:220px">
+      <select class="form-control" id="pmFas" style="max-width:160px">
+        <option value="">Alla faser</option>
+        ${FASER.map(f => `<option>${escHtml(f)}</option>`).join('')}
       </select>
-      <button class="btn btn-outline btn-sm" id="btnRensaFas" style="display:none">✕ Rensa fasfilter</button>
+      <select class="form-control" id="pmBer" style="max-width:180px">
+        <option value="">Alla beredare</option>
+        ${S.beredare.map(b => `<option>${escHtml(b.namn)}</option>`).join('')}
+      </select>
     </div>
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Projektnr</th><th>Projektnamn</th><th>Kund</th>
-            <th>Fas</th><th>Dagar i fas</th><th>Beredare</th><th>Åtgärder</th>
-          </tr></thead>
-          <tbody id="projektBody"></tbody>
-        </table>
-      </div>
+    <div class="pm-wrap">
+      <table class="pm-table">
+        <thead>
+          <tr>
+            <th class="pm-sticky pm-th-info" rowspan="2">Projekt</th>
+            <th rowspan="2" style="min-width:70px">IB Nr</th>
+            <th rowspan="2" style="min-width:100px">Tilldelat</th>
+            <th rowspan="2" style="min-width:130px">Beredning</th>
+            <th rowspan="2" style="min-width:85px">Framsteg</th>
+            <th rowspan="2">Fas</th>
+            ${GRUPPER.map(g => `<th colspan="${g.count}" class="pm-grp" style="background:${g.color}">${escHtml(g.namn)}</th>`).join('')}
+            <th rowspan="2" style="min-width:56px"></th>
+          </tr>
+          <tr>
+            ${CHECKLISTA.map(c => `<th class="pm-item" title="${escHtml(c.namn)}" style="border-bottom-color:${GRUPPER[c.grupp].color}">${escHtml(c.kort)}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody id="pmBody"></tbody>
+      </table>
     </div>`;
 
-  let aktivFasFilter = '';
+  function uppdateraStats() {
+    const tot = S.projekt.length;
+    const totDone = S.projekt.reduce((s, p) => s + getDone(p), 0);
+    const pct = (tot * N) ? Math.round(100 * totDone / (tot * N)) : 0;
+    document.getElementById('pmStats').innerHTML = `
+      <div class="pm-stat-box"><div class="pm-stat-val">${tot}</div><div class="pm-stat-lbl">Projekt</div></div>
+      <div class="pm-stat-box pm-stat-green"><div class="pm-stat-val">${pct}%</div><div class="pm-stat-lbl">Klara checklistpunkter</div></div>
+      ${FASER.map(f => {
+        const cnt = S.projekt.filter(p => p.fas === f).length;
+        return `<div class="pm-stat-box"><div class="pm-stat-val">${cnt}</div><div class="pm-stat-lbl">${escHtml(f)}</div></div>`;
+      }).join('')}
+      <div class="pm-stat-box"><div class="pm-stat-val">${S.projekt.filter(p => !p.fas).length}</div><div class="pm-stat-lbl">Ingen fas</div></div>`;
+  }
+  uppdateraStats();
 
-  await laddaBeredare();
-  const filtBer = document.getElementById('filtBeredare');
-  S.beredare.forEach(b => { filtBer.innerHTML += `<option>${escHtml(b.namn)}</option>`; });
-
-  // Fas-dashboard
-  let fasStatistik = {};
-  try {
-    const fs = await api('GET', '/projekt/fas-statistik');
-    fasStatistik = fs.fas_statistik || {};
-  } catch {}
-  const fasDash = document.getElementById('fasDashboard');
-  fasDash.innerHTML = FASER.map(fas => `
-    <div class="fas-kort" data-fas="${escHtml(fas)}">
-      <div class="fas-kort-antal">${fasStatistik[fas] ?? 0}</div>
-      <div class="fas-kort-namn">${escHtml(fas)}</div>
-    </div>`).join('');
-  fasDash.querySelectorAll('.fas-kort').forEach(k => {
-    k.addEventListener('click', () => {
-      const fas = k.dataset.fas;
-      if (aktivFasFilter === fas) {
-        aktivFasFilter = '';
-        fasDash.querySelectorAll('.fas-kort').forEach(x => x.classList.remove('aktiv-filter'));
-        document.getElementById('btnRensaFas').style.display = 'none';
-      } else {
-        aktivFasFilter = fas;
-        fasDash.querySelectorAll('.fas-kort').forEach(x => x.classList.toggle('aktiv-filter', x.dataset.fas === fas));
-        document.getElementById('btnRensaFas').style.display = '';
-      }
-      renderProjektRader();
-    });
-  });
-  document.getElementById('btnRensaFas').addEventListener('click', () => {
-    aktivFasFilter = '';
-    fasDash.querySelectorAll('.fas-kort').forEach(x => x.classList.remove('aktiv-filter'));
-    document.getElementById('btnRensaFas').style.display = 'none';
-    renderProjektRader();
-  });
-
-  await laddaProjekt();
-  renderProjektRader();
-
-  document.getElementById('sokProjekt').addEventListener('input', renderProjektRader);
-  document.getElementById('filtBeredare').addEventListener('change', renderProjektRader);
-  document.getElementById('btnNyttProjekt').addEventListener('click', () => modalNyttProjekt());
-
-  function renderProjektRader() {
-    const sok = document.getElementById('sokProjekt').value.toLowerCase();
-    const ber = document.getElementById('filtBeredare').value;
-    let lista = S.projekt.filter(p => {
-      if (aktivFasFilter && p.fas !== aktivFasFilter) return false;
+  function renderRader() {
+    const sok = document.getElementById('pmSok').value.toLowerCase();
+    const fas = document.getElementById('pmFas').value;
+    const ber = document.getElementById('pmBer').value;
+    const lista = S.projekt.filter(p => {
+      if (fas && p.fas !== fas) return false;
       if (ber && p.beredare !== ber) return false;
-      if (sok && !(`${p.projektnummer} ${p.projektnamn} ${p.beredare} ${p.kund||''}`).toLowerCase().includes(sok)) return false;
+      if (sok) {
+        const hay = `${p.projektnummer} ${p.projektnamn} ${p.beredare} ${p.kund||''} ${p.ib_nummer||''} ${p.tilldelat_till||''}`.toLowerCase();
+        if (!hay.includes(sok)) return false;
+      }
       return true;
     });
-    const tbody = document.getElementById('projektBody');
+    const tbody = document.getElementById('pmBody');
     if (!lista.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="muted text-center">Inga projekt hittades</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${6 + N + 1}" class="muted text-center" style="padding:32px">Inga projekt hittades</td></tr>`;
       return;
     }
     tbody.innerHTML = lista.map(p => {
-      const dagar = dagarIFas(p.fas_startdatum);
-      const flagg = rodFlaggHtml(p.fas, dagar);
-      const dagarTxt = dagar !== null ? `${dagar}d ${flagg}` : '–';
+      const done = getDone(p);
+      const pct  = Math.round(100 * done / N);
+      const period = (p.beredning_start || p.beredning_slut)
+        ? `${p.beredning_start || '?'} – ${p.beredning_slut || '?'}` : '–';
+      const dots = CHECKLISTA.map(c => {
+        const ok = ckMap[p.id] && ckMap[p.id].has(c.nr);
+        const gc = GRUPPER[c.grupp].color;
+        return `<td class="pm-dot-td"><div class="pm-dot${ok ? ' on' : ''}" data-pid="${p.id}" data-nr="${c.nr}"
+          style="${ok ? `background:${gc};border-color:${gc}` : `border-color:${gc}55`}" title="${escHtml(c.namn)}"></div></td>`;
+      }).join('');
       return `<tr>
-        <td class="mono">${escHtml(p.projektnummer)}</td>
-        <td><strong>${escHtml(p.projektnamn)}</strong></td>
-        <td>${escHtml(p.kund || '–')}</td>
+        <td class="pm-sticky pm-proj-td">
+          <div class="pm-pnr">${escHtml(p.projektnummer)}</div>
+          <div class="pm-pnamn">${escHtml(p.projektnamn)}</div>
+          <div class="pm-pber">${escHtml(p.beredare)}</div>
+        </td>
+        <td class="text-sm">${escHtml(p.ib_nummer || '–')}</td>
+        <td class="text-sm">${escHtml(p.tilldelat_till || '–')}</td>
+        <td class="text-sm" style="white-space:nowrap">${escHtml(period)}</td>
+        <td>
+          <div class="pm-prog"><div class="pm-prog-fill" style="width:${pct}%"></div></div>
+          <div style="font-size:10px;color:var(--gray-400);margin-top:2px">${done}/${N}</div>
+        </td>
         <td>${badgeFas(p.fas)}</td>
-        <td>${dagarTxt}</td>
-        <td>${escHtml(p.beredare)}</td>
-        <td class="flex gap-1">
-          <button class="btn btn-sm btn-navy" data-id="${p.id}" data-action="oppna">Öppna</button>
-          <button class="btn btn-sm btn-outline" data-id="${p.id}" data-action="redigera">Redigera</button>
-          <button class="btn btn-sm btn-danger" data-id="${p.id}" data-action="radera">✕</button>
+        ${dots}
+        <td>
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <button class="btn btn-sm btn-navy" data-id="${p.id}" data-a="oppna">Öppna</button>
+            <button class="btn btn-sm btn-outline" data-id="${p.id}" data-a="red">✎</button>
+            <button class="btn btn-sm btn-danger" data-id="${p.id}" data-a="del">✕</button>
+          </div>
         </td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('button[data-action]').forEach(btn => {
-      btn.addEventListener('click', async () => {
+
+    tbody.querySelectorAll('.pm-dot').forEach(dot => {
+      dot.addEventListener('click', async () => {
+        const pid = parseInt(dot.dataset.pid);
+        const nr  = parseInt(dot.dataset.nr);
+        const nytt = dot.classList.contains('on') ? 0 : 1;
+        try {
+          await api('PUT', `/projekt/${pid}/checklista/${nr}`, { utford: nytt });
+          if (!ckMap[pid]) ckMap[pid] = new Set();
+          nytt ? ckMap[pid].add(nr) : ckMap[pid].delete(nr);
+          renderRader();
+          uppdateraStats();
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
+
+    tbody.querySelectorAll('button[data-a]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
         const id = btn.dataset.id;
-        const action = btn.dataset.action;
-        if (action === 'oppna') {
+        const p  = S.projekt.find(x => x.id == id);
+        if (btn.dataset.a === 'oppna') {
           navigate('projekt-detail', { id });
-        } else if (action === 'redigera') {
-          const p = S.projekt.find(x => x.id == id);
+        } else if (btn.dataset.a === 'red') {
           modalRedigeraProjekt(p);
-        } else if (action === 'radera') {
-          const p = S.projekt.find(x => x.id == id);
-          const ok = await confirm('Ta bort projekt', `Ta bort "${p.projektnamn}"? Alla byggprotokoll tas också bort.`);
+        } else if (btn.dataset.a === 'del') {
+          const ok = await confirm('Ta bort projekt', `Ta bort "${p.projektnamn}"?`);
           if (!ok) return;
           try {
             await api('DELETE', `/projekt/${id}`);
             toast('Projekt borttaget', 'success');
-            await laddaProjekt();
-            renderProjektRader();
-          } catch (e) { toast(e.message, 'error'); }
+            S.projekt = S.projekt.filter(x => x.id != id);
+            delete ckMap[id];
+            renderRader();
+            uppdateraStats();
+          } catch (e2) { toast(e2.message, 'error'); }
         }
       });
     });
   }
+
+  renderRader();
+  document.getElementById('pmSok').addEventListener('input', renderRader);
+  document.getElementById('pmFas').addEventListener('change', renderRader);
+  document.getElementById('pmBer').addEventListener('change', renderRader);
+  document.getElementById('btnNyttProjekt').addEventListener('click', () => modalNyttProjekt());
 }
 
 async function laddaProjekt() {
@@ -325,10 +425,10 @@ function modalRedigeraProjekt(p) {
 async function modalProjektForm(existing, data = {}, onSuccess = null) {
   await laddaBeredare();
   const nasta = existing ? '' : ((await api('GET', '/projekt/nasta-nummer')).projektnummer || '');
-  const berOptions = S.beredare.map(b =>
+  const berOpts = S.beredare.map(b =>
     `<option ${data.beredare === b.namn ? 'selected' : ''}>${escHtml(b.namn)}</option>`).join('');
-  const fasOptions = ['', ...FASER].map(f =>
-    `<option value="${f}" ${(data.fas||'')=== f ? 'selected' : ''}>${f || '– ingen fas –'}</option>`).join('');
+  const fasOpts = ['', ...FASER].map(f =>
+    `<option value="${f}" ${(data.fas || '') === f ? 'selected' : ''}>${f || '– ingen fas –'}</option>`).join('');
 
   Modal.open(
     existing ? 'Redigera projekt' : 'Nytt projekt',
@@ -339,39 +439,73 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
           <input name="projektnummer" class="form-control" value="${escHtml(data.projektnummer || nasta)}" ${existing ? '' : 'required'}>
         </div>
         <div class="form-group">
-          <label class="form-label">Fas</label>
-          <select name="fas" class="form-control">${fasOptions}</select>
+          <label class="form-label">IB Nummer</label>
+          <input name="ib_nummer" class="form-control" value="${escHtml(data.ib_nummer || '')}">
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">Projektnamn <span class="req">*</span></label>
-        <input name="projektnamn" class="form-control" value="${escHtml(data.projektnamn||'')}" required>
+        <input name="projektnamn" class="form-control" value="${escHtml(data.projektnamn || '')}" required>
       </div>
       <div class="form-row cols-2">
         <div class="form-group">
-          <label class="form-label">Kund</label>
-          <input name="kund" class="form-control" value="${escHtml(data.kund||'')}">
+          <label class="form-label">Kategori</label>
+          <input name="kategori" class="form-control" value="${escHtml(data.kategori || '')}">
         </div>
         <div class="form-group">
-          <label class="form-label">Anslutningspunkt</label>
-          <input name="anslutningspunkt" class="form-control" value="${escHtml(data.anslutningspunkt||'')}">
+          <label class="form-label">Tilldelat till</label>
+          <input name="tilldelat_till" class="form-control" value="${escHtml(data.tilldelat_till || '')}">
+        </div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Område</label>
+          <input name="omrade" class="form-control" value="${escHtml(data.omrade || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Kund</label>
+          <input name="kund" class="form-control" value="${escHtml(data.kund || '')}">
+        </div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Inkommande beställningar</label>
+          <input name="inkommande_bestallningar" class="form-control" value="${escHtml(data.inkommande_bestallningar || '')}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bekräftade beställningar</label>
+          <input name="bekraftade_bestallningar" class="form-control" value="${escHtml(data.bekraftade_bestallningar || '')}">
+        </div>
+      </div>
+      <div class="form-row cols-3">
+        <div class="form-group">
+          <label class="form-label">Fas</label>
+          <select name="fas" class="form-control">${fasOpts}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Beredning start</label>
+          <input type="date" name="beredning_start" class="form-control" value="${data.beredning_start || ''}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Beredning slut</label>
+          <input type="date" name="beredning_slut" class="form-control" value="${data.beredning_slut || ''}">
         </div>
       </div>
       <div class="form-row cols-2">
         <div class="form-group">
           <label class="form-label">Beredare <span class="req">*</span></label>
           <select name="beredare" class="form-control" required>
-            <option value="">– välj –</option>${berOptions}
+            <option value="">– välj –</option>${berOpts}
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Startdatum</label>
-          <input type="date" name="startdatum" class="form-control" value="${data.startdatum||''}">
+          <label class="form-label">Anslutningspunkt</label>
+          <input name="anslutningspunkt" class="form-control" value="${escHtml(data.anslutningspunkt || '')}">
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">Anteckningar</label>
-        <textarea name="anteckningar" class="form-control">${escHtml(data.anteckningar||'')}</textarea>
+        <textarea name="anteckningar" class="form-control">${escHtml(data.anteckningar || '')}</textarea>
       </div>
     </form>`,
     `<button class="btn btn-navy" id="sparaProjekt">${existing ? 'Spara' : 'Skapa'}</button>
@@ -383,23 +517,17 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
   document.getElementById('sparaProjekt').addEventListener('click', async () => {
     const f = document.getElementById('projektForm');
     if (!f.reportValidity()) return;
-    const fd = new FormData(f);
-    const body = Object.fromEntries(fd.entries());
+    const body = Object.fromEntries(new FormData(f).entries());
     try {
-      let result;
       if (existing) {
-        result = await api('PUT', `/projekt/${existing.id}`, body);
+        await api('PUT', `/projekt/${existing.id}`, body);
         toast('Projekt sparat', 'success');
       } else {
-        result = await api('POST', '/projekt', body);
+        await api('POST', '/projekt', body);
         toast('Projekt skapat', 'success');
       }
       Modal.close();
-      if (onSuccess) {
-        await onSuccess(result);
-      } else {
-        navigate('projekt');
-      }
+      if (onSuccess) { await onSuccess(); } else { navigate('projekt'); }
     } catch (e) { toast(e.message, 'error'); }
   });
 }
@@ -408,22 +536,24 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
 // VIEW: PROJEKT DETAIL
 // ----------------------------------------------------------------
 async function renderProjektDetail(app, id) {
-  app.innerHTML = `<div class="text-muted">Laddar…</div>`;
-  let p, fasData, tillstandLista, aktiviteter;
+  app.innerHTML = `<div class="text-muted" style="padding:32px;text-align:center">Laddar…</div>`;
+  let p, fasData, tillstandLista, aktiviteter, checklista;
   try {
-    [p, fasData, tillstandLista, aktiviteter] = await Promise.all([
+    [p, fasData, tillstandLista, aktiviteter, checklista] = await Promise.all([
       api('GET', `/projekt/${id}`).then(r => r.projekt),
       api('GET', `/projekt/${id}/fas`).catch(() => ({ fas: null, historik: [] })),
       api('GET', `/projekt/${id}/tillstand`).then(r => r.tillstand || []).catch(() => []),
       api('GET', `/projekt/${id}/aktiviteter`).then(r => r.aktiviteter || []).catch(() => []),
+      api('GET', `/projekt/${id}/checklista`).then(r => r.checklista || []).catch(() => []),
     ]);
   } catch (e) {
-    app.innerHTML = `<p class="text-red">Kunde inte ladda projekt: ${e.message}</p>`;
+    app.innerHTML = `<p class="text-red" style="padding:24px">Kunde inte ladda projekt: ${e.message}</p>`;
     return;
   }
 
   const fasHistorik = fasData.historik || [];
   const aktuellFas = p.fas || null;
+  const ckSet = new Set(checklista.filter(c => c.utford).map(c => c.item_nr));
 
   function fasTidslinjeHtml() {
     return `<div class="fas-tidslinje" id="fasTidslinje">` +
@@ -431,41 +561,47 @@ async function renderProjektDetail(app, id) {
         const hrad = fasHistorik.find(h => h.fas === fas);
         const arAktiv = fas === aktuellFas;
         const arKlar  = fasHistorik.some(h => h.fas === fas && h.slutdatum);
-        let cls = arAktiv ? 'aktiv' : arKlar ? 'klar' : '';
+        const cls = arAktiv ? 'aktiv' : arKlar ? 'klar' : '';
         const datumTxt = hrad ? `<span class="fas-steg-datum">${hrad.startdatum || ''}</span>` : '';
-        return `<div class="fas-steg ${cls}" data-fas="${escHtml(fas)}" title="Klicka för att sätta fas: ${escHtml(fas)}">
-          <span class="fas-steg-nr">${i + 1}.</span>${escHtml(fas)}${datumTxt}
-        </div>`;
-      }).join('') +
-    `</div>`;
+        return `<div class="fas-steg ${cls}" data-fas="${escHtml(fas)}" title="Sätt fas: ${escHtml(fas)}">
+          <span class="fas-steg-nr">${i + 1}.</span>${escHtml(fas)}${datumTxt}</div>`;
+      }).join('') + `</div>`;
   }
 
   function tillstandHtml(lista) {
     if (!lista.length) return `<p class="text-muted" style="padding:12px;font-size:13px">Inga tillstånd registrerade</p>`;
-    const badgeTill = { 'Inväntas': 'badge-inväntas', 'Mottaget': 'badge-mottaget', 'Ej krävs': 'badge-ej-kravs' };
+    const bTill = { 'Inväntas': 'badge-inväntas', 'Mottaget': 'badge-mottaget', 'Ej krävs': 'badge-ej-kravs' };
     return `<ul class="tillstand-lista">` + lista.map(t => `
-      <li class="tillstand-rad" data-tid="${t.id}">
+      <li class="tillstand-rad">
         <span class="tillstand-namn">${escHtml(t.namn)}</span>
         ${t.datum ? `<span class="tillstand-datum">${t.datum}</span>` : ''}
-        <span class="badge ${badgeTill[t.status] || ''}">${escHtml(t.status)}</span>
+        <span class="badge ${bTill[t.status] || ''}">${escHtml(t.status)}</span>
         <button class="btn btn-sm btn-outline" data-tid="${t.id}" data-action="edit-till">✎</button>
         <button class="btn btn-sm btn-danger" data-tid="${t.id}" data-action="del-till">✕</button>
       </li>`).join('') + `</ul>`;
   }
 
-  function aktivitetIkon(typ) {
-    return { 'fas-byte': '🔄', 'anteckning': '📝' }[typ] || '•';
-  }
-
   function aktivitetHtml(lista) {
     if (!lista.length) return `<p class="text-muted" style="padding:12px;font-size:13px">Inga aktiviteter ännu</p>`;
+    const ikoner = { 'fas-byte': '🔄', 'anteckning': '📝' };
     return `<ul class="aktivitets-lista">` + lista.map(a => `
       <li class="aktivitets-rad">
         <span class="aktivitets-tid">${(a.tidpunkt||'').slice(0,16)}</span>
-        <span class="aktivitets-ikon">${aktivitetIkon(a.typ)}</span>
+        <span class="aktivitets-ikon">${ikoner[a.typ] || '•'}</span>
         <span class="aktivitets-text">${escHtml(a.beskrivning)}</span>
       </li>`).join('') + `</ul>`;
   }
+
+  const done0 = ckSet.size;
+  const pct0  = Math.round(100 * done0 / CHECKLISTA.length);
+
+  const infoFält = [
+    ['IB Nummer', p.ib_nummer], ['Kategori', p.kategori], ['Tilldelat till', p.tilldelat_till],
+    ['Område', p.omrade], ['Ink. beställningar', p.inkommande_bestallningar],
+    ['Bek. beställningar', p.bekraftade_bestallningar],
+    ['Beredning start', p.beredning_start], ['Beredning slut', p.beredning_slut],
+    ['Beredare', p.beredare], ['Kund', p.kund],
+  ];
 
   app.innerHTML = `
     <div class="page-header">
@@ -474,44 +610,23 @@ async function renderProjektDetail(app, id) {
         <h1 class="page-title">${escHtml(p.projektnummer)} – ${escHtml(p.projektnamn)}</h1>
         ${badgeFas(aktuellFas)}
       </div>
-      <div class="flex gap-1" style="flex-wrap:wrap">
-        <button class="btn btn-outline btn-sm" id="btnEditProjekt">Redigera</button>
-      </div>
+      <button class="btn btn-outline btn-sm" id="btnEditProjekt">Redigera</button>
+    </div>
+
+    <div class="pm-info-strip mb-2">
+      ${infoFält.map(([l, v]) => `
+        <div class="pm-info-cell">
+          <div class="pm-info-lbl">${l}</div>
+          <div class="pm-info-val">${escHtml(v || '–')}</div>
+        </div>`).join('')}
     </div>
 
     <div class="detail-layout">
-      <!-- VÄNSTER: Grundinfo -->
       <div>
         <div class="card mb-2">
-          <div class="card-header"><span class="card-title">Projektinfo</span></div>
-          <div class="card-body">
-            <dl class="info-dl">
-              <dt>Projektnummer</dt><dd class="mono">${escHtml(p.projektnummer)}</dd>
-              <dt>Kund</dt><dd>${escHtml(p.kund || '–')}</dd>
-              <dt>Anslutningspunkt</dt><dd>${escHtml(p.anslutningspunkt || '–')}</dd>
-              <dt>Beredare</dt><dd>${escHtml(p.beredare)}</dd>
-              <dt>Startdatum</dt><dd>${p.startdatum || '–'}</dd>
-              <dt>Skapad</dt><dd>${(p.skapad||'').slice(0,16)}</dd>
-            </dl>
-            ${p.anteckningar ? `<p class="mt-2 text-sm text-muted">${escHtml(p.anteckningar)}</p>` : ''}
-          </div>
+          <div class="card-header"><span class="card-title">Fas</span><span class="text-sm text-muted">Klicka för att byta</span></div>
+          <div class="card-body" style="padding:12px">${fasTidslinjeHtml()}</div>
         </div>
-      </div>
-
-      <!-- HÖGER: Fas, Tillstånd, Aktiviteter -->
-      <div>
-        <!-- FAS-TIDSLINJE -->
-        <div class="card mb-2">
-          <div class="card-header">
-            <span class="card-title">Fas</span>
-            <span class="text-sm text-muted">Klicka för att byta fas</span>
-          </div>
-          <div class="card-body" style="padding:12px">
-            ${fasTidslinjeHtml()}
-          </div>
-        </div>
-
-        <!-- TILLSTÅND -->
         <div class="card mb-2">
           <div class="card-header">
             <span class="card-title">Tillstånd</span>
@@ -519,8 +634,6 @@ async function renderProjektDetail(app, id) {
           </div>
           <div id="tillstandKontainer">${tillstandHtml(tillstandLista)}</div>
         </div>
-
-        <!-- AKTIVITETSLOGG -->
         <div class="card">
           <div class="card-header">
             <span class="card-title">Aktivitetslogg</span>
@@ -529,33 +642,78 @@ async function renderProjektDetail(app, id) {
           <div id="aktivitetKontainer">${aktivitetHtml(aktiviteter)}</div>
         </div>
       </div>
+
+      <div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Checklista</span>
+            <span id="ckProg" class="badge badge-klart">${done0}/${CHECKLISTA.length} (${pct0}%)</span>
+          </div>
+          <div class="pm-prog" style="border-radius:0;height:5px;margin:0">
+            <div class="pm-prog-fill" id="ckBar" style="width:${pct0}%"></div>
+          </div>
+          <div id="ckLista"></div>
+        </div>
+        ${p.anteckningar ? `<div class="card mt-2"><div class="card-body"><p class="text-sm text-muted">${escHtml(p.anteckningar)}</p></div></div>` : ''}
+      </div>
     </div>`;
 
-  // ── Tillbaka ──
+  function renderCk() {
+    const done = ckSet.size;
+    const pct  = Math.round(100 * done / CHECKLISTA.length);
+    document.getElementById('ckBar').style.width = pct + '%';
+    document.getElementById('ckProg').textContent = `${done}/${CHECKLISTA.length} (${pct}%)`;
+    document.getElementById('ckLista').innerHTML = GRUPPER.map(g => {
+      const items = CHECKLISTA.filter(c => c.grupp === g.id);
+      const doneG = items.filter(c => ckSet.has(c.nr)).length;
+      return `<div class="ck-grupp">
+        <div class="ck-grp-hdr" style="border-left-color:${g.color}">
+          <span style="color:${g.color};font-weight:700">${escHtml(g.namn)}</span>
+          <span class="text-sm text-muted">${doneG}/${items.length}</span>
+        </div>
+        ${items.map(c => {
+          const ok = ckSet.has(c.nr);
+          return `<label class="ck-item${ok ? ' ok' : ''}">
+            <input type="checkbox" class="ck-cb" data-nr="${c.nr}" ${ok ? 'checked' : ''} style="accent-color:${g.color}">
+            <span class="ck-text">${escHtml(c.namn)}</span>
+            ${ok ? `<span style="color:${g.color};font-size:13px;flex-shrink:0">✓</span>` : ''}
+          </label>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+
+    document.getElementById('ckLista').querySelectorAll('.ck-cb').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        const nr = parseInt(cb.dataset.nr);
+        const utford = cb.checked ? 1 : 0;
+        try {
+          await api('PUT', `/projekt/${id}/checklista/${nr}`, { utford });
+          utford ? ckSet.add(nr) : ckSet.delete(nr);
+          renderCk();
+        } catch (e) { cb.checked = !cb.checked; toast(e.message, 'error'); }
+      });
+    });
+  }
+  renderCk();
+
   document.getElementById('btnBack').addEventListener('click', () => navigate('projekt'));
+  document.getElementById('btnEditProjekt').addEventListener('click', () => modalRedigeraProjekt(p));
 
-  // ── Redigera projekt ──
-  document.getElementById('btnEditProjekt').addEventListener('click', () =>
-    modalRedigeraProjekt(p));
-
-  // ── Fas-tidslinje klick ──
   document.getElementById('fasTidslinje').querySelectorAll('.fas-steg').forEach(el => {
     el.addEventListener('click', async () => {
       const nyFas = el.dataset.fas;
       if (nyFas === aktuellFas) return;
       try {
         await api('POST', `/projekt/${id}/fas`, { fas: nyFas });
-        toast(`Fas satt: ${nyFas}`, 'success');
+        toast(`Fas: ${nyFas}`, 'success');
         renderProjektDetail(app, id);
       } catch (e) { toast(e.message, 'error'); }
     });
   });
 
-  // ── Nytt tillstånd ──
   document.getElementById('btnNyttTillstand').addEventListener('click', () =>
     modalTillstandForm(id, null, () => renderProjektDetail(app, id)));
 
-  // ── Tillstånd åtgärder (edit/delete) ──
   document.getElementById('tillstandKontainer').addEventListener('click', async e => {
     const btn = e.target.closest('button[data-action]');
     if (!btn) return;
@@ -568,13 +726,12 @@ async function renderProjektDetail(app, id) {
       if (!ok) return;
       try {
         await api('DELETE', `/projekt/${id}/tillstand/${tid}`);
-        toast('Tillstånd borttaget', 'success');
+        toast('Borttaget', 'success');
         renderProjektDetail(app, id);
       } catch (e) { toast(e.message, 'error'); }
     }
   });
 
-  // ── Ny aktivitet ──
   document.getElementById('btnNyAktivitet').addEventListener('click', () =>
     modalNyAktivitet(id, () => renderProjektDetail(app, id)));
 }

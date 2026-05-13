@@ -738,6 +738,33 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','20')")
         conn.commit()
 
+    if v < 21:
+        for kolumn in (
+            "ALTER TABLE projekt ADD COLUMN ib_nummer TEXT",
+            "ALTER TABLE projekt ADD COLUMN kategori TEXT",
+            "ALTER TABLE projekt ADD COLUMN tilldelat_till TEXT",
+            "ALTER TABLE projekt ADD COLUMN omrade TEXT",
+            "ALTER TABLE projekt ADD COLUMN inkommande_bestallningar TEXT",
+            "ALTER TABLE projekt ADD COLUMN bekraftade_bestallningar TEXT",
+            "ALTER TABLE projekt ADD COLUMN beredning_start DATE",
+            "ALTER TABLE projekt ADD COLUMN beredning_slut DATE",
+        ):
+            try:
+                conn.execute(kolumn)
+            except Exception:
+                pass
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS projekt_checklistor (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+                item_nr    INTEGER NOT NULL,
+                utford     INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(projekt_id, item_nr)
+            )
+        """)
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','21')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -797,6 +824,14 @@ def _create_tables(conn):
             kund             TEXT,
             anslutningspunkt TEXT,
             fas              TEXT,
+            ib_nummer            TEXT,
+            kategori             TEXT,
+            tilldelat_till       TEXT,
+            omrade               TEXT,
+            inkommande_bestallningar TEXT,
+            bekraftade_bestallningar TEXT,
+            beredning_start      DATE,
+            beredning_slut       DATE,
             skapad           DATETIME NOT NULL,
             uppdaterad       DATETIME NOT NULL
         );
@@ -927,6 +962,14 @@ def _create_tables(conn):
             tidpunkt    DATETIME NOT NULL,
             typ         TEXT NOT NULL DEFAULT 'anteckning',
             beskrivning TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS projekt_checklistor (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+            item_nr    INTEGER NOT NULL,
+            utford     INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(projekt_id, item_nr)
         );
     """)
 
