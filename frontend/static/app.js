@@ -69,13 +69,15 @@ function confirm(title, msg, label = 'Ta bort') {
 // MODAL
 // ----------------------------------------------------------------
 const Modal = {
-  open(title, bodyHTML, footerHTML = '') {
+  noBackdropClose: false,
+  open(title, bodyHTML, footerHTML = '', opts = {}) {
     document.getElementById('modalTitle').textContent = title;
     document.getElementById('modalBody').innerHTML   = bodyHTML;
     document.getElementById('modalFooter').innerHTML = footerHTML;
     document.getElementById('modal').classList.remove('hidden');
+    Modal.noBackdropClose = !!opts.noBackdropClose;
   },
-  close() { document.getElementById('modal').classList.add('hidden'); },
+  close() { document.getElementById('modal').classList.add('hidden'); Modal.noBackdropClose = false; },
 };
 
 // ----------------------------------------------------------------
@@ -316,7 +318,8 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
       </div>
     </form>`,
     `<button class="btn btn-navy" id="sparaProjekt">${existing ? 'Spara' : 'Skapa'}</button>
-     <button class="btn btn-secondary" id="avbrytProjekt">Avbryt</button>`
+     <button class="btn btn-secondary" id="avbrytProjekt">Avbryt</button>`,
+    { noBackdropClose: !!onSuccess }
   );
 
   document.getElementById('avbrytProjekt').addEventListener('click', Modal.close);
@@ -2152,7 +2155,7 @@ async function adminInstallningar(cont) {
 // MODAL CLOSE ON OVERLAY CLICK
 // ----------------------------------------------------------------
 document.getElementById('modal').addEventListener('click', e => {
-  if (e.target === document.getElementById('modal')) Modal.close();
+  if (e.target === document.getElementById('modal') && !Modal.noBackdropClose) Modal.close();
 });
 document.getElementById('modalClose').addEventListener('click', Modal.close);
 
