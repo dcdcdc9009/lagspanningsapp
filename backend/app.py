@@ -648,6 +648,28 @@ def materiallista_pdf(pid):
                              f'attachment; filename="{projekt["projektnummer"]}_materiallista.pdf"'})
 
 
+@app.get('/api/projekt/<int:pid>/materiallista/excel')
+def materiallista_excel(pid):
+    from excel_generator import skapa_materiallista_excel
+    with get_db() as conn:
+        projekt = conn.execute("SELECT * FROM projekt WHERE id=?", (pid,)).fetchone()
+        if not projekt: return fel('Projektet hittades inte.', 404)
+        protokoll_ids = [r[0] for r in
+                         conn.execute("SELECT id FROM byggprotokoll WHERE projekt_id=?", (pid,)).fetchall()]
+        protokoll_lista = [_hamta_protokoll_komplett(conn, bpid) for bpid in protokoll_ids]
+        enr_lookup = {r['artikelnamn']: r['artikelnummer'] for r in conn.execute(
+            "SELECT a.artikelnamn, al.artikelnummer FROM artikel_leverantor al "
+            "JOIN artiklar a ON a.id = al.artikel_id "
+            "JOIN leverantorer l ON l.id = al.leverantor_id "
+            "WHERE l.namn = 'Onninen' AND al.artikelnummer IS NOT NULL"
+        ).fetchall()}
+    xlsx = skapa_materiallista_excel(row_to_dict(projekt), protokoll_lista, enr_lookup)
+    filnamn = f"{projekt['projektnummer']}_materiallista.xlsx"
+    return Response(xlsx,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
+
+
 # ============================================================
 # ADMIN – Artiklar CRUD
 # ============================================================
@@ -1153,6 +1175,36 @@ def konstruktioner_materiallista_pdf():
         konstruktioner = [_hamta_konstruktion_komplett(conn, kid) for kid in ids]
     pdf = skapa_konstruktioner_materiallista_pdf(konstruktioner, inst)
     return Response(pdf, mimetype='application/pdf',
+                    headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
+
+
+@app.get('/api/konstruktioner/materiallista/excel')
+def konstruktioner_materiallista_excel():
+    from excel_generator import skapa_konstruktioner_materiallista_excel
+    projekt_id = request.args.get('projekt_id', '').strip()
+    with get_db() as conn:
+        enr_lookup = {r['artikelnamn']: r['artikelnummer'] for r in conn.execute(
+            "SELECT a.artikelnamn, al.artikelnummer FROM artikel_leverantor al "
+            "JOIN artiklar a ON a.id = al.artikel_id "
+            "JOIN leverantorer l ON l.id = al.leverantor_id "
+            "WHERE l.namn = 'Onninen' AND al.artikelnummer IS NOT NULL"
+        ).fetchall()}
+        if projekt_id:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM konstruktioner WHERE projekt_id=? ORDER BY typ, namn",
+                (int(projekt_id),)).fetchall()]
+            projekt = conn.execute("SELECT * FROM projekt WHERE id=?", (int(projekt_id),)).fetchone()
+            projekt_namn = f"{projekt['projektnummer']} – {projekt['projektnamn']}" if projekt else ''
+            filnamn = f"{projekt['projektnummer']}_konstruktioner_materiallista.xlsx" if projekt else "konstruktioner_materiallista.xlsx"
+        else:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM konstruktioner ORDER BY typ, namn").fetchall()]
+            projekt_namn = ''
+            filnamn = "konstruktioner_materiallista.xlsx"
+        konstruktioner = [_hamta_konstruktion_komplett(conn, kid) for kid in ids]
+    xlsx = skapa_konstruktioner_materiallista_excel(konstruktioner, projekt_namn, enr_lookup)
+    return Response(xlsx,
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
 
 

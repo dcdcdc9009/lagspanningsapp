@@ -366,6 +366,7 @@ async function renderProjektDetail(app, id) {
       <div class="flex gap-1">
         <button class="btn btn-outline btn-sm" id="btnEditProjekt">Redigera projekt</button>
         <a class="btn btn-secondary btn-sm" href="/api/projekt/${id}/materiallista/pdf" target="_blank">⬇ Materiallista PDF</a>
+        <a class="btn btn-outline btn-sm" href="/api/projekt/${id}/materiallista/excel" target="_blank">⬇ Materiallista Excel</a>
       </div>
     </div>
 
@@ -1007,7 +1008,8 @@ async function renderKonstruktioner(app) {
       <div class="page-header" style="margin-top:0;">
         <div></div>
         <div class="flex gap-2">
-          <a class="btn btn-outline" id="btnMaterlista" href="/api/konstruktioner/materiallista/pdf?projekt_id=${projektId}" target="_blank">⬇ Materiallista</a>
+          <a class="btn btn-secondary" href="/api/konstruktioner/materiallista/pdf?projekt_id=${projektId}" target="_blank">⬇ Materiallista PDF</a>
+          <a class="btn btn-outline" href="/api/konstruktioner/materiallista/excel?projekt_id=${projektId}" target="_blank">⬇ Materiallista Excel</a>
           <button class="btn btn-navy" id="btnNyKonstr">+ Ny konstruktion</button>
         </div>
       </div>
