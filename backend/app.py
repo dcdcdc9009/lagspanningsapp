@@ -243,7 +243,7 @@ def projekt_statistik():
 
 @app.get('/api/projekt/fas-statistik')
 def fas_statistik():
-    FASER = ['Förfrågan', 'Beredning', 'Offert', 'Genomförande', 'Drifttagning']
+    FASER = ['Beredning', 'Projektledning', 'Genomförande', 'Drifttagning']
     with get_db() as conn:
         result = {}
         for fas in FASER:
@@ -272,7 +272,7 @@ def hamta_projekt(pid):
     return jsonify({'projekt': row_to_dict(rad)})
 
 
-GILTIGA_FASER = ('Förfrågan', 'Beredning', 'Offert', 'Genomförande', 'Drifttagning')
+GILTIGA_FASER = ('Beredning', 'Projektledning', 'Genomförande', 'Drifttagning')
 
 
 @app.post('/api/projekt')

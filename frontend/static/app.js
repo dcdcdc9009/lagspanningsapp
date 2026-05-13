@@ -149,11 +149,11 @@ function escHtml(s) {
 // ----------------------------------------------------------------
 // FAS-HJÄLPFUNKTIONER
 // ----------------------------------------------------------------
-const FASER = ['Förfrågan', 'Beredning', 'Offert', 'Genomförande', 'Drifttagning'];
-const FAS_TROSKEL = { 'Förfrågan': 14, 'Beredning': 30, 'Offert': 21, 'Genomförande': 60, 'Drifttagning': 30 };
+const FASER = ['Beredning', 'Projektledning', 'Genomförande', 'Drifttagning'];
+const FAS_TROSKEL = { 'Beredning': 30, 'Projektledning': 21, 'Genomförande': 14, 'Drifttagning': 14 };
 const FAS_CSS = {
-  'Förfrågan': 'badge-forfrågan', 'Beredning': 'badge-beredning',
-  'Offert': 'badge-offert', 'Genomförande': 'badge-genomforande', 'Drifttagning': 'badge-drifttagning',
+  'Beredning': 'badge-beredning', 'Projektledning': 'badge-offert',
+  'Genomförande': 'badge-genomforande', 'Drifttagning': 'badge-drifttagning',
 };
 
 function badgeFas(fas) {
