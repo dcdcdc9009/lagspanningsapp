@@ -638,11 +638,7 @@ def materiallista_pdf(pid):
             "JOIN leverantorer l ON l.id = al.leverantor_id "
             "WHERE l.namn = 'Onninen' AND al.artikelnummer IS NOT NULL"
         ).fetchall()}
-        for bp in protokoll_lista:
-            for rad in bp.get('rader', []):
-                if not rad.get('artikelnummer'):
-                    rad['artikelnummer'] = enr_lookup.get(rad.get('artikelnamn', ''))
-    pdf = skapa_materiallista_pdf(row_to_dict(projekt), protokoll_lista, inst)
+    pdf = skapa_materiallista_pdf(row_to_dict(projekt), protokoll_lista, inst, enr_lookup)
     return Response(pdf, mimetype='application/pdf',
                     headers={'Content-Disposition':
                              f'attachment; filename="{projekt["projektnummer"]}_materiallista.pdf"'})

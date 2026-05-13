@@ -376,7 +376,7 @@ def skapa_byggprotokoll_pdf(protokoll, projekt, installningar):
 
 # ── MATERIALLISTA PDF (projekt) ───────────────────────────────────────────────
 
-def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
+def skapa_materiallista_pdf(projekt, protokoll_lista, installningar, enr_lookup=None):
     foretag = installningar.get('foretagsnamn',
                installningar.get('foretag_namn', 'Oneco Networks AB'))
     buf = BytesIO()
@@ -412,6 +412,12 @@ def skapa_materiallista_pdf(projekt, protokoll_lista, installningar):
             if key not in aggregat:
                 aggregat[key] = {**r, 'antal': 0.0, 'manuell': 0}
             aggregat[key]['antal'] += r.get('antal', 0)
+
+    # Berika med E-nummer efter aggregering (samma mönster som Excel-exporten)
+    if enr_lookup:
+        for row in aggregat.values():
+            if not row.get('artikelnummer'):
+                row['artikelnummer'] = enr_lookup.get(row.get('artikelnamn', ''))
 
     sorterade = sorted(aggregat.values(),
                        key=lambda x: (x['kategori'], x['artikelnamn']))
