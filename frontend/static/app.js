@@ -975,6 +975,7 @@ async function renderKonstruktioner(app) {
           <option value="">– välj projekt –</option>
         </select>
         <button class="btn btn-navy btn-sm" id="btnNyttProjektKonstr" style="white-space:nowrap;">+ Nytt projekt</button>
+        <button class="btn btn-danger btn-sm" id="btnRaderaProjektKonstr" style="white-space:nowrap;display:none;">🗑 Ta bort projekt</button>
       </div>
     </div>
     <div id="konstrInnehall"></div>`;
@@ -1000,9 +1001,33 @@ async function renderKonstruktioner(app) {
 
   const sel = document.getElementById('projektValjare');
 
+  function uppdateraRaderaKnapp() {
+    document.getElementById('btnRaderaProjektKonstr').style.display =
+      sel.value ? '' : 'none';
+  }
+
   sel.addEventListener('change', () => {
     S.valtProjektKonstr = sel.value;
+    uppdateraRaderaKnapp();
     renderKonstrKontainer(sel.value);
+  });
+
+  uppdateraRaderaKnapp();
+
+  document.getElementById('btnRaderaProjektKonstr').addEventListener('click', async () => {
+    const valt = allaProjekt.find(p => String(p.id) === sel.value);
+    if (!valt) return;
+    const ok = await confirm('Ta bort projekt',
+      `Ta bort "${valt.projektnamn}"? Alla byggprotokoll kopplade till projektet tas också bort.`);
+    if (!ok) return;
+    try {
+      await api('DELETE', `/projekt/${valt.id}`);
+      toast('Projekt borttaget', 'success');
+      S.valtProjektKonstr = null;
+      await laddaProjektDropdown(null);
+      uppdateraRaderaKnapp();
+      renderKonstrKontainer('');
+    } catch (e) { toast(e.message, 'error'); }
   });
 
   document.getElementById('btnNyttProjektKonstr').addEventListener('click', () => {
