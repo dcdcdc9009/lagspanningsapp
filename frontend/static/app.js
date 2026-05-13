@@ -273,7 +273,7 @@ function modalRedigeraProjekt(p) {
   modalProjektForm(p, p);
 }
 
-async function modalProjektForm(existing, data = {}) {
+async function modalProjektForm(existing, data = {}, onSuccess = null) {
   await laddaBeredare();
   const nasta = existing ? '' : ((await api('GET', '/projekt/nasta-nummer')).projektnummer || '');
   const berOptions = S.beredare.map(b =>
@@ -326,16 +326,21 @@ async function modalProjektForm(existing, data = {}) {
     const fd = new FormData(f);
     const body = Object.fromEntries(fd.entries());
     try {
+      let result;
       if (existing) {
-        await api('PUT', `/projekt/${existing.id}`, body);
+        result = await api('PUT', `/projekt/${existing.id}`, body);
         toast('Projekt sparat', 'success');
       } else {
-        await api('POST', '/projekt', body);
+        result = await api('POST', '/projekt', body);
         toast('Projekt skapat', 'success');
       }
       Modal.close();
-      await laddaProjekt();
-      renderProjektRader();
+      if (onSuccess) {
+        await onSuccess(result);
+      } else {
+        await laddaProjekt();
+        renderProjektRader();
+      }
     } catch (e) { toast(e.message, 'error'); }
   });
 }
@@ -1001,23 +1006,14 @@ async function renderKonstruktioner(app) {
   });
 
   document.getElementById('btnNyttProjektKonstr').addEventListener('click', () => {
-    modalNyttProjekt();
-    // Lyssna på när modalen stängs och ladda om dropdown med nytt projekt valt
-    const orig = Modal.close.bind(Modal);
-    Modal.close = async () => {
-      orig();
-      Modal.close = orig;
-      // Hämta senaste projektet (nyss skapat = högst id)
-      try {
-        const lista = (await api('GET', '/projekt')).projekt || [];
-        const nyast = lista[0]; // sorterat skapad DESC
-        if (nyast) {
-          S.valtProjektKonstr = String(nyast.id);
-          await laddaProjektDropdown(S.valtProjektKonstr);
-          renderKonstrKontainer(S.valtProjektKonstr);
-        }
-      } catch {}
-    };
+    modalProjektForm(null, {}, async (result) => {
+      const nyprojekt = result.projekt;
+      if (nyprojekt) {
+        S.valtProjektKonstr = String(nyprojekt.id);
+        await laddaProjektDropdown(S.valtProjektKonstr);
+        renderKonstrKontainer(S.valtProjektKonstr);
+      }
+    });
   });
 
   renderKonstrKontainer(sel.value);
