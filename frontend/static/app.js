@@ -149,11 +149,10 @@ function escHtml(s) {
 // ----------------------------------------------------------------
 // FAS-HJÄLPFUNKTIONER
 // ----------------------------------------------------------------
-const FASER = ['Beredning', 'Projektledning', 'Genomförande', 'Drifttagning'];
-const FAS_TROSKEL = { 'Beredning': 30, 'Projektledning': 21, 'Genomförande': 14, 'Drifttagning': 14 };
+const FASER = ['Beredning', 'Projektledning', 'Utförda'];
+const FAS_TROSKEL = { 'Beredning': 30, 'Projektledning': 21, 'Utförda': 14 };
 const FAS_CSS = {
-  'Beredning': 'badge-beredning', 'Projektledning': 'badge-offert',
-  'Genomförande': 'badge-genomforande', 'Drifttagning': 'badge-drifttagning',
+  'Beredning': 'badge-beredning', 'Projektledning': 'badge-offert', 'Utförda': 'badge-klart',
 };
 
 function badgeFas(fas) {
@@ -399,8 +398,7 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
       if (onSuccess) {
         await onSuccess(result);
       } else {
-        await laddaProjekt();
-        renderProjektRader();
+        navigate('projekt');
       }
     } catch (e) { toast(e.message, 'error'); }
   });
