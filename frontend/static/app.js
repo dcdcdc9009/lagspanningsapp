@@ -963,7 +963,7 @@ async function renderKonstruktioner(app) {
       <h1 class="page-title">Konstruktioner</h1>
     </div>
     <div class="card" style="margin-bottom:1rem;padding:1rem 1.25rem;">
-      <div class="flex gap-2 align-center">
+      <div class="flex gap-2 items-center">
         <label class="form-label" style="margin:0;white-space:nowrap;font-weight:600;">Välj projekt:</label>
         <select class="form-control" id="projektValjare" style="max-width:320px;">
           <option value="">– välj projekt –</option>
