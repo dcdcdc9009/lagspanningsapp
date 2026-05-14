@@ -65,8 +65,8 @@ body::before {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse 28% 14% at 50% 47%, rgba(4,13,30,.98) 0%, rgba(4,13,30,.0) 100%),
-    rgba(4,13,30,.70);
+    radial-gradient(ellipse 40% 20% at 50% 56%, rgba(4,13,30,.99) 0%, rgba(4,13,30,.0) 100%),
+    rgba(4,13,30,.55);
   z-index: 0;
   pointer-events: none;
 }
