@@ -64,7 +64,7 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background: rgba(4,13,30,.35);
+  background: rgba(4,13,30,.15);
   z-index: 0;
   pointer-events: none;
 }
