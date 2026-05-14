@@ -1562,8 +1562,8 @@ async function renderKonstruktioner(app) {
       <div class="page-header" style="margin-top:0;">
         <div></div>
         <div class="flex gap-2">
-          <a class="btn btn-secondary" href="/api/konstruktioner/materiallista/pdf?projekt_id=${projektId}" target="_blank">⬇ Materiallista PDF</a>
           <a class="btn btn-secondary" href="/api/konstruktioner/byggprotokoll/pdf?projekt_id=${projektId}" target="_blank">⬇ Byggprotokoll PDF</a>
+          <a class="btn btn-secondary" href="/api/konstruktioner/materiallista/pdf?projekt_id=${projektId}" target="_blank">⬇ Materiallista PDF</a>
           <a class="btn btn-secondary" href="/api/konstruktioner/materiallista/excel?projekt_id=${projektId}" target="_blank">⬇ Materiallista Excel</a>
           <button class="btn btn-secondary" id="btnNyKonstr">+ Ny konstruktion</button>
         </div>
