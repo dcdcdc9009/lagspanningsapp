@@ -2218,17 +2218,18 @@ async function adminArtiklar(cont) {
     </div>
     <div class="card table-wrap">
       <table>
-        <thead><tr><th>Artikelnamn</th><th>Kategori</th><th>Enhet</th><th>Aktiv</th><th>Åtgärder</th></tr></thead>
+        <thead><tr><th>Artikelnamn</th><th>E-nummer</th><th>Kategori</th><th>Enhet</th><th>Aktiv</th><th>Åtgärder</th></tr></thead>
         <tbody id="admArtBody"></tbody>
       </table>
     </div>`;
 
   function render(lista) {
     const sok = document.getElementById('sokAdmArt').value.toLowerCase();
-    const filtered = lista.filter(a => !sok || a.artikelnamn.toLowerCase().includes(sok));
+    const filtered = lista.filter(a => !sok || a.artikelnamn.toLowerCase().includes(sok) || (a.artikelnummer||'').toLowerCase().includes(sok));
     document.getElementById('admArtBody').innerHTML = filtered.map(a => `
       <tr>
         <td>${escHtml(a.artikelnamn)}</td>
+        <td class="mono">${escHtml(a.artikelnummer||'–')}</td>
         <td>${escHtml(a.kategori_namn||'')}</td>
         <td>${escHtml(a.enhet)}</td>
         <td>${a.aktiv ? '✔' : '–'}</td>
@@ -2270,6 +2271,10 @@ async function adminArtiklar(cont) {
 }
 
 function modalArtForm(art, katOpts, onDone) {
+  // Hämta befintligt E-nummer från Onninen-posten om vi redigerar
+  const befEnummer = art?.priser?.find(p => p.leverantor_namn === 'Onninen')?.artikelnummer
+                  || art?.artikelnummer || '';
+
   Modal.open(art ? 'Redigera artikel' : 'Ny artikel', `
     <form id="artForm">
       <div class="form-group">
@@ -2289,6 +2294,11 @@ function modalArtForm(art, katOpts, onDone) {
         </div>
       </div>
       <div class="form-group">
+        <label class="form-label">E-nummer (Onninen)</label>
+        <input name="enummer" class="form-control" value="${escHtml(befEnummer)}" placeholder="t.ex. 3012345">
+        <span class="form-hint">Sparas automatiskt kopplat till leverantören Onninen</span>
+      </div>
+      <div class="form-group">
         <label class="form-label">Beskrivning</label>
         <textarea name="beskrivning" class="form-control" rows="3" placeholder="Valfri beskrivning av artikeln…">${escHtml(art?.beskrivning||'')}</textarea>
       </div>
@@ -2306,10 +2316,32 @@ function modalArtForm(art, katOpts, onDone) {
     if (!f.reportValidity()) return;
     const fd = new FormData(f);
     const body = Object.fromEntries(fd.entries());
+    const enummer = (body.enummer || '').trim();
+    delete body.enummer;
     body.aktiv = document.getElementById('artAktiv').checked ? 1 : 0;
     try {
-      if (art) await api('PUT', `/admin/artiklar/${art.id}`, body);
-      else     await api('POST', '/admin/artiklar', body);
+      let artId;
+      if (art) {
+        await api('PUT', `/admin/artiklar/${art.id}`, body);
+        artId = art.id;
+      } else {
+        const res = await api('POST', '/admin/artiklar', body);
+        artId = res.id;
+      }
+      // Spara E-nummer till Onninen om det angetts
+      if (enummer) {
+        if (!S.leverantorer.length) {
+          try { S.leverantorer = (await api('GET', '/leverantorer')).leverantorer || []; } catch {}
+        }
+        const onninen = S.leverantorer.find(l => l.namn === 'Onninen');
+        if (onninen) {
+          await api('POST', `/admin/artiklar/${artId}/priser`, {
+            leverantor_id: onninen.id,
+            artikelnummer: enummer,
+            a_pris: null
+          });
+        }
+      }
       toast('Sparad', 'success');
       Modal.close();
       onDone && onDone();
