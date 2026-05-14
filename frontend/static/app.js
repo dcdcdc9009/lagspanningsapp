@@ -1210,7 +1210,7 @@ async function modalVisaProtokoll(bpid, projektId, protokollLista, onDone) {
      <div class="mt-2 flex gap-1 items-center">
        <button class="btn btn-outline btn-sm" id="btnLaggTillRad">+ Lägg till rad</button>
      </div>
-     <div id="inlineRadForm" style="display:none;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;padding:12px;margin-top:8px">
+     <div id="inlineRadForm" style="display:none;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.22);border-radius:6px;padding:12px;margin-top:8px">
        <div class="form-row cols-2" style="margin-bottom:6px">
          <div class="form-group" style="margin:0">
            <label class="form-label">Kategori</label>
@@ -1773,16 +1773,16 @@ async function modalVisaKonstruktion(kid, onDone) {
     if (!erKabelskap) return '';
     const { kapacitet, anvant, kvar } = beraknaModuler(rader);
     const pct = kapacitet > 0 ? Math.min(100, Math.round(anvant / kapacitet * 100)) : 0;
-    const färg = kvar < 0 ? '#dc2626' : kvar <= 2 ? '#d97706' : '#7c3aed';
+    const färg = kvar < 0 ? '#ef4444' : kvar <= 2 ? '#f59e0b' : '#00d4ff';
     return `
-      <div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;padding:10px 14px;margin-bottom:10px">
-        <div style="font-weight:600;color:#2e1065;margin-bottom:6px;font-size:13px">Moduler – ${escHtml(k.namn)}</div>
+      <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.22);border-radius:6px;padding:10px 14px;margin-bottom:10px">
+        <div style="font-weight:600;color:#00d4ff;margin-bottom:6px;font-size:13px">Moduler – ${escHtml(k.namn)}</div>
         <div style="display:flex;gap:16px;font-size:12px;margin-bottom:6px">
           <span>Kapacitet: <strong>${kapacitet}</strong></span>
           <span>Använt: <strong>${anvant}</strong></span>
           <span style="color:${färg}">Kvar: <strong>${kvar}</strong></span>
         </div>
-        <div style="background:#e2e8f0;border-radius:4px;height:10px;overflow:hidden">
+        <div style="background:rgba(0,0,0,.35);border-radius:4px;height:10px;overflow:hidden">
           <div style="width:${pct}%;height:100%;background:${färg};transition:width .3s"></div>
         </div>
       </div>`;
@@ -1854,13 +1854,13 @@ async function modalVisaKonstruktion(kid, onDone) {
         <select id="konstrStatus" class="form-control" style="width:140px">${statusOpts}</select>
         <span class="ml-auto text-sm text-muted">Skapad: ${(k.skapad || '').slice(0, 10)}</span>
       </div>
-      ${k.anmarkning ? `<p class="text-sm text-muted mb-2" style="background:#f5f3ff;padding:6px 10px;border-radius:4px">${escHtml(k.anmarkning)}</p>` : ''}
+      ${k.anmarkning ? `<p class="text-sm text-muted mb-2" style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12);padding:6px 10px;border-radius:4px">${escHtml(k.anmarkning)}</p>` : ''}
       <div id="konstrModulIndikator">${modulIndikatorHtml(rader)}</div>
       <div id="konstrRadWrapper">${radTabellHtml(rader)}</div>
       <div class="mt-2 flex gap-1 items-center">
         <button class="btn btn-outline btn-sm" id="btnKonstrLaggTillRad">+ Lägg till rad</button>
       </div>
-      <div id="konstrInlineForm" style="display:none;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:6px;padding:12px;margin-top:8px">
+      <div id="konstrInlineForm" style="display:none;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.22);border-radius:6px;padding:12px;margin-top:8px">
         <div class="form-row cols-2" style="margin-bottom:6px">
           <div class="form-group" style="margin:0">
             <label class="form-label">Kategori</label>
