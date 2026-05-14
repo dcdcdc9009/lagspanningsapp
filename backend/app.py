@@ -1,9 +1,8 @@
-import os, hashlib, json
+import os, hashlib, json, time
+from collections import defaultdict
 from datetime import timedelta
 from functools import wraps
 from flask import Flask, jsonify, request, session, send_from_directory, Response
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from database import get_db, init_db, DB_PATH
 from models import rows_to_list, row_to_dict, nu, nasta_projektnummer
 from mall_berakning import berakna
@@ -22,17 +21,20 @@ app.config['SESSION_COOKIE_SECURE'] = os.environ.get('RAILWAY_ENVIRONMENT') is n
 # Session-timeout: 8 timmar
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
 
-# Rate limiter – in-memory, max 5 inloggningsförsök per minut per IP
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=[],
-    storage_uri='memory://'
-)
+# ── Rate limiting – inbyggd, inga externa paket ───────────────────────────────
+_login_attempts: dict = defaultdict(list)
+_RATE_WINDOW = 60   # sekunder
+_RATE_MAX    = 5    # max försök per fönster
 
-@app.errorhandler(429)
-def too_many_requests(e):
-    return fel('För många inloggningsförsök. Försök igen om en minut.', 429)
+def _rate_ok(ip: str) -> bool:
+    """Returnerar True om IP får försöka logga in, annars False."""
+    now = time.time()
+    giltiga = [t for t in _login_attempts[ip] if now - t < _RATE_WINDOW]
+    _login_attempts[ip] = giltiga
+    if len(giltiga) >= _RATE_MAX:
+        return False
+    _login_attempts[ip].append(now)
+    return True
 
 
 # ============================================================
@@ -106,8 +108,10 @@ def debug_info():
 # ============================================================
 
 @app.post('/api/admin/login')
-@limiter.limit('5 per minute')
 def admin_login():
+    ip = request.remote_addr or 'unknown'
+    if not _rate_ok(f'admin:{ip}'):
+        return fel('För många inloggningsförsök. Försök igen om en minut.', 429)
     d = request.get_json(silent=True) or {}
     pw = (d.get('losenord') or '').strip()
     with get_db() as conn:
@@ -151,8 +155,10 @@ def auth_status():
 
 
 @app.post('/api/auth/login')
-@limiter.limit('5 per minute')
 def auth_login():
+    ip = request.remote_addr or 'unknown'
+    if not _rate_ok(f'auth:{ip}'):
+        return fel('För många inloggningsförsök. Försök igen om en minut.', 429)
     d  = request.get_json(silent=True) or {}
     pw = (d.get('losenord') or '').strip()
     if pw == _app_losenord():
