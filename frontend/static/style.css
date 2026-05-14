@@ -64,9 +64,7 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background:
-    radial-gradient(ellipse 40% 20% at 50% 56%, rgba(4,13,30,.99) 0%, rgba(4,13,30,.0) 100%),
-    rgba(4,13,30,.55);
+  background: rgba(4,13,30,.10);
   z-index: 0;
   pointer-events: none;
 }
