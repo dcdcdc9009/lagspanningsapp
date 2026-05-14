@@ -1,6 +1,9 @@
 import os, hashlib, json
+from datetime import timedelta
 from functools import wraps
 from flask import Flask, jsonify, request, session, send_from_directory, Response
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from database import get_db, init_db, DB_PATH
 from models import rows_to_list, row_to_dict, nu, nasta_projektnummer
 from mall_berakning import berakna
@@ -16,6 +19,20 @@ app.config['JSON_AS_ASCII'] = False
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('RAILWAY_ENVIRONMENT') is not None
+# Session-timeout: 8 timmar
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
+
+# Rate limiter – in-memory, max 5 inloggningsförsök per minut per IP
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[],
+    storage_uri='memory://'
+)
+
+@app.errorhandler(429)
+def too_many_requests(e):
+    return fel('För många inloggningsförsök. Försök igen om en minut.', 429)
 
 
 # ============================================================
@@ -89,12 +106,14 @@ def debug_info():
 # ============================================================
 
 @app.post('/api/admin/login')
+@limiter.limit('5 per minute')
 def admin_login():
     d = request.get_json(silent=True) or {}
     pw = (d.get('losenord') or '').strip()
     with get_db() as conn:
         rad = conn.execute("SELECT varde FROM installningar WHERE nyckel='admin_losenord'").fetchone()
     if rad and rad['varde'] == hash_pw(pw):
+        session.permanent = True
         session['admin'] = True
         return jsonify({'ok': True})
     return fel('Fel lösenord.', 401)
@@ -132,10 +151,12 @@ def auth_status():
 
 
 @app.post('/api/auth/login')
+@limiter.limit('5 per minute')
 def auth_login():
     d  = request.get_json(silent=True) or {}
     pw = (d.get('losenord') or '').strip()
     if pw == _app_losenord():
+        session.permanent = True
         session['loggedin'] = True
         return jsonify({'ok': True})
     return fel('Fel lösenord.', 401)
