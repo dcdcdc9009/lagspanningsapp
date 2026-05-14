@@ -8,7 +8,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph,
-    Spacer, HRFlowable, KeepTogether
+    Spacer, HRFlowable, KeepTogether, PageBreak
 )
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
@@ -652,5 +652,103 @@ def skapa_konstruktion_pdf(konstruktion, installningar):
             f"Utförda: {utforda}/{totalt}  |  Ej relevanta: {ej_rel}", small))
 
     story += _underskrift()
+    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
+    return buf.getvalue()
+
+
+# ── BYGGPROTOKOLL ALLA KONSTRUKTIONER – 1 per sida ───────────────────────────
+
+def skapa_konstruktioner_byggprotokoll_pdf(konstruktioner, installningar):
+    """Genererar ett byggprotokoll-PDF med 1 konstruktion per sida."""
+    foretag = installningar.get('foretagsnamn',
+               installningar.get('foretag_namn', 'Oneco Networks AB'))
+    buf = BytesIO()
+
+    def on_page(canvas, doc):
+        _bygg_header_footer(canvas, doc, foretag, 'Byggprotokoll')
+
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=28 * mm, bottomMargin=16 * mm,
+    )
+
+    normal, small, cell, label = _styles()
+    story = []
+
+    hdr_s = ParagraphStyle('bh2', fontName='Helvetica-Bold', fontSize=8,
+                            textColor=WHITE, leading=10)
+    cel_s = ParagraphStyle('bc2', fontName='Helvetica', fontSize=8,
+                            textColor=DARK, leading=10)
+
+    for i, konstruktion in enumerate(konstruktioner):
+        if i > 0:
+            story.append(PageBreak())
+
+        # Info
+        story += _sektion_rubrik('Konstruktionsinformation', space_before=2)
+        pi = [
+            ('Typ:',       konstruktion.get('typ', '')),
+            ('Byggnr:',    konstruktion.get('byggnr', '') or '-'),
+            ('Namn:',      konstruktion.get('namn', '')),
+            ('Fri ID:',    konstruktion.get('fri_id', '') or '-'),
+            ('Status:',    konstruktion.get('status', '')),
+            ('Datum:',     (konstruktion.get('skapad', '') or '')[:16]),
+        ]
+        if konstruktion.get('anmarkning'):
+            pi.append(('Anmarkning:', konstruktion['anmarkning']))
+        story.append(Spacer(1, 1 * mm))
+        story.append(_info_panel(pi))
+
+        # Material
+        rader = konstruktion.get('rader', [])
+        story += _sektion_rubrik('Material')
+        story.append(Spacer(1, 1 * mm))
+        if rader:
+            col_w = [100 * mm, 22 * mm, 22 * mm, 22 * mm]
+            col_w[-1] = W - MARGIN * 2 - sum(col_w[:-1])
+            rows = [[Paragraph(h, hdr_s) for h in ['Artikel', 'Enhet', 'Antal', 'Moduler']]]
+            for r in rader:
+                moduler_val = r.get('moduler', 0)
+                rows.append([
+                    Paragraph(r.get('artikelnamn', ''), cel_s),
+                    r.get('enhet', ''),
+                    f"{r.get('antal', 0):g}",
+                    str(int(moduler_val)) if moduler_val else '-',
+                ])
+            t = Table(rows, colWidths=col_w, repeatRows=1)
+            t.setStyle(TableStyle([
+                ('BACKGROUND',    (0, 0), (-1, 0), PURPLE),
+                ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE',      (0, 0), (-1, -1), 8),
+                ('ALIGN',         (2, 0), (-1, -1), 'RIGHT'),
+                ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING',    (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('GRID',          (0, 0), (-1, -1), 0.4, MED_GRAY),
+                ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
+            ]))
+            story.append(t)
+        else:
+            story.append(Paragraph('Inga materialrader registrerade.', small))
+
+        # Egenkontroll
+        egenkontroll = konstruktion.get('egenkontroll', [])
+        if egenkontroll:
+            story += _sektion_rubrik('Egenkontroll')
+            story.append(Spacer(1, 1 * mm))
+            story.append(_egenkontroll_tabell(egenkontroll))
+            utforda = sum(1 for e in egenkontroll if e.get('utford'))
+            ej_rel  = sum(1 for e in egenkontroll if e.get('ej_relevant'))
+            totalt  = len(egenkontroll)
+            story.append(Spacer(1, 2 * mm))
+            story.append(Paragraph(
+                f"Utforda: {utforda}/{totalt}  |  Ej relevanta: {ej_rel}", small))
+
+        story += _underskrift()
+
+    if not story:
+        story.append(Paragraph('Inga konstruktioner att skriva ut.', normal))
+
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()

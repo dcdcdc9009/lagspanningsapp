@@ -1474,6 +1474,29 @@ def konstruktioner_materiallista_pdf():
                     headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
 
 
+@app.get('/api/konstruktioner/byggprotokoll/pdf')
+def konstruktioner_byggprotokoll_pdf():
+    from pdf_generator import skapa_konstruktioner_byggprotokoll_pdf
+    projekt_id = request.args.get('projekt_id', '').strip()
+    with get_db() as conn:
+        inst = {r['nyckel']: r['varde'] for r in
+                conn.execute("SELECT nyckel,varde FROM installningar").fetchall()}
+        if projekt_id:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM konstruktioner WHERE projekt_id=? ORDER BY typ, namn",
+                (int(projekt_id),)).fetchall()]
+            projekt = conn.execute("SELECT * FROM projekt WHERE id=?", (int(projekt_id),)).fetchone()
+            filnamn = f"{projekt['projektnummer']}_byggprotokoll.pdf" if projekt else "byggprotokoll.pdf"
+        else:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM konstruktioner ORDER BY typ, namn").fetchall()]
+            filnamn = "byggprotokoll.pdf"
+        konstruktioner = [_hamta_konstruktion_komplett(conn, kid) for kid in ids]
+    pdf = skapa_konstruktioner_byggprotokoll_pdf(konstruktioner, inst)
+    return Response(pdf, mimetype='application/pdf',
+                    headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
+
+
 @app.get('/api/konstruktioner/materiallista/excel')
 def konstruktioner_materiallista_excel():
     from excel_generator import skapa_konstruktioner_materiallista_excel
