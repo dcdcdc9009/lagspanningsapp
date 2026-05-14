@@ -2715,7 +2715,7 @@ function visaLoginSkarm() {
         <div class="login-logo">
           <div class="login-logo-dot"></div>
         </div>
-        <h1 class="login-title">Lågspänningsberedning</h1>
+        <h1 class="login-title">Beredning-Projektledning</h1>
         <p class="login-sub">Ange lösenord för att fortsätta</p>
         <form id="loginForm" class="login-form">
           <div class="form-group">
