@@ -415,7 +415,7 @@ async function renderProjekt(app) {
           <td>${badgeFas(p.fas)}</td>
           ${grpCols}
           <td>
-            <div style="font-size:12px;font-weight:700;color:var(--navy-d)">${pct}%</div>
+            <div style="font-size:12px;font-weight:700;color:#00d4ff">${pct}%</div>
             <div class="pm-prog" style="margin-top:3px"><div class="pm-prog-fill" style="width:${pct}%"></div></div>
           </td>
           <td><div class="flex gap-1">
