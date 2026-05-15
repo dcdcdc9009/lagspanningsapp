@@ -247,8 +247,9 @@ async function renderProjekt(app) {
 
   const ckMap = {};
   for (const [pid, data] of Object.entries(checklistor)) {
-    const doneArr = Array.isArray(data) ? data : (data.done || []);
-    ckMap[parseInt(pid)] = new Set(doneArr);
+    const doneArr  = Array.isArray(data) ? data : (data.done || []);
+    const ejRelArr = Array.isArray(data) ? [] : (data.ej_rel || []);
+    ckMap[parseInt(pid)] = new Set([...doneArr, ...ejRelArr]);
   }
   const N = CHECKLISTA.length;
 
