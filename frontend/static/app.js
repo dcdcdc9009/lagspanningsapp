@@ -107,6 +107,7 @@ function render(view, params = {}) {
     case 'artiklar':        renderArtiklar(app); break;
     case 'konstruktioner':  renderKonstruktioner(app); break;
     case 'admin':           renderAdmin(app); break;
+    case 'anslutning':      renderAnslutning(app); break;
     default:                renderProjekt(app);
   }
 }
@@ -2832,6 +2833,537 @@ async function boot() {
   const hash = location.hash.replace('#', '');
   const [view, ...rest] = hash.split('/');
   navigate(view || 'projekt', { id: rest[0] });
+}
+
+// ================================================================
+// ANSLUTNINGSÄRENDEN
+// ================================================================
+
+const ANSL_SAMPLE = [
+  {id:"351860",namn:"AM Ny 20A Västra spång 515",kund:"Privat",fas:"Drifttagning klar",berStart:"2026-01-05",berSlut:"2026-02-04",montStart:"2026-03-15",montSlut:"2026-03-17",driftDat:"2026-03-17",blockering:null,notat:"Smidigt ärende"},
+  {id:"351647",namn:"AM Ny 16A Stavshult 1:14",kund:"Privat",fas:"Drifttagning klar",berStart:"2025-11-27",berSlut:"2026-02-25",montStart:"2026-03-31",montSlut:"2026-04-13",driftDat:"2026-04-13",blockering:null,notat:""},
+  {id:"351554",namn:"AM DBO f22 N130593 utök >35A",kund:"Företag",fas:"Avslutat",berStart:"2025-11-21",berSlut:"2026-02-05",montStart:"2026-03-08",montSlut:"2026-03-09",driftDat:"2026-03-09",blockering:null,notat:""},
+  {id:"351804",namn:"AM Ny SS25A, Svedjemarksg 8",kund:"Privat",fas:"Drifttagning klar",berStart:"2026-01-05",berSlut:"2026-03-10",montStart:"2026-04-02",montSlut:"2026-04-14",driftDat:"2026-04-14",blockering:null,notat:""},
+  {id:"351959",namn:"AM Återansluta Rolstorp 1139",kund:"Privat",fas:"Beredning",berStart:"2026-02-06",berSlut:"2026-04-21",montStart:"2026-05-18",montSlut:"2026-05-25",driftDat:null,blockering:"Avvaktar svar elnätsägare",notat:"Skickat påminnelse 3 ggr"},
+  {id:"351977",namn:"AM ny 20A Saltviksv 8, Lödde",kund:"Privat",fas:"Beredning",berStart:"2026-01-13",berSlut:"2026-05-15",montStart:"2026-06-15",montSlut:"2026-06-18",driftDat:null,blockering:null,notat:""},
+  {id:"352017",namn:"AM-OBY-f15 nya sev.led.",kund:"Företag",fas:"Beredning",berStart:"2026-01-13",berSlut:"2026-04-28",montStart:"2026-06-01",montSlut:"2026-06-18",driftDat:null,blockering:"Markavtal ej signerat",notat:"Ägare svår att nå"},
+  {id:"352253",namn:"AM Ny 16A Åbyvägen 134200",kund:"Privat",fas:"Beredning",berStart:"2026-02-06",berSlut:"2026-05-13",montStart:"2026-05-25",montSlut:"2026-06-08",driftDat:null,blockering:null,notat:""},
+  {id:"351922",namn:"AM Nyan 160A+sol 55KW, Brittens Väg",kund:"Solkraft",fas:"Drifttagning klar",berStart:"2026-01-05",berSlut:"2026-03-09",montStart:"2026-04-17",montSlut:"2026-04-28",driftDat:"2026-04-28",blockering:null,notat:"Solinstallation"},
+  {id:"352716",namn:"AM Nyansl 20A Eddavägen 15",kund:"Privat",fas:"Beredning",berStart:"2026-04-16",berSlut:"2026-05-06",montStart:"2026-06-22",montSlut:"2026-06-26",driftDat:null,blockering:null,notat:""},
+  {id:"353227",namn:"AM-Ny 16A Ludaröd 614 Brösarp",kund:"Privat",fas:"Tidig fas",berStart:"2026-05-04",berSlut:"2026-06-01",montStart:"2026-06-08",montSlut:"2026-07-10",driftDat:null,blockering:"Tekniskt underlag saknas",notat:""},
+  {id:"353449",namn:"AM Ny 16A Fäladen 953",kund:"Privat",fas:"Tidig fas",berStart:"2026-05-12",berSlut:"2026-06-05",montStart:"2026-06-15",montSlut:"2026-07-03",driftDat:null,blockering:null,notat:""},
+  {id:"353373",namn:"AM Ny 25A Ettvägen 64 Asmundtorp",kund:"Privat",fas:"Tidig fas",berStart:"2026-05-13",berSlut:"2026-07-01",montStart:"2026-07-13",montSlut:"2026-07-17",driftDat:null,blockering:null,notat:""},
+  {id:"352549",namn:"AM BSN f25 BSN-266 utök. 600A",kund:"Industri",fas:"Beredning",berStart:"2026-03-20",berSlut:"2026-04-22",montStart:"2026-05-04",montSlut:"2026-05-29",driftDat:null,blockering:"Väntar på E.ON tekniskt beslut",notat:"Stor anslutning – prioritet"},
+  {id:"353411",namn:"AM Ny 20A Högs skolväg 43",kund:"Offentlig",fas:"Tidig fas",berStart:"2026-05-18",berSlut:"2026-06-15",montStart:"2026-07-06",montSlut:"2026-07-31",driftDat:null,blockering:null,notat:""},
+  {id:"351685",namn:"AM Ny 16A Skäggeris",kund:"Privat",fas:"Beredning",berStart:"2025-12-11",berSlut:"2026-04-07",montStart:"2026-05-01",montSlut:"2026-05-31",driftDat:null,blockering:null,notat:""},
+  {id:"353239",namn:"AM-Ny 20A Andrarum 2206 Tomelilla",kund:"Privat",fas:"Tidig fas",berStart:"2026-06-01",berSlut:"2026-07-31",montStart:"2026-08-31",montSlut:"2026-09-07",driftDat:null,blockering:null,notat:""},
+  {id:"352192",namn:"AM Ny 16A kamera, Kvistalånga",kund:"Offentlig",fas:"Beredning",berStart:"2026-02-06",berSlut:"2026-04-30",montStart:"2026-06-01",montSlut:"2026-08-28",driftDat:null,blockering:"Tillstånd länsstyrelse inväntas",notat:"Naturreservat – lång handläggningstid"},
+  {id:"352917",namn:"AM Ny 25A KAT1 Källstorp 5227",kund:"Privat",fas:"Tidig fas",berStart:"2026-04-19",berSlut:"2026-06-30",montStart:"2026-07-01",montSlut:"2026-07-31",driftDat:null,blockering:null,notat:""},
+  {id:"353274",namn:"AM Ny 16A Råröd 3:1, Eslöv",kund:"Privat",fas:"Tidig fas",berStart:"2026-07-13",berSlut:"2026-08-28",montStart:"2026-10-05",montSlut:"2026-10-30",driftDat:null,blockering:null,notat:""},
+];
+
+const ANSL_FAS_ORDER = ["Tidig fas","Beredning","Montage","Drifttagning klar","Avslutat"];
+const ANSL_FAS_C = {
+  "Tidig fas":         "#4a6a8a",
+  "Beredning":         "#3b82f6",
+  "Montage":           "#f59e0b",
+  "Drifttagning klar": "#00d4ff",
+  "Avslutat":          "#10b981",
+};
+const ANSL_FAS_MAP = {
+  "Bekräftad beställning":            "Tidig fas",
+  "Aviserat uppstartsmöte beredning": "Tidig fas",
+  "Anmält start av beredning":        "Beredning",
+  "Uppstartsmöte beredning klart":    "Beredning",
+  "Beredning inlämnad":               "Beredning",
+  "Beredning tillstyrkt":             "Beredning",
+  "Teknisk dokumentation överlämnad": "Montage",
+  "Drifttagningsdatum godkänd":       "Drifttagning klar",
+  "Besiktning aviserad":              "Drifttagning klar",
+  "Projekt slutfört":                 "Avslutat",
+};
+
+const AnslState = {
+  projekt:   null,
+  view:      'oversikt',
+  search:    '',
+  filterFas: null,
+  sortCol:   'montStart',
+  sortDir:   1,
+};
+
+// ---------- helpers ----------
+function anslSave() {
+  try { localStorage.setItem('ansl_projekt_v2', JSON.stringify(AnslState.projekt)); } catch {}
+}
+function anslLoad() {
+  if (AnslState.projekt) return;
+  try {
+    const s = localStorage.getItem('ansl_projekt_v2');
+    AnslState.projekt = s ? JSON.parse(s) : ANSL_SAMPLE;
+  } catch { AnslState.projekt = ANSL_SAMPLE; }
+}
+const anslPD  = s => s ? new Date(s) : null;
+const anslFD  = s => {
+  if (!s) return '–';
+  const d = new Date(s);
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(2)}`;
+};
+const anslDD  = (a,b) => Math.round((b - a) / 86400000);
+const anslLT  = p => { const s=anslPD(p.berStart),e=anslPD(p.driftDat); return s&&e?anslDD(s,e):null; };
+const anslDTM = p => { const d=anslPD(p.montStart); return d?anslDD(new Date(),d):null; };
+const anslRisk = p => {
+  if (p.fas==='Avslutat'||p.fas==='Drifttagning klar') return false;
+  const dtm = anslDTM(p);
+  return (dtm!==null && dtm<21) || !!p.blockering;
+};
+
+// ---------- HTML building blocks ----------
+function anslKpiHtml(label, value, sub, delta, accent) {
+  const dc = delta > 0 ? 'color:#10b981' : delta < 0 ? 'color:#ef4444' : 'color:#4a6a8a';
+  const ds = delta > 0 ? `+${delta}` : delta < 0 ? `${delta}` : '±0';
+  const dEl = delta !== undefined
+    ? `<div style="font-size:11px;font-weight:600;font-family:monospace;${dc}">${ds} vs föreg. mån</div>` : '';
+  return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;position:relative;overflow:hidden;border-top:2px solid ${accent}">
+      <div style="font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">${label}</div>
+      <div style="font-size:32px;font-weight:800;color:var(--text-strong);line-height:1;margin-bottom:4px">${value}</div>
+      <div style="font-size:11px;color:var(--text-muted);font-family:monospace">${sub}</div>
+      ${dEl}
+    </div>`;
+}
+
+function anslPanelHtml(title, badge, content, badgeColor) {
+  const badgeEl = badge
+    ? `<span style="font-size:10px;font-family:monospace;padding:3px 8px;border-radius:4px;background:var(--surface-3);color:${badgeColor||'var(--text-muted)'}">${badge}</span>`
+    : '';
+  return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)">${title}</span>
+        ${badgeEl}
+      </div>
+      <div style="padding:16px 18px">${content}</div>
+    </div>`;
+}
+
+function anslFasBarHtml(p) {
+  const segs = ANSL_FAS_ORDER.map(f => {
+    const n = p.filter(x=>x.fas===f).length;
+    return n ? `<div style="flex:${n};background:${ANSL_FAS_C[f]};border-radius:2px" title="${f}: ${n}"></div>` : '';
+  }).join('');
+  const legend = ANSL_FAS_ORDER.map(f => {
+    const n = p.filter(x=>x.fas===f).length;
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted)">
+      <div style="width:8px;height:8px;border-radius:2px;background:${ANSL_FAS_C[f]}"></div>
+      ${f}&nbsp;<span style="font-family:monospace;font-weight:500;color:var(--text)">${n}</span>
+    </div>`;
+  }).join('');
+  return `
+    <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;gap:2px;margin-bottom:14px">${segs}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px">${legend}</div>`;
+}
+
+function anslRiskListHtml(p) {
+  const risks = p.filter(anslRisk).slice(0,8);
+  if (!risks.length) return `<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:12px;font-family:monospace">Inga riskprojekt just nu ✓</div>`;
+  return risks.map(r => {
+    const dtm = anslDTM(r);
+    const dot = r.blockering ? 'var(--red)' : 'var(--amber)';
+    const dEl = dtm !== null
+      ? `<div style="font-size:11px;font-family:monospace;font-weight:500;color:${dtm<14?'var(--red)':'var(--amber)'};flex-shrink:0">${dtm}d</div>` : '';
+    return `
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)">
+        <div style="width:6px;height:6px;border-radius:50%;background:${dot};flex-shrink:0;margin-top:5px"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:var(--text-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px">${escHtml(r.namn)}</div>
+          <div style="font-size:11px;color:var(--text-muted);font-family:monospace">${escHtml(r.blockering||(dtm!==null&&dtm<21?`Montage om ${dtm} dagar`:'Tidig varning'))}</div>
+        </div>
+        ${dEl}
+      </div>`;
+  }).join('');
+}
+
+function anslBarChartHtml(p) {
+  const now = new Date();
+  const months = [];
+  for (let i=6;i>=0;i--) {
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const lbl = d.toLocaleDateString('sv-SE',{month:'short',year:'2-digit'});
+    const cnt = p.filter(x => {
+      if (!x.berStart) return false;
+      const pd = new Date(x.berStart);
+      return pd.getFullYear()===d.getFullYear() && pd.getMonth()===d.getMonth();
+    }).length;
+    months.push({lbl,cnt,cur:i===0});
+  }
+  const max = Math.max(...months.map(m=>m.cnt),1);
+  return `<div style="display:flex;align-items:flex-end;gap:6px;height:80px">` +
+    months.map((m,i) => `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+        <div style="font-size:9px;font-family:monospace;color:var(--text-muted)">${m.cnt||''}</div>
+        <div style="width:100%;height:${Math.max(4,Math.round(m.cnt/max*60))}px;border-radius:3px 3px 0 0;background:${m.cur?'var(--cyan)':i===5?'rgba(59,130,246,.5)':'var(--surface-3)'}"></div>
+        <div style="font-size:9px;font-family:monospace;color:${m.cur?'var(--cyan)':'var(--text-muted)'};font-weight:${m.cur?600:400}">${m.lbl}</div>
+      </div>`).join('') + `</div>`;
+}
+
+function anslMonsterHtml(p) {
+  const done = p.filter(x=>x.fas==='Avslutat'||x.fas==='Drifttagning klar');
+  const blocked = p.filter(x=>x.blockering);
+  const bTypes = {};
+  blocked.forEach(x=>{ const k=x.blockering.split(' ').slice(0,3).join(' '); bTypes[k]=(bTypes[k]||0)+1; });
+  const topB = Object.entries(bTypes).sort((a,b)=>b[1]-a[1])[0];
+  const withLT = done.filter(x=>anslLT(x));
+  const avgLT = withLT.length ? Math.round(withLT.map(anslLT).reduce((a,b)=>a+b,0)/withLT.length) : null;
+  const aktiva = p.filter(x=>x.fas!=='Avslutat');
+  const items = [
+    {icon:'⏱',lbl:'Genomsnittlig ledtid',sub:`Beredningsstart → drifttagning (${done.length} avslutade)`,val:avgLT?`${avgLT}d`:'–',col:'var(--cyan)'},
+    {icon:'🔒',lbl:'Vanligaste blockeringen',sub:topB?`${topB[0]}…`:'Ingen data',val:topB?`${topB[1]}st`:'–',col:'var(--red)'},
+    {icon:'⚠️',lbl:'Riskprojekt just nu',sub:'< 21d till montagestart eller blockerade',val:String(p.filter(anslRisk).length),col:'var(--amber)'},
+    {icon:'📈',lbl:'Andel i beredning',sub:'Av alla aktiva ärenden',val:`${Math.round(p.filter(x=>x.fas==='Beredning').length/Math.max(aktiva.length,1)*100)}%`,col:'var(--blue)'},
+  ];
+  return items.map(it=>`
+    <div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:18px">${it.icon}</div>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:600;color:var(--text-strong);margin-bottom:3px">${it.lbl}</div>
+        <div style="font-size:11px;color:var(--text-muted);font-family:monospace">${it.sub}</div>
+      </div>
+      <div style="font-size:13px;font-family:monospace;font-weight:500;color:${it.col}">${it.val}</div>
+    </div>`).join('');
+}
+
+// ---------- Ärenden-vy ----------
+function anslArendenHtml(p) {
+  const {search,filterFas,sortCol,sortDir} = AnslState;
+  const td = p
+    .filter(x => {
+      if (filterFas && x.fas!==filterFas) return false;
+      if (search) { const q=search.toLowerCase(); return x.id.toLowerCase().includes(q)||x.namn.toLowerCase().includes(q)||(x.blockering||'').toLowerCase().includes(q); }
+      return true;
+    })
+    .sort((a,b) => { const av=a[sortCol]||'',bv=b[sortCol]||''; return av<bv?-sortDir:av>bv?sortDir:0; });
+  const thI = c => sortCol===c?(sortDir===1?' ↑':' ↓'):'';
+  const cols = [['id','IB-nr'],['namn','Projektbenämning'],['fas','Fas'],['berSlut','Beredning slut'],['montStart','Montage start'],['montSlut','Montage slut'],['blockering','Blockering'],['driftDat','Drifttagning']];
+  const thStyle = 'padding:8px 12px;text-align:left;font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface-2);cursor:pointer;user-select:none';
+  const tdBase = 'padding:9px 12px;vertical-align:middle;border-bottom:1px solid rgba(0,212,255,.06)';
+  const filterBtns = ANSL_FAS_ORDER.map(f=>`
+    <button class="ansl-ff" data-fas="${escHtml(f)}" style="font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer;border:1px solid ${filterFas===f?'var(--cyan-d)':'var(--border)'};background:${filterFas===f?'rgba(0,212,255,.1)':'none'};color:${filterFas===f?'var(--cyan)':'var(--text-muted)'};font-weight:600;letter-spacing:.04em;white-space:nowrap">${f}</button>`).join('');
+  const clearBtn = (search||filterFas) ? `<button id="ansl-fc" style="font-size:11px;padding:4px 8px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--text-muted)">× Rensa</button>` : '';
+  const rows = td.length===0
+    ? `<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--text-muted);font-family:monospace;font-size:12px">Inga ärenden matchar filtret</td></tr>`
+    : td.map(x => {
+        const risk = anslRisk(x);
+        const fc = ANSL_FAS_C[x.fas]||'#4a6a8a';
+        const fBadge = `<span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;background:${fc}22;color:${fc};border:1px solid ${fc}33">${x.fas}</span>`;
+        const blk = x.blockering
+          ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:4px;font-size:10px;font-family:monospace;background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.2);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(x.blockering)}">⚠ ${escHtml(x.blockering)}</span>`
+          : `<span style="color:var(--text-muted);font-size:11px">–</span>`;
+        return `<tr class="ansl-tr" data-pid="${escHtml(x.id)}" style="cursor:pointer;border-left:2px solid ${risk?'var(--red)':'transparent'}">
+          <td style="${tdBase};font-family:monospace;font-size:11px;color:var(--text-muted)">${escHtml(x.id)}</td>
+          <td style="${tdBase};font-weight:600;color:var(--text-strong);max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(x.namn)}">${escHtml(x.namn)}</td>
+          <td style="${tdBase}">${fBadge}</td>
+          <td style="${tdBase};font-family:monospace;font-size:11px;color:var(--text-muted)">${anslFD(x.berSlut)}</td>
+          <td style="${tdBase};font-family:monospace;font-size:11px;color:var(--text-muted)">${anslFD(x.montStart)}</td>
+          <td style="${tdBase};font-family:monospace;font-size:11px;color:var(--text-muted)">${anslFD(x.montSlut)}</td>
+          <td style="${tdBase}">${blk}</td>
+          <td style="${tdBase};font-family:monospace;font-size:11px;color:${x.driftDat?'var(--green)':'var(--text-muted)'}">${anslFD(x.driftDat)}</td>
+        </tr>`;
+      }).join('');
+  return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:8px;padding:0 18px;background:var(--surface-2);border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <span style="color:var(--text-muted);font-size:14px">⌕</span>
+        <input id="ansl-search" value="${escHtml(search)}" placeholder="Sök IB-nr, namn, blockering…"
+          style="flex:1;min-width:150px;background:none;border:none;color:var(--text);font-size:12px;font-family:monospace;padding:10px 0;outline:none">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0">${filterBtns}${clearBtn}</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr>${cols.map(([c,l])=>`<th class="ansl-th" data-col="${c}" style="${thStyle}">${l}${thI(c)}</th>`).join('')}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="padding:8px 18px;font-size:11px;color:var(--text-muted);font-family:monospace;border-top:1px solid var(--border)">
+        Visar ${td.length} av ${p.length} ärenden · Klicka på rad för detaljer
+      </div>
+    </div>`;
+}
+
+// ---------- Analys-vy ----------
+function anslAnalysHtml(p) {
+  const aktiva   = p.filter(x=>x.fas!=='Avslutat');
+  const risker   = p.filter(anslRisk);
+  const blockerade = p.filter(x=>x.blockering);
+  const driftklara = p.filter(x=>x.fas==='Drifttagning klar'||x.fas==='Avslutat');
+  const done     = p.filter(x=>x.fas==='Avslutat'||x.fas==='Drifttagning klar');
+  const withLT   = done.filter(x=>anslLT(x));
+  const avgLT    = withLT.length ? Math.round(withLT.map(anslLT).reduce((a,b)=>a+b,0)/withLT.length) : '–';
+
+  const fasKpis = ANSL_FAS_ORDER.map(f=>{
+    const n=p.filter(x=>x.fas===f).length;
+    const r=p.filter(x=>x.fas===f&&anslRisk(x)).length;
+    const c=ANSL_FAS_C[f];
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;border-top:2px solid ${c}">
+      <div style="font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">${f}</div>
+      <div style="font-size:32px;font-weight:800;color:${c};line-height:1;margin-bottom:4px">${n}</div>
+      <div style="font-size:11px;color:var(--text-muted);font-family:monospace">${r>0?`${r} i riskzon`:'Inga risker'}</div>
+    </div>`;
+  }).join('');
+
+  const blkRows = blockerade.length===0
+    ? `<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:12px;font-family:monospace">Inga blockerade ärenden</div>`
+    : blockerade.map(x=>`
+        <div class="ansl-blk-row" data-pid="${escHtml(x.id)}" style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0"></div>
+          <div style="flex:1">
+            <div style="font-size:12px;font-weight:600;color:var(--text-strong);margin-bottom:3px">${escHtml(x.namn)}</div>
+            <div style="font-size:11px;color:var(--text-muted);font-family:monospace">${escHtml(x.blockering)}</div>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);font-family:monospace">IB ${escHtml(x.id)}</div>
+        </div>`).join('');
+
+  const nyckeltal = [
+    ['Totalt aktiva',aktiva.length],['I beredning',p.filter(x=>x.fas==='Beredning').length],
+    ['Blockerade',blockerade.length],['Driftklara hittills',driftklara.length],
+    ['Andel i riskzon',`${Math.round(risker.length/Math.max(aktiva.length,1)*100)}%`],
+  ].map(([l,v])=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(0,212,255,.06);font-size:12px">
+      <span style="color:var(--text-muted)">${l}</span>
+      <span style="color:var(--text-strong);font-family:monospace;font-weight:500">${v}</span>
+    </div>`).join('');
+
+  return `
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px">${fasKpis}</div>
+    <div style="display:grid;grid-template-columns:1fr 320px;gap:16px">
+      ${anslPanelHtml('Blockeringsanalys',null,blkRows)}
+      <div style="display:flex;flex-direction:column;gap:16px">
+        ${anslPanelHtml('Ledtidsanalys',null,`
+          <div style="display:flex;flex-direction:column;align-items:center;padding:8px 0">
+            <div style="font-size:42px;font-weight:800;color:var(--text-strong);line-height:1">${avgLT}</div>
+            <div style="font-size:12px;color:var(--text-muted);font-family:monospace;margin-top:4px">dagar genomsnittlig ledtid</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center">Beredningsstart → drifttagning<br>${done.length} avslutade ärenden</div>
+          </div>`)}
+        ${anslPanelHtml('Nyckeltal',null,nyckeltal)}
+      </div>
+    </div>`;
+}
+
+// ---------- Drawer (sidopanel) ----------
+function anslDrawerHtml(p) {
+  const lt  = anslLT(p);
+  const dtm = anslDTM(p);
+  const risk = anslRisk(p);
+  const fc  = ANSL_FAS_C[p.fas]||'var(--cyan)';
+  const s   = anslPD(p.berStart), e = anslPD(p.montSlut);
+  const timelineHtml = s && e ? (()=>{
+    const total = anslDD(s,e);
+    const done  = Math.min(100,Math.max(0,Math.round(anslDD(s,new Date())/total*100)));
+    const col   = p.fas==='Avslutat'||p.fas==='Drifttagning klar' ? 'var(--green)' : risk ? 'var(--red)' : 'var(--cyan)';
+    return `<div style="margin:12px 0">
+      <div style="height:4px;background:var(--surface-3);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${done}%;background:${col};border-radius:2px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;font-family:monospace;color:var(--text-muted)">
+        <span>${anslFD(p.berStart)}</span><span style="color:var(--cyan)">${done}% av total tid</span><span>${anslFD(p.montSlut)}</span>
+      </div>
+    </div>`;
+  })() : '';
+  const datumsHtml = [['Beredning start',p.berStart],['Beredning slut',p.berSlut],['Montage start',p.montStart],['Montage slut',p.montSlut],['Drifttagning',p.driftDat]]
+    .map(([l,v])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(0,212,255,.06);font-size:12px"><span style="color:var(--text-muted)">${l}</span><span style="color:var(--text-strong);font-family:monospace;font-weight:500">${anslFD(v)}</span></div>`).join('');
+  const dtmEl = dtm!==null ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--text-muted)">Dagar till montage</span><span style="color:${dtm<14?'var(--red)':dtm<21?'var(--amber)':'var(--green)'};font-family:monospace;font-weight:500">${dtm}d</span></div>` : '';
+  const ltEl  = lt!==null  ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--text-muted)">Total ledtid</span><span style="color:var(--text-strong);font-family:monospace;font-weight:500">${lt} dagar</span></div>` : '';
+  const fasOpts = ANSL_FAS_ORDER.map(f=>`<option value="${f}"${p.fas===f?' selected':''}>${f}</option>`).join('');
+  const inp = 'width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:monospace;font-size:11px;padding:10px;margin-top:6px;outline:none;box-sizing:border-box';
+  const sectionHead = txt => `<div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:6px">${txt}</div>`;
+  return `
+    <div id="ansl-drawer-panel" style="width:min(420px,100vw);background:var(--surface);border-left:1px solid var(--border);height:100%;overflow-y:auto;padding:28px;position:relative;box-sizing:border-box;animation:ansl-slide-in .2s ease">
+      <style>@keyframes ansl-slide-in{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}</style>
+      <button id="ansl-drawer-close" style="position:absolute;top:20px;right:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-muted);width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:14px">✕</button>
+      <div style="font-family:monospace;font-size:11px;color:var(--text-muted);margin-bottom:6px">IB ${escHtml(p.id)}</div>
+      <div style="font-size:18px;font-weight:800;color:var(--text-strong);line-height:1.3;margin-bottom:16px;padding-right:40px">${escHtml(p.namn)}</div>
+      <span style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;background:${fc}22;color:${fc};border:1px solid ${fc}44">${p.fas}</span>
+      <div style="margin-top:20px">${sectionHead('Tidslinje')}${timelineHtml}</div>
+      <div style="margin-top:20px">${sectionHead('Datum')}${datumsHtml}${dtmEl}${ltEl}</div>
+      <div style="margin-top:20px">
+        ${sectionHead('Uppdatera')}
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Fas</div>
+        <select id="ansl-d-fas" style="${inp}">${fasOpts}</select>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:10px;margin-bottom:2px">Blockering (lämna tomt om ingen)</div>
+        <textarea id="ansl-d-blk" style="${inp};resize:vertical;min-height:60px" placeholder="Beskriv vad som blockerar…">${escHtml(p.blockering||'')}</textarea>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:10px;margin-bottom:2px">Notat</div>
+        <textarea id="ansl-d-not" style="${inp};resize:vertical;min-height:60px" placeholder="Anteckningar…">${escHtml(p.notat||'')}</textarea>
+        <button id="ansl-drawer-save" style="margin-top:12px;width:100%;padding:10px;border-radius:6px;background:var(--cyan);color:var(--bg);font-weight:700;font-size:12px;cursor:pointer;border:none;letter-spacing:.05em">Spara ändringar</button>
+      </div>
+    </div>`;
+}
+
+function anslShowDrawer(projektId, app) {
+  document.getElementById('ansl-drawer-overlay')?.remove();
+  const p = AnslState.projekt.find(x=>x.id===projektId);
+  if (!p) return;
+  const ov = document.createElement('div');
+  ov.id = 'ansl-drawer-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(4,13,30,.8);z-index:200;display:flex;justify-content:flex-end';
+  ov.innerHTML = anslDrawerHtml(p);
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
+  ov.querySelector('#ansl-drawer-close').addEventListener('click', ()=>ov.remove());
+  ov.querySelector('#ansl-drawer-save').addEventListener('click', ()=>{
+    const fas = ov.querySelector('#ansl-d-fas').value;
+    const blk = ov.querySelector('#ansl-d-blk').value.trim() || null;
+    const not = ov.querySelector('#ansl-d-not').value.trim();
+    const idx = AnslState.projekt.findIndex(x=>x.id===projektId);
+    if (idx>-1) { AnslState.projekt[idx]={...AnslState.projekt[idx],fas,blockering:blk,notat:not}; anslSave(); }
+    ov.remove();
+    anslRenderContent(app);
+  });
+}
+
+// ---------- Excel import ----------
+function anslHandleFile(e, app) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { toast('SheetJS saknas – kontrollera internetanslutningen.','error'); return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const wb = XLSX.read(ev.target.result,{type:'binary',cellDates:true});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws,{defval:null});
+      const fmt = v => {
+        if (!v) return null;
+        if (v instanceof Date) return v.toISOString().slice(0,10);
+        if (typeof v==='string'&&v.match(/\d{4}-\d{2}-\d{2}/)) return v.slice(0,10);
+        return null;
+      };
+      const mapped = rows.map((r,i)=>({
+        id:        String(r['IB nr']||r['IB_nr']||r['id']||`IMP-${i}`),
+        namn:      r['Projektbenamning']||r['Projektbenämning']||r['namn']||'Okänt',
+        kund:      r['Kund']||r['kund']||'–',
+        fas:       ANSL_FAS_MAP[r['Arbetsflöde']||r['fas']] || 'Tidig fas',
+        berStart:  fmt(r['Beredning Start']||r['berStart']),
+        berSlut:   fmt(r['Beredning Slut']||r['berSlut']),
+        montStart: fmt(r['Montage Start']||r['montStart']),
+        montSlut:  fmt(r['Montage Slut']||r['montSlut']),
+        driftDat:  fmt(r['Drift.datum']||r['driftDat']),
+        blockering:r['blockering']||null,
+        notat:     r['notat']||'',
+      }));
+      AnslState.projekt = mapped;
+      anslSave();
+      toast(`${mapped.length} ärenden importerade`,'success');
+      renderAnslutning(app);
+    } catch(err) { toast('Kunde inte läsa filen: '+err.message,'error'); }
+  };
+  reader.readAsBinaryString(file);
+  e.target.value='';
+}
+
+// ---------- Huvud-renderer ----------
+function renderAnslutning(app) {
+  document.getElementById('ansl-drawer-overlay')?.remove();
+  anslLoad();
+  const p = AnslState.projekt;
+  const tabs = [['oversikt','Översikt'],['arenden','Ärenden'],['analys','Analys']];
+  app.innerHTML = `
+    <div style="background:var(--bg);min-height:100%;color:var(--text);font-family:var(--font)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <div style="display:flex;gap:2px">
+          ${tabs.map(([id,lbl])=>`
+            <button data-ansl-tab="${id}" style="padding:12px 16px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;background:none;border:none;border-bottom:2px solid ${AnslState.view===id?'var(--cyan)':'transparent'};color:${AnslState.view===id?'var(--cyan)':'var(--text-muted)'};transition:all .15s">${lbl}</button>`).join('')}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0">
+          <span style="font-size:11px;color:var(--text-muted);font-family:monospace">${p.length} ärenden</span>
+          <button id="ansl-import-btn" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid var(--cyan-d);background:transparent;color:var(--cyan);font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.03em">↑ Importera Excel</button>
+        </div>
+      </div>
+      <div id="ansl-content" style="padding:24px;display:flex;flex-direction:column;gap:20px"></div>
+      <input type="file" id="ansl-file-input" accept=".xlsx,.xls" style="display:none">
+    </div>`;
+
+  app.querySelectorAll('[data-ansl-tab]').forEach(btn=>{
+    btn.addEventListener('click',()=>{ AnslState.view=btn.dataset.anslTab; AnslState.search=''; renderAnslutning(app); });
+  });
+  app.querySelector('#ansl-import-btn').addEventListener('click',()=>app.querySelector('#ansl-file-input').click());
+  app.querySelector('#ansl-file-input').addEventListener('change',e=>anslHandleFile(e,app));
+  anslRenderContent(app);
+}
+
+function anslRenderContent(app) {
+  const el = document.getElementById('ansl-content');
+  if (!el) return;
+  const p = AnslState.projekt;
+  switch(AnslState.view) {
+    case 'oversikt': {
+      const aktiva=p.filter(x=>x.fas!=='Avslutat');
+      const risker=p.filter(anslRisk);
+      const blk=p.filter(x=>x.blockering);
+      const done=p.filter(x=>x.fas==='Avslutat'||x.fas==='Drifttagning klar');
+      const withLT=done.filter(x=>anslLT(x));
+      const avgLT=withLT.length?Math.round(withLT.map(anslLT).reduce((a,b)=>a+b,0)/withLT.length):'–';
+      el.innerHTML=`
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+          ${anslKpiHtml('Ärenden totalt',p.length,`${aktiva.length} aktiva`,4,'var(--cyan)')}
+          ${anslKpiHtml('Nya denna månad',4,'beställda senaste månaden',1,'var(--blue)')}
+          ${anslKpiHtml('Riskärenden',risker.length,'< 21d eller blockerade',risker.length>3?1:-1,'var(--red)')}
+          ${anslKpiHtml('Blockerade',blk.length,'väntar på åtgärd',undefined,'var(--amber)')}
+          ${anslKpiHtml('Avg. ledtid',avgLT,`dagar (${done.length} avslutade)`,undefined,'var(--green)')}
+        </div>
+        ${anslPanelHtml('Fas-fördelning',`${p.length} ärenden`,anslFasBarHtml(p))}
+        <div style="display:grid;grid-template-columns:1fr min(340px,100%);gap:16px">
+          ${anslPanelHtml('Riskärenden — kräver action',`${risker.length} st`,anslRiskListHtml(p),'var(--red)')}
+          <div style="display:flex;flex-direction:column;gap:16px">
+            ${anslPanelHtml('Nya ärenden / månad',null,anslBarChartHtml(p))}
+            ${anslPanelHtml('Mönsteranalys',null,anslMonsterHtml(p))}
+          </div>
+        </div>`;
+      break;
+    }
+    case 'arenden': {
+      el.innerHTML = anslArendenHtml(p);
+      const si = el.querySelector('#ansl-search');
+      si.addEventListener('input',()=>{
+        AnslState.search=si.value;
+        el.innerHTML=anslArendenHtml(p);
+        const ni=el.querySelector('#ansl-search');
+        if(ni){ni.focus();ni.setSelectionRange(ni.value.length,ni.value.length);}
+        anslArendenInit(el,p,app);
+      });
+      anslArendenInit(el,p,app);
+      break;
+    }
+    case 'analys': {
+      el.innerHTML = anslAnalysHtml(p);
+      el.querySelectorAll('.ansl-blk-row').forEach(r=>r.addEventListener('click',()=>anslShowDrawer(r.dataset.pid,app)));
+      break;
+    }
+  }
+}
+
+function anslArendenInit(el, p, app) {
+  el.querySelectorAll('.ansl-ff').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      AnslState.filterFas = AnslState.filterFas===btn.dataset.fas ? null : btn.dataset.fas;
+      el.innerHTML=anslArendenHtml(p);
+      const si=el.querySelector('#ansl-search');
+      si.addEventListener('input',()=>{AnslState.search=si.value;el.innerHTML=anslArendenHtml(p);anslArendenInit(el,p,app);});
+      anslArendenInit(el,p,app);
+    });
+  });
+  const fc=el.querySelector('#ansl-fc');
+  if(fc) fc.addEventListener('click',()=>{AnslState.search='';AnslState.filterFas=null;el.innerHTML=anslArendenHtml(p);anslArendenInit(el,p,app);});
+  el.querySelectorAll('.ansl-th').forEach(th=>{
+    th.addEventListener('click',()=>{
+      if(AnslState.sortCol===th.dataset.col) AnslState.sortDir*=-1;
+      else {AnslState.sortCol=th.dataset.col;AnslState.sortDir=1;}
+      el.innerHTML=anslArendenHtml(p);
+      const si=el.querySelector('#ansl-search');
+      si.addEventListener('input',()=>{AnslState.search=si.value;el.innerHTML=anslArendenHtml(p);anslArendenInit(el,p,app);});
+      anslArendenInit(el,p,app);
+    });
+  });
+  el.querySelectorAll('.ansl-tr').forEach(tr=>tr.addEventListener('click',()=>anslShowDrawer(tr.dataset.pid,app)));
 }
 
 boot();
