@@ -983,7 +983,7 @@ function modalNyAktivitet(projektId, onDone) {
 }
 
 // ----------------------------------------------------------------
-// VIEW: BUDGET-FLIK
+// VIEW: BUDGET-FLIK (inline-redigering)
 // ----------------------------------------------------------------
 async function renderBudgetTab(projektId) {
   const el = document.getElementById('pdTabBudget');
@@ -996,376 +996,191 @@ async function renderBudgetTab(projektId) {
     return;
   }
 
-  const { budget, kostnader, intakter, summering: s } = data;
-  const TYPER = ['Timmar', 'Material', 'UE', 'Avgifter', 'Resor'];
-  const typFarg = { Timmar: '#7c3aed', Material: '#d97706', UE: '#10b981', Avgifter: '#0891b2', Resor: '#e11d48' };
-  const pctFarg = s.förbrukat_procent > 90 ? 'var(--red)' : s.förbrukat_procent > 75 ? 'var(--amber)' : 'var(--green)';
-  const resultatFarg = s.resultat >= 0 ? 'var(--green)' : 'var(--red)';
+  const { kostnader, intakter } = data;
 
-  const typKortHtml = TYPER.map(t => {
-    const pt = s.per_typ[t];
-    const pct = pt.budget > 0 ? Math.round(100 * pt.kostnad / pt.budget) : 0;
-    const fc  = pt.kostnad > pt.budget && pt.budget > 0 ? 'var(--red)' : 'var(--green)';
-    return `<div class="card" style="flex:1;min-width:130px">
-      <div class="card-body" style="padding:12px">
-        <div style="font-size:10px;font-weight:700;color:${typFarg[t]};text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">${t}</div>
-        <div style="font-size:14px;font-weight:700">${formatKr(pt.budget)}</div>
-        <div style="font-size:11px;color:var(--text-muted)">Budget</div>
-        <div style="font-size:13px;font-weight:600;color:${fc};margin-top:4px">${formatKr(pt.kostnad)}</div>
-        <div style="font-size:11px;color:var(--text-muted)">Kostnad</div>
-        <div style="height:3px;background:var(--border);border-radius:2px;margin-top:8px">
-          <div style="height:100%;width:${Math.min(pct,100)}%;background:${fc};border-radius:2px"></div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+  // Hjälpfunktion: rendera en kostnad-rad
+  function kRad(k) {
+    return `<tr data-kid="${k.id}">
+      <td class="ik-cell" data-field="beskrivning" data-kid="${k.id}" style="cursor:pointer">${escHtml(k.beskrivning || '')}</td>
+      <td class="ik-cell right" data-field="belopp" data-kid="${k.id}" style="cursor:pointer">${formatKr(k.belopp)}</td>
+      <td style="width:36px"><button class="btn btn-sm btn-danger" data-kdel="${k.id}">✕</button></td>
+    </tr>`;
+  }
 
-  const budgetRadHtml = budget.length
-    ? budget.map(b => `<tr>
-        <td><span style="font-weight:600;color:${typFarg[b.budget_typ]}">${escHtml(b.budget_typ)}</span></td>
-        <td>${escHtml(b.beskrivning || '–')}</td>
-        <td class="right">${formatKr(b.budgeterat_belopp)}</td>
-        <td><div class="flex gap-1">
-          <button class="btn btn-sm btn-outline" data-bid="${b.id}" data-ba="edit">✎</button>
-          <button class="btn btn-sm btn-danger"  data-bid="${b.id}" data-ba="del">✕</button>
-        </div></td>
-      </tr>`).join('')
-    : `<tr><td colspan="4" class="muted" style="padding:16px;text-align:center">Inga budgetposter lagda</td></tr>`;
+  // Hjälpfunktion: rendera en intäkt-rad
+  function iRad(i) {
+    return `<tr data-iid="${i.id}">
+      <td class="ii-cell" data-field="beskrivning" data-iid="${i.id}" style="cursor:pointer">${escHtml(i.beskrivning || '')}</td>
+      <td class="ii-cell right" data-field="belopp" data-iid="${i.id}" style="cursor:pointer">${formatKr(i.belopp)}</td>
+      <td style="width:36px"><button class="btn btn-sm btn-danger" data-idel="${i.id}">✕</button></td>
+    </tr>`;
+  }
 
-  const kostnadRadHtml = kostnader.length
-    ? kostnader.map(k => `<tr>
-        <td>${escHtml(k.datum || '–')}</td>
-        <td><span style="font-weight:600;color:${typFarg[k.budget_typ]}">${escHtml(k.budget_typ)}</span></td>
-        <td>${escHtml(k.beskrivning || '–')}</td>
-        <td>${escHtml(k.leverantor || '–')}</td>
-        <td>${escHtml(k.faktura_nr || '–')}</td>
-        <td class="right">${formatKr(k.belopp)}</td>
-        <td><div class="flex gap-1">
-          <button class="btn btn-sm btn-outline" data-kid="${k.id}" data-ka="edit">✎</button>
-          <button class="btn btn-sm btn-danger"  data-kid="${k.id}" data-ka="del">✕</button>
-        </div></td>
-      </tr>`).join('')
-    : `<tr><td colspan="7" class="muted" style="padding:16px;text-align:center">Inga kostnader registrerade</td></tr>`;
+  // Beräkna och uppdatera summering-raden
+  function uppdateraSummering() {
+    const tk = kostnader.reduce((s, k) => s + (k.belopp || 0), 0);
+    const ti = intakter.reduce((s, i) => s + (i.belopp || 0), 0);
+    const res = ti - tk;
+    const pct = ti > 0 ? Math.round(100 * res / ti) : 0;
+    const fg  = res >= 0 ? 'var(--green)' : 'var(--red)';
+    el.querySelector('#sumTotKostnad').textContent = formatKr(tk);
+    el.querySelector('#sumTotIntakt').textContent  = formatKr(ti);
+    el.querySelector('#sumResultat').textContent   = formatKr(res);
+    el.querySelector('#sumResultat').style.color   = fg;
+    el.querySelector('#sumPct').textContent        = (pct > 0 ? '+' : '') + pct + '%';
+    el.querySelector('#sumPct').style.color        = fg;
+  }
+
+  // Beräkna startvärden
+  const tk0  = kostnader.reduce((s, k) => s + (k.belopp || 0), 0);
+  const ti0  = intakter.reduce((s, i) => s + (i.belopp || 0), 0);
+  const res0 = ti0 - tk0;
+  const pct0 = ti0 > 0 ? Math.round(100 * res0 / ti0) : 0;
+  const fg0  = res0 >= 0 ? 'var(--green)' : 'var(--red)';
 
   el.innerHTML = `
+    <!-- Summering -->
     <div class="card mb-2">
       <div class="card-body" style="padding:16px">
-        <div class="flex gap-2" style="flex-wrap:wrap;align-items:center;margin-bottom:14px">
-          <div style="flex:1;min-width:160px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Total budget</div>
-            <div style="font-size:24px;font-weight:700">${formatKr(s.total_budget)}</div>
-          </div>
-          <div style="flex:1;min-width:160px">
+        <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+          <div style="flex:1;min-width:140px">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Total kostnad</div>
-            <div style="font-size:24px;font-weight:700;color:${s.total_kostnad > s.total_budget && s.total_budget > 0 ? 'var(--red)' : 'inherit'}">${formatKr(s.total_kostnad)}</div>
+            <div id="sumTotKostnad" style="font-size:22px;font-weight:700">${formatKr(tk0)}</div>
           </div>
-          <div style="flex:1;min-width:160px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Återstår</div>
-            <div style="font-size:24px;font-weight:700;color:${s['återstår'] < 0 ? 'var(--red)' : 'var(--green)'}">${formatKr(s['återstår'])}</div>
+          <div style="flex:1;min-width:140px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Total intäkt</div>
+            <div id="sumTotIntakt" style="font-size:22px;font-weight:700">${formatKr(ti0)}</div>
           </div>
-          <div style="flex:1;min-width:160px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Projektintäkter</div>
-            <div style="font-size:24px;font-weight:700;color:var(--green)">${formatKr(s.total_intakt)}</div>
-          </div>
-          <div style="flex:1;min-width:160px">
+          <div style="flex:1;min-width:140px">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Resultat</div>
-            <div style="font-size:24px;font-weight:700;color:${resultatFarg}">${formatKr(s.resultat)}</div>
+            <div id="sumResultat" style="font-size:22px;font-weight:700;color:${fg0}">${formatKr(res0)}</div>
           </div>
-          <div style="min-width:100px;text-align:right">
-            <div style="font-size:32px;font-weight:700;color:${pctFarg}">${s.förbrukat_procent}%</div>
-            <div style="font-size:11px;color:var(--text-muted)">förbrukat</div>
+          <div style="min-width:90px;text-align:right">
+            <div id="sumPct" style="font-size:32px;font-weight:700;color:${fg0}">${(pct0 > 0 ? '+' : '') + pct0}%</div>
+            <div style="font-size:11px;color:var(--text-muted)">marginal</div>
           </div>
         </div>
-        <div style="height:8px;background:var(--border);border-radius:4px;margin-bottom:14px">
-          <div style="height:100%;width:${Math.min(s.förbrukat_procent,100)}%;background:${pctFarg};border-radius:4px;transition:width .3s"></div>
-        </div>
-        <div class="flex gap-2" style="flex-wrap:wrap">${typKortHtml}</div>
       </div>
     </div>
 
+    <!-- Kostnader -->
     <div class="card mb-2">
-      <div class="card-header">
-        <span class="card-title">Budgetposter</span>
-        <button class="btn btn-navy btn-sm" id="btnNyBudgetpost">+ Lägg till budgetpost</button>
-      </div>
+      <div class="card-header"><span class="card-title">Kostnader</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Typ</th><th>Beskrivning</th><th class="right">Budgeterat</th><th></th></tr></thead>
-          <tbody id="budgetBody">${budgetRadHtml}</tbody>
+          <thead><tr><th>Beskrivning</th><th class="right">Belopp</th><th></th></tr></thead>
+          <tbody id="kostnadBody">${kostnader.map(kRad).join('') || ''}</tbody>
         </table>
+      </div>
+      <div style="padding:8px 16px 12px">
+        <button class="btn btn-sm btn-outline" id="btnNyKostnad">+ Lägg till rad</button>
       </div>
     </div>
 
-    <div class="card mb-2">
-      <div class="card-header">
-        <span class="card-title">Kostnader</span>
-        <button class="btn btn-navy btn-sm" id="btnNyKostnad">+ Lägg till kostnad</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Datum</th><th>Typ</th><th>Beskrivning</th><th>Leverantör</th><th>Faktura nr</th>
-            <th class="right">Belopp</th><th></th>
-          </tr></thead>
-          <tbody id="kostnadBody">${kostnadRadHtml}</tbody>
-        </table>
-      </div>
-    </div>
-
+    <!-- Projektintäkter -->
     <div class="card">
-      <div class="card-header">
-        <span class="card-title">Projektintäkter</span>
-        <button class="btn btn-navy btn-sm" id="btnNyIntakt">+ Lägg till intäkt</button>
-      </div>
+      <div class="card-header"><span class="card-title">Projektintäkter</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr>
-            <th>Datum</th><th>Beskrivning</th><th>Faktura nr</th>
-            <th class="right">Belopp</th><th></th>
-          </tr></thead>
-          <tbody id="intaktBody">${intakter.length
-            ? intakter.map(i => `<tr>
-                <td>${escHtml(i.datum || '–')}</td>
-                <td>${escHtml(i.beskrivning || '–')}</td>
-                <td>${escHtml(i.faktura_nr || '–')}</td>
-                <td class="right">${formatKr(i.belopp)}</td>
-                <td><div class="flex gap-1">
-                  <button class="btn btn-sm btn-outline" data-iid="${i.id}" data-ia="edit">✎</button>
-                  <button class="btn btn-sm btn-danger"  data-iid="${i.id}" data-ia="del">✕</button>
-                </div></td>
-              </tr>`).join('')
-            : `<tr><td colspan="5" class="muted" style="padding:16px;text-align:center">Inga intäkter registrerade</td></tr>`
-          }</tbody>
+          <thead><tr><th>Beskrivning</th><th class="right">Belopp</th><th></th></tr></thead>
+          <tbody id="intaktBody">${intakter.map(iRad).join('') || ''}</tbody>
         </table>
+      </div>
+      <div style="padding:8px 16px 12px">
+        <button class="btn btn-sm btn-outline" id="btnNyIntakt">+ Lägg till rad</button>
       </div>
     </div>`;
 
-  document.getElementById('btnNyBudgetpost').addEventListener('click', () =>
-    modalBudgetpostForm(projektId, null, () => renderBudgetTab(projektId)));
-
-  document.getElementById('budgetBody').addEventListener('click', async e => {
-    const btn = e.target.closest('button[data-bid]');
-    if (!btn) return;
-    const bid = btn.dataset.bid;
-    if (btn.dataset.ba === 'edit') {
-      const b = budget.find(x => x.id == bid);
-      modalBudgetpostForm(projektId, b, () => renderBudgetTab(projektId));
-    } else if (btn.dataset.ba === 'del') {
-      const ok = await confirm('Ta bort budgetpost', 'Ta bort denna budgetpost?');
-      if (!ok) return;
-      try {
-        await api('DELETE', `/projekt/${projektId}/budget/${bid}`);
-        toast('Borttagen', 'success');
-        renderBudgetTab(projektId);
-      } catch (e) { toast(e.message, 'error'); }
-    }
-  });
-
-  document.getElementById('btnNyKostnad').addEventListener('click', () =>
-    modalKostnadForm(projektId, null, () => renderBudgetTab(projektId)));
-
-  document.getElementById('kostnadBody').addEventListener('click', async e => {
-    const btn = e.target.closest('button[data-kid]');
-    if (!btn) return;
-    const kid = btn.dataset.kid;
-    if (btn.dataset.ka === 'edit') {
-      const k = kostnader.find(x => x.id == kid);
-      modalKostnadForm(projektId, k, () => renderBudgetTab(projektId));
-    } else if (btn.dataset.ka === 'del') {
-      const ok = await confirm('Ta bort kostnad', 'Ta bort denna kostnad?');
-      if (!ok) return;
-      try {
-        await api('DELETE', `/projekt/${projektId}/kostnad/${kid}`);
-        toast('Borttagen', 'success');
-        renderBudgetTab(projektId);
-      } catch (e) { toast(e.message, 'error'); }
-    }
-  });
-
-  document.getElementById('btnNyIntakt').addEventListener('click', () =>
-    modalIntaktForm(projektId, null, () => renderBudgetTab(projektId)));
-
-  document.getElementById('intaktBody').addEventListener('click', async e => {
-    const btn = e.target.closest('button[data-iid]');
-    if (!btn) return;
-    const iid = btn.dataset.iid;
-    if (btn.dataset.ia === 'edit') {
-      const i = intakter.find(x => x.id == iid);
-      modalIntaktForm(projektId, i, () => renderBudgetTab(projektId));
-    } else if (btn.dataset.ia === 'del') {
-      const ok = await confirm('Ta bort intäkt', 'Ta bort denna intäkt?');
-      if (!ok) return;
-      try {
-        await api('DELETE', `/projekt/${projektId}/intakt/${iid}`);
-        toast('Borttagen', 'success');
-        renderBudgetTab(projektId);
-      } catch (e) { toast(e.message, 'error'); }
-    }
-  });
-}
-
-// ----------------------------------------------------------------
-// MODAL: BUDGETPOST
-// ----------------------------------------------------------------
-function modalBudgetpostForm(projektId, existing, onDone) {
-  const d = existing || {};
-  const TYPER = ['Timmar', 'Material', 'UE', 'Avgifter', 'Resor'];
-  const typOpts = TYPER.map(t =>
-    `<option value="${t}" ${(d.budget_typ || '') === t ? 'selected' : ''}>${t}</option>`).join('');
-  Modal.open(
-    existing ? 'Redigera budgetpost' : 'Ny budgetpost',
-    `<form id="budgetpostForm">
-      <div class="form-row cols-2">
-        <div class="form-group">
-          <label class="form-label">Typ <span class="req">*</span></label>
-          <select name="budget_typ" class="form-control" required>${typOpts}</select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Budgeterat belopp (kr) <span class="req">*</span></label>
-          <input type="number" name="budgeterat_belopp" class="form-control"
-            value="${d.budgeterat_belopp || ''}" min="0" step="1" required>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Beskrivning</label>
-        <input name="beskrivning" class="form-control" value="${escHtml(d.beskrivning || '')}">
-      </div>
-    </form>`,
-    `<button class="btn btn-navy" id="sparaBudgetpost">${existing ? 'Spara' : 'Lägg till'}</button>
-     <button class="btn btn-secondary" id="avbrytBudgetpost">Avbryt</button>`
-  );
-  document.getElementById('avbrytBudgetpost').addEventListener('click', Modal.close);
-  document.getElementById('sparaBudgetpost').addEventListener('click', async () => {
-    const f = document.getElementById('budgetpostForm');
-    if (!f.reportValidity()) return;
-    const body = Object.fromEntries(new FormData(f).entries());
-    body.budgeterat_belopp = parseFloat(body.budgeterat_belopp) || 0;
-    try {
-      if (existing) {
-        await api('PUT', `/projekt/${projektId}/budget/${existing.id}`, body);
-        toast('Budgetpost sparad', 'success');
-      } else {
-        await api('POST', `/projekt/${projektId}/budget`, body);
-        toast('Budgetpost tillagd', 'success');
+  // ---- Inline-redigering: generisk hjälpfunktion ----
+  function aktiveraInlineEdit(tbody, cellKlass, findFn, apiPath, lokaltArr) {
+    tbody.addEventListener('click', async e => {
+      // Ta bort
+      const delBtn = e.target.closest('button[data-kdel], button[data-idel]');
+      if (delBtn) {
+        const rid = delBtn.dataset.kdel || delBtn.dataset.idel;
+        const ok  = await confirm('Ta bort rad', 'Ta bort denna rad?');
+        if (!ok) return;
+        try {
+          await api('DELETE', apiPath(rid));
+          const idx = lokaltArr.findIndex(x => x.id == rid);
+          if (idx > -1) lokaltArr.splice(idx, 1);
+          delBtn.closest('tr').remove();
+          uppdateraSummering();
+        } catch (err) { toast(err.message, 'error'); }
+        return;
       }
-      Modal.close();
-      if (onDone) onDone();
-    } catch (e) { toast(e.message, 'error'); }
-  });
-}
 
-// ----------------------------------------------------------------
-// MODAL: KOSTNAD
-// ----------------------------------------------------------------
-function modalKostnadForm(projektId, existing, onDone) {
-  const d = existing || {};
-  const TYPER = ['Timmar', 'Material', 'UE', 'Avgifter', 'Resor'];
-  const typOpts = TYPER.map(t =>
-    `<option value="${t}" ${(d.budget_typ || '') === t ? 'selected' : ''}>${t}</option>`).join('');
-  Modal.open(
-    existing ? 'Redigera kostnad' : 'Ny kostnad',
-    `<form id="kostnadForm">
-      <div class="form-row cols-2">
-        <div class="form-group">
-          <label class="form-label">Datum</label>
-          <input type="date" name="datum" class="form-control" value="${d.datum || ''}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Typ <span class="req">*</span></label>
-          <select name="budget_typ" class="form-control" required>${typOpts}</select>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Beskrivning</label>
-        <input name="beskrivning" class="form-control" value="${escHtml(d.beskrivning || '')}">
-      </div>
-      <div class="form-row cols-2">
-        <div class="form-group">
-          <label class="form-label">Leverantör</label>
-          <input name="leverantor" class="form-control" value="${escHtml(d.leverantor || '')}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Faktura nr</label>
-          <input name="faktura_nr" class="form-control" value="${escHtml(d.faktura_nr || '')}">
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Belopp (kr) <span class="req">*</span></label>
-        <input type="number" name="belopp" class="form-control"
-          value="${d.belopp || ''}" min="0" step="1" required>
-      </div>
-    </form>`,
-    `<button class="btn btn-navy" id="sparaKostnad">${existing ? 'Spara' : 'Lägg till'}</button>
-     <button class="btn btn-secondary" id="avbrytKostnad">Avbryt</button>`
-  );
-  document.getElementById('avbrytKostnad').addEventListener('click', Modal.close);
-  document.getElementById('sparaKostnad').addEventListener('click', async () => {
-    const f = document.getElementById('kostnadForm');
-    if (!f.reportValidity()) return;
-    const body = Object.fromEntries(new FormData(f).entries());
-    body.belopp = parseFloat(body.belopp) || 0;
-    try {
-      if (existing) {
-        await api('PUT', `/projekt/${projektId}/kostnad/${existing.id}`, body);
-        toast('Kostnad sparad', 'success');
-      } else {
-        await api('POST', `/projekt/${projektId}/kostnad`, body);
-        toast('Kostnad tillagd', 'success');
-      }
-      Modal.close();
-      if (onDone) onDone();
-    } catch (e) { toast(e.message, 'error'); }
-  });
-}
+      // Klicka på cell → inline input
+      const cell = e.target.closest('.' + cellKlass);
+      if (!cell || cell.querySelector('input')) return;
+      const field    = cell.dataset.field;
+      const rid      = cell.dataset.kid || cell.dataset.iid;
+      const isBelopp = field === 'belopp';
+      const obj      = findFn(rid);
+      const curVal   = isBelopp ? (obj ? obj.belopp : 0) : cell.textContent.trim();
 
-// ----------------------------------------------------------------
-// MODAL: INTÄKT
-// ----------------------------------------------------------------
-function modalIntaktForm(projektId, existing, onDone) {
-  const d = existing || {};
-  Modal.open(
-    existing ? 'Redigera intäkt' : 'Ny intäkt',
-    `<form id="intaktForm">
-      <div class="form-row cols-2">
-        <div class="form-group">
-          <label class="form-label">Datum</label>
-          <input type="date" name="datum" class="form-control" value="${d.datum || ''}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Faktura nr</label>
-          <input name="faktura_nr" class="form-control" value="${escHtml(d.faktura_nr || '')}">
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Beskrivning</label>
-        <input name="beskrivning" class="form-control" value="${escHtml(d.beskrivning || '')}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Belopp (kr) <span class="req">*</span></label>
-        <input type="number" name="belopp" class="form-control"
-          value="${d.belopp || ''}" min="0" step="1" required>
-      </div>
-    </form>`,
-    `<button class="btn btn-navy" id="sparaIntakt">${existing ? 'Spara' : 'Lägg till'}</button>
-     <button class="btn btn-secondary" id="avbrytIntakt">Avbryt</button>`
-  );
-  document.getElementById('avbrytIntakt').addEventListener('click', Modal.close);
-  document.getElementById('sparaIntakt').addEventListener('click', async () => {
-    const f = document.getElementById('intaktForm');
-    if (!f.reportValidity()) return;
-    const body = Object.fromEntries(new FormData(f).entries());
-    body.belopp = parseFloat(body.belopp) || 0;
+      cell.innerHTML = `<input
+        type="${isBelopp ? 'number' : 'text'}"
+        value="${isBelopp ? (curVal || 0) : escHtml(curVal)}"
+        style="width:100%;background:transparent;border:none;border-bottom:1px solid var(--cyan);
+               color:inherit;font-size:inherit;padding:2px 4px;outline:none;
+               ${isBelopp ? 'text-align:right' : ''}"
+        min="0" step="1">`;
+      const inp = cell.querySelector('input');
+      inp.focus();
+      if (isBelopp) inp.select();
+
+      const spara = async () => {
+        inp.removeEventListener('blur', spara);
+        const nyVal = isBelopp ? (parseFloat(inp.value) || 0) : inp.value.trim();
+        try {
+          await api('PUT', apiPath(rid), { [field]: nyVal });
+          if (obj) obj[field] = nyVal;
+          cell.textContent = isBelopp ? formatKr(nyVal) : (nyVal || '');
+          if (isBelopp) uppdateraSummering();
+        } catch (err) {
+          toast(err.message, 'error');
+          cell.textContent = isBelopp ? formatKr(curVal) : (curVal || '');
+        }
+      };
+      inp.addEventListener('blur', spara);
+      inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } });
+    });
+  }
+
+  const kBody = el.querySelector('#kostnadBody');
+  const iBody = el.querySelector('#intaktBody');
+
+  aktiveraInlineEdit(kBody, 'ik-cell',
+    rid => kostnader.find(x => x.id == rid),
+    rid => `/projekt/${projektId}/kostnad/${rid}`,
+    kostnader);
+
+  aktiveraInlineEdit(iBody, 'ii-cell',
+    rid => intakter.find(x => x.id == rid),
+    rid => `/projekt/${projektId}/intakt/${rid}`,
+    intakter);
+
+  // Lägg till kostnad-rad
+  el.querySelector('#btnNyKostnad').addEventListener('click', async () => {
     try {
-      if (existing) {
-        await api('PUT', `/projekt/${projektId}/intakt/${existing.id}`, body);
-        toast('Intäkt sparad', 'success');
-      } else {
-        await api('POST', `/projekt/${projektId}/intakt`, body);
-        toast('Intäkt tillagd', 'success');
-      }
-      Modal.close();
-      if (onDone) onDone();
-    } catch (e) { toast(e.message, 'error'); }
+      const res = await api('POST', `/projekt/${projektId}/kostnad`,
+        { budget_typ: 'Timmar', beskrivning: '', belopp: 0 });
+      kostnader.push(res.kostnad);
+      kBody.insertAdjacentHTML('beforeend', kRad(res.kostnad));
+      uppdateraSummering();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  // Lägg till intäkt-rad
+  el.querySelector('#btnNyIntakt').addEventListener('click', async () => {
+    try {
+      const res = await api('POST', `/projekt/${projektId}/intakt`,
+        { beskrivning: '', belopp: 0 });
+      intakter.push(res.intakt);
+      iBody.insertAdjacentHTML('beforeend', iRad(res.intakt));
+      uppdateraSummering();
+    } catch (err) { toast(err.message, 'error'); }
   });
 }
 
