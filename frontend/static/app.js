@@ -3241,7 +3241,7 @@ function anslHandleFile(e, app) {
         id:        String(r['IB nr']||r['IB_nr']||r['id']||`IMP-${i}`),
         namn:      r['Projektbenamning']||r['Projektbenämning']||r['namn']||'Okänt',
         kund:      r['Kund']||r['kund']||'–',
-        fas:       ANSL_FAS_MAP[r['Arbetsflöde']||r['fas']] || 'Tidig fas',
+        fas:       ANSL_FAS_MAP[(r['Arbetsflöde']||r['Arbetsflode']||r['fas']||'').toString().trim()] || 'Tidig fas',
         berStart:  fmt(r['Beredning Start']||r['berStart']),
         berSlut:   fmt(r['Beredning Slut']||r['berSlut']),
         montStart: fmt(r['Montage Start']||r['montStart']),
