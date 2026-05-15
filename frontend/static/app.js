@@ -3095,26 +3095,6 @@ function anslArendenHtml(p) {
 }
 
 // ---------- Analys-vy ----------
-function anslHeatmapHtml(p) {
-  const counts = Array(12).fill(0);
-  p.forEach(x => { if (x.montStart) counts[new Date(x.montStart).getMonth()]++; });
-  const max = Math.max(...counts, 1);
-  const months = ['Jan','Feb','Mar','Apr','Maj','Jun','Jul','Aug','Sep','Okt','Nov','Dec'];
-  const cells = months.map((m, i) => {
-    const n = counts[i];
-    const intensity = n / max;
-    const bg  = n === 0 ? 'var(--surface-2)' : `rgba(0,212,255,${0.12 + intensity * 0.75})`;
-    const num = n === 0 ? 'var(--surface-3)' : intensity > 0.55 ? 'var(--bg)' : 'var(--cyan)';
-    const lbl = n === 0 ? 'var(--text-muted)' : intensity > 0.55 ? 'rgba(4,13,30,.7)' : 'var(--text-muted)';
-    return `
-      <div style="background:${bg};border-radius:8px;padding:12px 6px;text-align:center">
-        <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:${lbl};margin-bottom:6px">${m}</div>
-        <div style="font-size:22px;font-weight:800;color:${num}">${n}</div>
-      </div>`;
-  }).join('');
-  return `<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">${cells}</div>`;
-}
-
 function anslCalendarHtml(p, year, month) {
   const startDates = {};
   p.forEach(x => {
@@ -3211,11 +3191,7 @@ function anslAnalysHtml(p) {
         ${anslPanelHtml('Nyckeltal',null,nyckeltal)}
       </div>
     </div>
-    ${anslPanelHtml('Montagestart per månad',null,anslHeatmapHtml(p))}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      ${anslPanelHtml('Kalender – montagestart',null,anslCalendarHtml(p,AnslState.calYear,AnslState.calMonth))}
-      <div></div>
-    </div>`;
+    ${anslPanelHtml('Kalender – montagestart',null,anslCalendarHtml(p,AnslState.calYear,AnslState.calMonth))}`;
 }
 
 // ---------- Drawer (sidopanel) ----------
