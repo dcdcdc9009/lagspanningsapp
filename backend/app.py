@@ -465,6 +465,183 @@ def uppdatera_checklistepunkt(pid, item_nr):
 
 
 # ============================================================
+# PROJEKT – BUDGET
+# ============================================================
+
+BUDGET_TYPER = ('material', 'arbete', 'UE', 'övrigt')
+
+
+@app.get('/api/projekt/<int:pid>/budget')
+def hamta_budget(pid):
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        budget    = rows_to_list(conn.execute(
+            "SELECT * FROM projekt_budget WHERE projekt_id=? ORDER BY skapad",
+            (pid,)).fetchall())
+        kostnader = rows_to_list(conn.execute(
+            "SELECT * FROM projekt_kostnad WHERE projekt_id=? ORDER BY datum DESC, skapad DESC",
+            (pid,)).fetchall())
+
+    total_budget  = sum(b['budgeterat_belopp'] for b in budget)
+    total_kostnad = sum(k['belopp'] for k in kostnader)
+    aterstar      = total_budget - total_kostnad
+    forbrukat_pct = round(100 * total_kostnad / total_budget) if total_budget else 0
+
+    per_typ = {t: {'budget': 0.0, 'kostnad': 0.0} for t in BUDGET_TYPER}
+    for b in budget:
+        t = b['budget_typ']
+        if t in per_typ:
+            per_typ[t]['budget'] += b['budgeterat_belopp']
+    for k in kostnader:
+        t = k['budget_typ']
+        if t in per_typ:
+            per_typ[t]['kostnad'] += k['belopp']
+
+    return jsonify({
+        'budget':    budget,
+        'kostnader': kostnader,
+        'summering': {
+            'total_budget':      total_budget,
+            'total_kostnad':     total_kostnad,
+            'återstår':          aterstar,
+            'förbrukat_procent': forbrukat_pct,
+            'per_typ':           per_typ,
+        },
+    })
+
+
+@app.post('/api/projekt/<int:pid>/budget')
+def skapa_budgetpost(pid):
+    d = request.get_json(silent=True) or {}
+    typ = (d.get('budget_typ') or '').strip()
+    if typ not in BUDGET_TYPER:
+        return fel(f'Ogiltig budget_typ. Välj: {", ".join(BUDGET_TYPER)}')
+    try:
+        belopp = float(d.get('budgeterat_belopp', 0))
+    except (TypeError, ValueError):
+        return fel('budgeterat_belopp måste vara ett tal.')
+    tidpunkt = nu()
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        cur = conn.execute(
+            "INSERT INTO projekt_budget (projekt_id, budget_typ, beskrivning, budgeterat_belopp, skapad)"
+            " VALUES (?,?,?,?,?)",
+            (pid, typ, (d.get('beskrivning') or '').strip() or None, belopp, tidpunkt))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM projekt_budget WHERE id=?", (cur.lastrowid,)).fetchone())
+    return jsonify({'budget': rad}), 201
+
+
+@app.put('/api/projekt/<int:pid>/budget/<int:bid>')
+def uppdatera_budgetpost(pid, bid):
+    with get_db() as conn:
+        bef = conn.execute(
+            "SELECT * FROM projekt_budget WHERE id=? AND projekt_id=?", (bid, pid)).fetchone()
+        if not bef: return fel('Budgetposten hittades inte.', 404)
+        d = request.get_json(silent=True) or {}
+        typ = (d.get('budget_typ') or bef['budget_typ']).strip()
+        if typ not in BUDGET_TYPER:
+            return fel('Ogiltig budget_typ.')
+        try:
+            belopp = float(d.get('budgeterat_belopp', bef['budgeterat_belopp']))
+        except (TypeError, ValueError):
+            return fel('budgeterat_belopp måste vara ett tal.')
+        conn.execute(
+            "UPDATE projekt_budget SET budget_typ=?, beskrivning=?, budgeterat_belopp=? WHERE id=?",
+            (typ, (d.get('beskrivning', bef['beskrivning']) or '').strip() or None, belopp, bid))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM projekt_budget WHERE id=?", (bid,)).fetchone())
+    return jsonify({'budget': rad})
+
+
+@app.delete('/api/projekt/<int:pid>/budget/<int:bid>')
+def ta_bort_budgetpost(pid, bid):
+    with get_db() as conn:
+        rad = conn.execute(
+            "SELECT id FROM projekt_budget WHERE id=? AND projekt_id=?", (bid, pid)).fetchone()
+        if not rad: return fel('Budgetposten hittades inte.', 404)
+        conn.execute("DELETE FROM projekt_budget WHERE id=?", (bid,))
+        conn.commit()
+    return jsonify({'meddelande': 'Budgetpost borttagen.'})
+
+
+@app.post('/api/projekt/<int:pid>/kostnad')
+def skapa_kostnad(pid):
+    d = request.get_json(silent=True) or {}
+    typ = (d.get('budget_typ') or '').strip()
+    if typ not in BUDGET_TYPER:
+        return fel(f'Ogiltig budget_typ. Välj: {", ".join(BUDGET_TYPER)}')
+    try:
+        belopp = float(d.get('belopp', 0))
+    except (TypeError, ValueError):
+        return fel('belopp måste vara ett tal.')
+    tidpunkt = nu()
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        cur = conn.execute(
+            "INSERT INTO projekt_kostnad "
+            "(projekt_id, budget_typ, beskrivning, leverantor, belopp, datum, faktura_nr, skapad)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            (pid, typ,
+             (d.get('beskrivning') or '').strip() or None,
+             (d.get('leverantor') or '').strip() or None,
+             belopp,
+             d.get('datum') or None,
+             (d.get('faktura_nr') or '').strip() or None,
+             tidpunkt))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM projekt_kostnad WHERE id=?", (cur.lastrowid,)).fetchone())
+    return jsonify({'kostnad': rad}), 201
+
+
+@app.put('/api/projekt/<int:pid>/kostnad/<int:kid>')
+def uppdatera_kostnad(pid, kid):
+    with get_db() as conn:
+        bef = conn.execute(
+            "SELECT * FROM projekt_kostnad WHERE id=? AND projekt_id=?", (kid, pid)).fetchone()
+        if not bef: return fel('Kostnaden hittades inte.', 404)
+        d = request.get_json(silent=True) or {}
+        typ = (d.get('budget_typ') or bef['budget_typ']).strip()
+        if typ not in BUDGET_TYPER:
+            return fel('Ogiltig budget_typ.')
+        try:
+            belopp = float(d.get('belopp', bef['belopp']))
+        except (TypeError, ValueError):
+            return fel('belopp måste vara ett tal.')
+        conn.execute(
+            "UPDATE projekt_kostnad SET budget_typ=?, beskrivning=?, leverantor=?,"
+            " belopp=?, datum=?, faktura_nr=? WHERE id=?",
+            (typ,
+             (d.get('beskrivning', bef['beskrivning']) or '').strip() or None,
+             (d.get('leverantor', bef['leverantor']) or '').strip() or None,
+             belopp,
+             d.get('datum', bef['datum']) or None,
+             (d.get('faktura_nr', bef['faktura_nr']) or '').strip() or None,
+             kid))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM projekt_kostnad WHERE id=?", (kid,)).fetchone())
+    return jsonify({'kostnad': rad})
+
+
+@app.delete('/api/projekt/<int:pid>/kostnad/<int:kid>')
+def ta_bort_kostnad(pid, kid):
+    with get_db() as conn:
+        rad = conn.execute(
+            "SELECT id FROM projekt_kostnad WHERE id=? AND projekt_id=?", (kid, pid)).fetchone()
+        if not rad: return fel('Kostnaden hittades inte.', 404)
+        conn.execute("DELETE FROM projekt_kostnad WHERE id=?", (kid,))
+        conn.commit()
+    return jsonify({'meddelande': 'Kostnad borttagen.'})
+
+
+# ============================================================
 # PROJEKT – FAS
 # ============================================================
 

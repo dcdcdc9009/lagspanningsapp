@@ -773,6 +773,31 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','22')")
         conn.commit()
 
+    if v < 23:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS projekt_budget (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id        INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+                budget_typ        TEXT NOT NULL,
+                beskrivning       TEXT,
+                budgeterat_belopp REAL NOT NULL DEFAULT 0,
+                skapad            DATETIME NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS projekt_kostnad (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+                budget_typ  TEXT NOT NULL,
+                beskrivning TEXT,
+                leverantor  TEXT,
+                belopp      REAL NOT NULL DEFAULT 0,
+                datum       DATE,
+                faktura_nr  TEXT,
+                skapad      DATETIME NOT NULL
+            );
+        """)
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','23')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -979,6 +1004,27 @@ def _create_tables(conn):
             utford      INTEGER NOT NULL DEFAULT 0,
             ej_relevant INTEGER NOT NULL DEFAULT 0,
             UNIQUE(projekt_id, item_nr)
+        );
+
+        CREATE TABLE IF NOT EXISTS projekt_budget (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id        INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+            budget_typ        TEXT NOT NULL,
+            beskrivning       TEXT,
+            budgeterat_belopp REAL NOT NULL DEFAULT 0,
+            skapad            DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS projekt_kostnad (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+            budget_typ  TEXT NOT NULL,
+            beskrivning TEXT,
+            leverantor  TEXT,
+            belopp      REAL NOT NULL DEFAULT 0,
+            datum       DATE,
+            faktura_nr  TEXT,
+            skapad      DATETIME NOT NULL
         );
     """)
 
