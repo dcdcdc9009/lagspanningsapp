@@ -2893,15 +2893,15 @@ const AnslState = {
 };
 
 // ---------- helpers ----------
-function anslSave() {
-  try { localStorage.setItem('ansl_projekt_v2', JSON.stringify(AnslState.projekt)); } catch {}
-}
-function anslLoad() {
-  if (AnslState.projekt) return;
+async function anslLoadFromApi() {
+  if (AnslState.projekt !== null) return;
   try {
-    const s = localStorage.getItem('ansl_projekt_v2');
-    AnslState.projekt = s ? JSON.parse(s) : ANSL_SAMPLE;
-  } catch { AnslState.projekt = ANSL_SAMPLE; }
+    const data = await api('GET', '/anslutning');
+    AnslState.projekt = data.projekt || [];
+  } catch(e) {
+    AnslState.projekt = [];
+    toast('Kunde inte hämta ärenden: ' + e.message, 'error');
+  }
 }
 const anslPD  = s => s ? new Date(s) : null;
 const anslFD  = s => {
@@ -3209,14 +3209,19 @@ function anslShowDrawer(projektId, app) {
   document.body.appendChild(ov);
   ov.addEventListener('click', e => { if (e.target===ov) ov.remove(); });
   ov.querySelector('#ansl-drawer-close').addEventListener('click', ()=>ov.remove());
-  ov.querySelector('#ansl-drawer-save').addEventListener('click', ()=>{
+  ov.querySelector('#ansl-drawer-save').addEventListener('click', async ()=>{
     const fas = ov.querySelector('#ansl-d-fas').value;
     const blk = ov.querySelector('#ansl-d-blk').value.trim() || null;
     const not = ov.querySelector('#ansl-d-not').value.trim();
     const idx = AnslState.projekt.findIndex(x=>x.id===projektId);
-    if (idx>-1) { AnslState.projekt[idx]={...AnslState.projekt[idx],fas,blockering:blk,notat:not}; anslSave(); }
-    ov.remove();
-    anslRenderContent(app);
+    try {
+      await api('PUT', '/anslutning/' + encodeURIComponent(projektId), {fas, blockering: blk, notat: not});
+      if (idx>-1) { AnslState.projekt[idx]={...AnslState.projekt[idx],fas,blockering:blk,notat:not}; }
+      ov.remove();
+      anslRenderContent(app);
+    } catch(e) {
+      toast('Kunde inte spara: ' + e.message, 'error');
+    }
   });
 }
 
@@ -3226,7 +3231,7 @@ function anslHandleFile(e, app) {
   if (!file) return;
   if (typeof XLSX === 'undefined') { toast('SheetJS saknas – kontrollera internetanslutningen.','error'); return; }
   const reader = new FileReader();
-  reader.onload = ev => {
+  reader.onload = async ev => {
     try {
       const wb = XLSX.read(ev.target.result,{type:'binary',cellDates:true});
       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -3250,21 +3255,19 @@ function anslHandleFile(e, app) {
         blockering:r['blockering']||null,
         notat:     r['notat']||'',
       }));
+      await api('POST', '/anslutning/import', mapped);
       AnslState.projekt = mapped;
-      anslSave();
       toast(`${mapped.length} ärenden importerade`,'success');
       renderAnslutning(app);
-    } catch(err) { toast('Kunde inte läsa filen: '+err.message,'error'); }
+    } catch(err) { toast('Kunde inte importera filen: '+err.message,'error'); }
   };
   reader.readAsBinaryString(file);
   e.target.value='';
 }
 
 // ---------- Huvud-renderer ----------
-function renderAnslutning(app) {
+async function renderAnslutning(app) {
   document.getElementById('ansl-drawer-overlay')?.remove();
-  anslLoad();
-  const p = AnslState.projekt;
   const tabs = [['oversikt','Översikt'],['arenden','Ärenden'],['analys','Analys']];
   app.innerHTML = `
     <div style="background:var(--bg);min-height:100%;color:var(--text);font-family:var(--font)">
@@ -3274,11 +3277,13 @@ function renderAnslutning(app) {
             <button data-ansl-tab="${id}" style="padding:12px 16px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;cursor:pointer;background:none;border:none;border-bottom:2px solid ${AnslState.view===id?'var(--cyan)':'transparent'};color:${AnslState.view===id?'var(--cyan)':'var(--text-muted)'};transition:all .15s">${lbl}</button>`).join('')}
         </div>
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0">
-          <span style="font-size:11px;color:var(--text-muted);font-family:monospace">${p.length} ärenden</span>
+          <span id="ansl-count" style="font-size:11px;color:var(--text-muted);font-family:monospace">Laddar...</span>
           <button id="ansl-import-btn" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid var(--cyan-d);background:transparent;color:var(--cyan);font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.03em">↑ Importera Excel</button>
         </div>
       </div>
-      <div id="ansl-content" style="padding:24px;display:flex;flex-direction:column;gap:20px"></div>
+      <div id="ansl-content" style="padding:24px;display:flex;flex-direction:column;gap:20px">
+        <div style="text-align:center;padding:40px;color:var(--text-muted);font-size:13px">Laddar ärenden...</div>
+      </div>
       <input type="file" id="ansl-file-input" accept=".xlsx,.xls" style="display:none">
     </div>`;
 
@@ -3287,6 +3292,11 @@ function renderAnslutning(app) {
   });
   app.querySelector('#ansl-import-btn').addEventListener('click',()=>app.querySelector('#ansl-file-input').click());
   app.querySelector('#ansl-file-input').addEventListener('change',e=>anslHandleFile(e,app));
+
+  await anslLoadFromApi();
+
+  const countEl = app.querySelector('#ansl-count');
+  if (countEl) countEl.textContent = `${AnslState.projekt.length} ärenden`;
   anslRenderContent(app);
 }
 

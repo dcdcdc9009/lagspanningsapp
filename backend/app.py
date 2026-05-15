@@ -468,7 +468,7 @@ def uppdatera_checklistepunkt(pid, item_nr):
 # PROJEKT – BUDGET
 # ============================================================
 
-BUDGET_TYPER = ('material', 'arbete', 'UE', 'övrigt')
+BUDGET_TYPER = ('Timmar', 'Material', 'UE', 'Avgifter', 'Resor')
 
 
 @app.get('/api/projekt/<int:pid>/budget')
@@ -482,11 +482,16 @@ def hamta_budget(pid):
         kostnader = rows_to_list(conn.execute(
             "SELECT * FROM projekt_kostnad WHERE projekt_id=? ORDER BY datum DESC, skapad DESC",
             (pid,)).fetchall())
+        intakter  = rows_to_list(conn.execute(
+            "SELECT * FROM projekt_intakt WHERE projekt_id=? ORDER BY datum DESC, skapad DESC",
+            (pid,)).fetchall())
 
     total_budget  = sum(b['budgeterat_belopp'] for b in budget)
     total_kostnad = sum(k['belopp'] for k in kostnader)
+    total_intakt  = sum(i['belopp'] for i in intakter)
     aterstar      = total_budget - total_kostnad
     forbrukat_pct = round(100 * total_kostnad / total_budget) if total_budget else 0
+    resultat      = total_intakt - total_kostnad
 
     per_typ = {t: {'budget': 0.0, 'kostnad': 0.0} for t in BUDGET_TYPER}
     for b in budget:
@@ -501,10 +506,13 @@ def hamta_budget(pid):
     return jsonify({
         'budget':    budget,
         'kostnader': kostnader,
+        'intakter':  intakter,
         'summering': {
             'total_budget':      total_budget,
             'total_kostnad':     total_kostnad,
+            'total_intakt':      total_intakt,
             'återstår':          aterstar,
+            'resultat':          resultat,
             'förbrukat_procent': forbrukat_pct,
             'per_typ':           per_typ,
         },
@@ -639,6 +647,68 @@ def ta_bort_kostnad(pid, kid):
         conn.execute("DELETE FROM projekt_kostnad WHERE id=?", (kid,))
         conn.commit()
     return jsonify({'meddelande': 'Kostnad borttagen.'})
+
+
+@app.post('/api/projekt/<int:pid>/intakt')
+def skapa_intakt(pid):
+    d = request.get_json(silent=True) or {}
+    try:
+        belopp = float(d.get('belopp', 0))
+    except (TypeError, ValueError):
+        return fel('belopp måste vara ett tal.')
+    tidpunkt = nu()
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        cur = conn.execute(
+            "INSERT INTO projekt_intakt "
+            "(projekt_id, beskrivning, belopp, datum, faktura_nr, skapad)"
+            " VALUES (?,?,?,?,?,?)",
+            (pid,
+             (d.get('beskrivning') or '').strip() or None,
+             belopp,
+             d.get('datum') or None,
+             (d.get('faktura_nr') or '').strip() or None,
+             tidpunkt))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM projekt_intakt WHERE id=?", (cur.lastrowid,)).fetchone())
+    return jsonify({'intakt': rad}), 201
+
+
+@app.put('/api/projekt/<int:pid>/intakt/<int:iid>')
+def uppdatera_intakt(pid, iid):
+    with get_db() as conn:
+        bef = conn.execute(
+            "SELECT * FROM projekt_intakt WHERE id=? AND projekt_id=?", (iid, pid)).fetchone()
+        if not bef: return fel('Intäkten hittades inte.', 404)
+        d = request.get_json(silent=True) or {}
+        try:
+            belopp = float(d.get('belopp', bef['belopp']))
+        except (TypeError, ValueError):
+            return fel('belopp måste vara ett tal.')
+        conn.execute(
+            "UPDATE projekt_intakt SET beskrivning=?, belopp=?, datum=?, faktura_nr=? WHERE id=?",
+            ((d.get('beskrivning', bef['beskrivning']) or '').strip() or None,
+             belopp,
+             d.get('datum', bef['datum']) or None,
+             (d.get('faktura_nr', bef['faktura_nr']) or '').strip() or None,
+             iid))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM projekt_intakt WHERE id=?", (iid,)).fetchone())
+    return jsonify({'intakt': rad})
+
+
+@app.delete('/api/projekt/<int:pid>/intakt/<int:iid>')
+def ta_bort_intakt(pid, iid):
+    with get_db() as conn:
+        rad = conn.execute(
+            "SELECT id FROM projekt_intakt WHERE id=? AND projekt_id=?", (iid, pid)).fetchone()
+        if not rad: return fel('Intäkten hittades inte.', 404)
+        conn.execute("DELETE FROM projekt_intakt WHERE id=?", (iid,))
+        conn.commit()
+    return jsonify({'meddelande': 'Intäkt borttagen.'})
 
 
 # ============================================================
@@ -1729,6 +1799,73 @@ def konstruktioner_materiallista_excel():
     return Response(xlsx,
                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
+
+
+# ============================================================
+# ANSLUTNING (Analys-fliken)
+# ============================================================
+
+@app.get('/api/anslutning')
+def hamta_anslutning():
+    with get_db() as conn:
+        rader = rows_to_list(conn.execute(
+            "SELECT * FROM anslutning_projekt ORDER BY skapad"
+        ).fetchall())
+    return jsonify({'projekt': rader})
+
+
+@app.post('/api/anslutning/import')
+def importera_anslutning():
+    items = request.get_json(silent=True)
+    if not isinstance(items, list):
+        return fel('Förväntade en lista av ärenden.')
+    tidpunkt = nu()
+    with get_db() as conn:
+        conn.execute("DELETE FROM anslutning_projekt")
+        for item in items:
+            pid = str(item.get('id') or '').strip()
+            if not pid:
+                continue
+            conn.execute(
+                "INSERT OR REPLACE INTO anslutning_projekt "
+                "(id,namn,kund,fas,berStart,berSlut,montStart,montSlut,driftDat,blockering,notat,skapad)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (pid,
+                 str(item.get('namn') or ''),
+                 str(item.get('kund') or ''),
+                 str(item.get('fas') or 'Tidig fas'),
+                 item.get('berStart') or None,
+                 item.get('berSlut') or None,
+                 item.get('montStart') or None,
+                 item.get('montSlut') or None,
+                 item.get('driftDat') or None,
+                 item.get('blockering') or None,
+                 str(item.get('notat') or ''),
+                 tidpunkt))
+        conn.commit()
+    return jsonify({'meddelande': f'{len(items)} ärenden importerade.'})
+
+
+@app.put('/api/anslutning/<string:pid>')
+def uppdatera_anslutning(pid):
+    with get_db() as conn:
+        bef = conn.execute(
+            "SELECT * FROM anslutning_projekt WHERE id=?", (pid,)
+        ).fetchone()
+        if not bef:
+            return fel('Ärendet hittades inte.', 404)
+        d = request.get_json(silent=True) or {}
+        conn.execute(
+            "UPDATE anslutning_projekt SET fas=?,blockering=?,notat=? WHERE id=?",
+            (str(d.get('fas') or bef['fas']),
+             d.get('blockering') or None,
+             str(d.get('notat') or ''),
+             pid))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM anslutning_projekt WHERE id=?", (pid,)
+        ).fetchone())
+    return jsonify({'projekt': rad})
 
 
 # ============================================================

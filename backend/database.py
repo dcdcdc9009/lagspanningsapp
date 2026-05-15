@@ -798,6 +798,41 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','23')")
         conn.commit()
 
+    if v < 24:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS projekt_intakt (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+                beskrivning TEXT,
+                belopp      REAL NOT NULL DEFAULT 0,
+                datum       DATE,
+                faktura_nr  TEXT,
+                skapad      DATETIME NOT NULL
+            );
+        """)
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','24')")
+        conn.commit()
+
+    if v < 25:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS anslutning_projekt (
+                id         TEXT PRIMARY KEY,
+                namn       TEXT NOT NULL DEFAULT '',
+                kund       TEXT DEFAULT '',
+                fas        TEXT NOT NULL DEFAULT 'Tidig fas',
+                berStart   DATE,
+                berSlut    DATE,
+                montStart  DATE,
+                montSlut   DATE,
+                driftDat   DATE,
+                blockering TEXT,
+                notat      TEXT DEFAULT '',
+                skapad     DATETIME NOT NULL
+            );
+        """)
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','25')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -1025,6 +1060,31 @@ def _create_tables(conn):
             datum       DATE,
             faktura_nr  TEXT,
             skapad      DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS projekt_intakt (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id  INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+            beskrivning TEXT,
+            belopp      REAL NOT NULL DEFAULT 0,
+            datum       DATE,
+            faktura_nr  TEXT,
+            skapad      DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS anslutning_projekt (
+            id         TEXT PRIMARY KEY,
+            namn       TEXT NOT NULL DEFAULT '',
+            kund       TEXT DEFAULT '',
+            fas        TEXT NOT NULL DEFAULT 'Tidig fas',
+            berStart   DATE,
+            berSlut    DATE,
+            montStart  DATE,
+            montSlut   DATE,
+            driftDat   DATE,
+            blockering TEXT,
+            notat      TEXT DEFAULT '',
+            skapad     DATETIME NOT NULL
         );
     """)
 
