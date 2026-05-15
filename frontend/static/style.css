@@ -1323,3 +1323,10 @@ hr.divider   { border: none; border-top: 1px solid var(--border); margin: 16px 0
 .ck-lbl-ejrel  input { accent-color: var(--text-muted); }
 .ck-cb { width: 13px; height: 13px; cursor: pointer; flex-shrink: 0; }
 
+/* Analys – snygg scrollbar för riskärendelistan */
+.ansl-scroll { overflow-y: auto; }
+.ansl-scroll::-webkit-scrollbar { width: 4px; }
+.ansl-scroll::-webkit-scrollbar-track { background: transparent; }
+.ansl-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.ansl-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+

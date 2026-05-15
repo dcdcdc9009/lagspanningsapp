@@ -2983,7 +2983,7 @@ function anslRiskListHtml(p) {
         ${dEl}
       </div>`;
   }).join('');
-  return `<div style="max-height:320px;overflow-y:auto">${items}</div>`;
+  return `<div class="ansl-scroll" style="max-height:300px;padding-right:6px">${items}</div>`;
 }
 
 function anslBarChartHtml(p) {
