@@ -747,7 +747,6 @@ async function renderProjektDetail(app, id) {
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="oversikt">Översikt</button>
-      <button class="tab-btn" data-tab="budget">Budget</button>
     </div>
     <div class="tab-pane active" id="pdTabOversikt">
     <div class="detail-layout">
@@ -787,7 +786,7 @@ async function renderProjektDetail(app, id) {
       </div>
     </div>
     </div>
-    <div class="tab-pane" id="pdTabBudget"></div>`;
+    `;
 
   function renderCk() {
     const ejRels = ejRelSet.size;
@@ -897,7 +896,6 @@ async function renderProjektDetail(app, id) {
       document.querySelectorAll('.tab-pane').forEach(tp => tp.classList.remove('active'));
       const tabId = 'pdTab' + btn.dataset.tab.charAt(0).toUpperCase() + btn.dataset.tab.slice(1);
       document.getElementById(tabId).classList.add('active');
-      if (btn.dataset.tab === 'budget') renderBudgetTab(id);
     });
   });
 }
@@ -979,208 +977,6 @@ function modalNyAktivitet(projektId, onDone) {
       Modal.close();
       if (onDone) onDone();
     } catch (e) { toast(e.message, 'error'); }
-  });
-}
-
-// ----------------------------------------------------------------
-// VIEW: BUDGET-FLIK (inline-redigering)
-// ----------------------------------------------------------------
-async function renderBudgetTab(projektId) {
-  const el = document.getElementById('pdTabBudget');
-  el.innerHTML = `<div style="padding:32px;text-align:center;color:var(--text-muted)">Laddar budget…</div>`;
-  let data;
-  try {
-    data = await api('GET', `/projekt/${projektId}/budget`);
-  } catch (e) {
-    el.innerHTML = `<p class="text-red" style="padding:24px">Fel: ${e.message}</p>`;
-    return;
-  }
-
-  const { kostnader, intakter } = data;
-
-  // Hjälpfunktion: rendera en kostnad-rad
-  function kRad(k) {
-    return `<tr data-kid="${k.id}">
-      <td class="ik-cell" data-field="beskrivning" data-kid="${k.id}" style="cursor:pointer">${escHtml(k.beskrivning || '')}</td>
-      <td class="ik-cell right" data-field="belopp" data-kid="${k.id}" style="cursor:pointer">${formatKr(k.belopp)}</td>
-      <td style="width:36px"><button class="btn btn-sm btn-danger" data-kdel="${k.id}">✕</button></td>
-    </tr>`;
-  }
-
-  // Hjälpfunktion: rendera en intäkt-rad
-  function iRad(i) {
-    return `<tr data-iid="${i.id}">
-      <td class="ii-cell" data-field="beskrivning" data-iid="${i.id}" style="cursor:pointer">${escHtml(i.beskrivning || '')}</td>
-      <td class="ii-cell right" data-field="belopp" data-iid="${i.id}" style="cursor:pointer">${formatKr(i.belopp)}</td>
-      <td style="width:36px"><button class="btn btn-sm btn-danger" data-idel="${i.id}">✕</button></td>
-    </tr>`;
-  }
-
-  // Beräkna och uppdatera summering-raden
-  function uppdateraSummering() {
-    const tk = kostnader.reduce((s, k) => s + (k.belopp || 0), 0);
-    const ti = intakter.reduce((s, i) => s + (i.belopp || 0), 0);
-    const res = ti - tk;
-    const pct = ti > 0 ? Math.round(100 * res / ti) : 0;
-    const fg  = res >= 0 ? 'var(--green)' : 'var(--red)';
-    el.querySelector('#sumTotKostnad').textContent = formatKr(tk);
-    el.querySelector('#sumTotIntakt').textContent  = formatKr(ti);
-    el.querySelector('#sumResultat').textContent   = formatKr(res);
-    el.querySelector('#sumResultat').style.color   = fg;
-    el.querySelector('#sumPct').textContent        = (pct > 0 ? '+' : '') + pct + '%';
-    el.querySelector('#sumPct').style.color        = fg;
-  }
-
-  // Beräkna startvärden
-  const tk0  = kostnader.reduce((s, k) => s + (k.belopp || 0), 0);
-  const ti0  = intakter.reduce((s, i) => s + (i.belopp || 0), 0);
-  const res0 = ti0 - tk0;
-  const pct0 = ti0 > 0 ? Math.round(100 * res0 / ti0) : 0;
-  const fg0  = res0 >= 0 ? 'var(--green)' : 'var(--red)';
-
-  el.innerHTML = `
-    <!-- Summering -->
-    <div class="card mb-2">
-      <div class="card-body" style="padding:16px">
-        <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
-          <div style="flex:1;min-width:140px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Total kostnad</div>
-            <div id="sumTotKostnad" style="font-size:22px;font-weight:700">${formatKr(tk0)}</div>
-          </div>
-          <div style="flex:1;min-width:140px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Total intäkt</div>
-            <div id="sumTotIntakt" style="font-size:22px;font-weight:700">${formatKr(ti0)}</div>
-          </div>
-          <div style="flex:1;min-width:140px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Resultat</div>
-            <div id="sumResultat" style="font-size:22px;font-weight:700;color:${fg0}">${formatKr(res0)}</div>
-          </div>
-          <div style="min-width:90px;text-align:right">
-            <div id="sumPct" style="font-size:32px;font-weight:700;color:${fg0}">${(pct0 > 0 ? '+' : '') + pct0}%</div>
-            <div style="font-size:11px;color:var(--text-muted)">marginal</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Kostnader -->
-    <div class="card mb-2">
-      <div class="card-header"><span class="card-title">Kostnader</span></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Beskrivning</th><th class="right">Belopp</th><th></th></tr></thead>
-          <tbody id="kostnadBody">${kostnader.map(kRad).join('') || ''}</tbody>
-        </table>
-      </div>
-      <div style="padding:8px 16px 12px">
-        <button class="btn btn-sm btn-outline" id="btnNyKostnad">+ Lägg till rad</button>
-      </div>
-    </div>
-
-    <!-- Projektintäkter -->
-    <div class="card">
-      <div class="card-header"><span class="card-title">Projektintäkter</span></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Beskrivning</th><th class="right">Belopp</th><th></th></tr></thead>
-          <tbody id="intaktBody">${intakter.map(iRad).join('') || ''}</tbody>
-        </table>
-      </div>
-      <div style="padding:8px 16px 12px">
-        <button class="btn btn-sm btn-outline" id="btnNyIntakt">+ Lägg till rad</button>
-      </div>
-    </div>`;
-
-  // ---- Inline-redigering: generisk hjälpfunktion ----
-  function aktiveraInlineEdit(tbody, cellKlass, findFn, apiPath, lokaltArr) {
-    tbody.addEventListener('click', async e => {
-      // Ta bort
-      const delBtn = e.target.closest('button[data-kdel], button[data-idel]');
-      if (delBtn) {
-        const rid = delBtn.dataset.kdel || delBtn.dataset.idel;
-        const ok  = await confirm('Ta bort rad', 'Ta bort denna rad?');
-        if (!ok) return;
-        try {
-          await api('DELETE', apiPath(rid));
-          const idx = lokaltArr.findIndex(x => x.id == rid);
-          if (idx > -1) lokaltArr.splice(idx, 1);
-          delBtn.closest('tr').remove();
-          uppdateraSummering();
-        } catch (err) { toast(err.message, 'error'); }
-        return;
-      }
-
-      // Klicka på cell → inline input
-      const cell = e.target.closest('.' + cellKlass);
-      if (!cell || cell.querySelector('input')) return;
-      const field    = cell.dataset.field;
-      const rid      = cell.dataset.kid || cell.dataset.iid;
-      const isBelopp = field === 'belopp';
-      const obj      = findFn(rid);
-      const curVal   = isBelopp ? (obj ? obj.belopp : 0) : cell.textContent.trim();
-
-      cell.innerHTML = `<input
-        type="${isBelopp ? 'number' : 'text'}"
-        value="${isBelopp ? (curVal || 0) : escHtml(curVal)}"
-        style="width:100%;background:transparent;border:none;border-bottom:1px solid var(--cyan);
-               color:inherit;font-size:inherit;padding:2px 4px;outline:none;
-               ${isBelopp ? 'text-align:right' : ''}"
-        min="0" step="1">`;
-      const inp = cell.querySelector('input');
-      inp.focus();
-      if (isBelopp) inp.select();
-
-      const spara = async () => {
-        inp.removeEventListener('blur', spara);
-        const nyVal = isBelopp ? (parseFloat(inp.value) || 0) : inp.value.trim();
-        try {
-          await api('PUT', apiPath(rid), { [field]: nyVal });
-          if (obj) obj[field] = nyVal;
-          cell.textContent = isBelopp ? formatKr(nyVal) : (nyVal || '');
-          if (isBelopp) uppdateraSummering();
-        } catch (err) {
-          toast(err.message, 'error');
-          cell.textContent = isBelopp ? formatKr(curVal) : (curVal || '');
-        }
-      };
-      inp.addEventListener('blur', spara);
-      inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } });
-    });
-  }
-
-  const kBody = el.querySelector('#kostnadBody');
-  const iBody = el.querySelector('#intaktBody');
-
-  aktiveraInlineEdit(kBody, 'ik-cell',
-    rid => kostnader.find(x => x.id == rid),
-    rid => `/projekt/${projektId}/kostnad/${rid}`,
-    kostnader);
-
-  aktiveraInlineEdit(iBody, 'ii-cell',
-    rid => intakter.find(x => x.id == rid),
-    rid => `/projekt/${projektId}/intakt/${rid}`,
-    intakter);
-
-  // Lägg till kostnad-rad
-  el.querySelector('#btnNyKostnad').addEventListener('click', async () => {
-    try {
-      const res = await api('POST', `/projekt/${projektId}/kostnad`,
-        { budget_typ: 'Timmar', beskrivning: '', belopp: 0 });
-      kostnader.push(res.kostnad);
-      kBody.insertAdjacentHTML('beforeend', kRad(res.kostnad));
-      uppdateraSummering();
-    } catch (err) { toast(err.message, 'error'); }
-  });
-
-  // Lägg till intäkt-rad
-  el.querySelector('#btnNyIntakt').addEventListener('click', async () => {
-    try {
-      const res = await api('POST', `/projekt/${projektId}/intakt`,
-        { beskrivning: '', belopp: 0 });
-      intakter.push(res.intakt);
-      iBody.insertAdjacentHTML('beforeend', iRad(res.intakt));
-      uppdateraSummering();
-    } catch (err) { toast(err.message, 'error'); }
   });
 }
 
