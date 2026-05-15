@@ -278,14 +278,14 @@ async function renderProjekt(app) {
         ${S.beredare.map(b => `<option>${escHtml(b.namn)}</option>`).join('')}
       </select>
       <div class="pk-toggle">
-        <button class="pk-tb active" id="pkTKort" title="Kortvyn">▦ Kort</button>
-        <button class="pk-tb" id="pkTLista" title="Listvy">☰ Lista</button>
+        <button class="pk-tb" id="pkTKort" title="Kortvyn">▦ Kort</button>
+        <button class="pk-tb active" id="pkTLista" title="Listvy">☰ Lista</button>
       </div>
     </div>
 
     <div id="pkContent"></div>`;
 
-  let viewMode = 'kort';
+  let viewMode = 'lista';
 
   function updateBanner() {
     const tot = S.projekt.length;
