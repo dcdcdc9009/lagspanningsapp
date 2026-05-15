@@ -2890,6 +2890,8 @@ const AnslState = {
   filterFas: null,
   sortCol:   'montStart',
   sortDir:   1,
+  calYear:   new Date().getFullYear(),
+  calMonth:  new Date().getMonth(),
 };
 
 // ---------- helpers ----------
@@ -3093,6 +3095,66 @@ function anslArendenHtml(p) {
 }
 
 // ---------- Analys-vy ----------
+function anslHeatmapHtml(p) {
+  const counts = Array(12).fill(0);
+  p.forEach(x => { if (x.montStart) counts[new Date(x.montStart).getMonth()]++; });
+  const max = Math.max(...counts, 1);
+  const months = ['Jan','Feb','Mar','Apr','Maj','Jun','Jul','Aug','Sep','Okt','Nov','Dec'];
+  const cells = months.map((m, i) => {
+    const n = counts[i];
+    const intensity = n / max;
+    const bg  = n === 0 ? 'var(--surface-2)' : `rgba(0,212,255,${0.12 + intensity * 0.75})`;
+    const num = n === 0 ? 'var(--surface-3)' : intensity > 0.55 ? 'var(--bg)' : 'var(--cyan)';
+    const lbl = n === 0 ? 'var(--text-muted)' : intensity > 0.55 ? 'rgba(4,13,30,.7)' : 'var(--text-muted)';
+    return `
+      <div style="background:${bg};border-radius:8px;padding:12px 6px;text-align:center">
+        <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:${lbl};margin-bottom:6px">${m}</div>
+        <div style="font-size:22px;font-weight:800;color:${num}">${n}</div>
+      </div>`;
+  }).join('');
+  return `<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px">${cells}</div>`;
+}
+
+function anslCalendarHtml(p, year, month) {
+  const startDates = {};
+  p.forEach(x => {
+    if (x.montStart) {
+      const d = x.montStart.slice(0,10);
+      if (!startDates[d]) startDates[d] = [];
+      startDates[d].push(x.namn);
+    }
+  });
+  const MONTHS = ['Januari','Februari','Mars','April','Maj','Juni','Juli','Augusti','September','Oktober','November','December'];
+  const DAYS   = ['Mån','Tis','Ons','Tor','Fre','Lör','Sön'];
+  const today  = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const firstDay = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  let startDow = firstDay.getDay() - 1;
+  if (startDow < 0) startDow = 6;
+  const headerRow  = DAYS.map(d=>`<div style="text-align:center;font-size:10px;font-weight:600;letter-spacing:.06em;color:var(--text-muted);padding:4px 0">${d}</div>`).join('');
+  const emptyCells = Array(startDow).fill('<div></div>').join('');
+  const dayCells   = Array.from({length:daysInMonth},(_,i)=>{
+    const day = i+1;
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const starts  = startDates[dateStr];
+    const isToday = dateStr === todayStr;
+    const hasMont = starts && starts.length > 0;
+    const bg      = hasMont ? `rgba(0,212,255,${starts.length>1?0.28:0.16})` : isToday ? 'rgba(0,212,255,0.07)' : 'transparent';
+    const border  = (hasMont || isToday) ? '1px solid var(--cyan)' : '1px solid transparent';
+    const color   = hasMont ? 'var(--cyan)' : isToday ? 'var(--cyan)' : 'var(--text)';
+    const badge   = hasMont && starts.length > 1 ? `<div style="position:absolute;top:2px;right:3px;font-size:9px;font-family:monospace;color:var(--cyan);font-weight:700">${starts.length}</div>` : '';
+    return `<div style="position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:${bg};border:${border};border-radius:6px;font-size:12px;font-weight:${hasMont?700:400};color:${color}">${day}${badge}</div>`;
+  }).join('');
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <button data-ansl-cal="prev" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 12px;color:var(--text-muted);cursor:pointer;font-size:15px">‹</button>
+      <span style="font-size:13px;font-weight:600;color:var(--text-strong)">${MONTHS[month]} ${year}</span>
+      <button data-ansl-cal="next" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 12px;color:var(--text-muted);cursor:pointer;font-size:15px">›</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${headerRow}${emptyCells}${dayCells}</div>`;
+}
+
 function anslAnalysHtml(p) {
   const aktiva   = p.filter(x=>x.fas!=='Avslutat');
   const risker   = p.filter(anslRisk);
@@ -3148,6 +3210,11 @@ function anslAnalysHtml(p) {
           </div>`)}
         ${anslPanelHtml('Nyckeltal',null,nyckeltal)}
       </div>
+    </div>
+    ${anslPanelHtml('Montagestart per månad',null,anslHeatmapHtml(p))}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      ${anslPanelHtml('Kalender – montagestart',null,anslCalendarHtml(p,AnslState.calYear,AnslState.calMonth))}
+      <div></div>
     </div>`;
 }
 
@@ -3348,6 +3415,16 @@ function anslRenderContent(app) {
     case 'analys': {
       el.innerHTML = anslAnalysHtml(p);
       el.querySelectorAll('.ansl-blk-row').forEach(r=>r.addEventListener('click',()=>anslShowDrawer(r.dataset.pid,app)));
+      el.querySelectorAll('[data-ansl-cal]').forEach(btn=>btn.addEventListener('click',()=>{
+        if (btn.dataset.anslCal==='prev') {
+          AnslState.calMonth--;
+          if (AnslState.calMonth < 0) { AnslState.calMonth=11; AnslState.calYear--; }
+        } else {
+          AnslState.calMonth++;
+          if (AnslState.calMonth > 11) { AnslState.calMonth=0; AnslState.calYear++; }
+        }
+        anslRenderContent(app);
+      }));
       break;
     }
   }
