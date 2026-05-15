@@ -388,7 +388,7 @@ async function renderProjekt(app) {
     }
     c.innerHTML = `<div class="card"><div class="table-wrap"><table>
       <thead><tr>
-        <th>Projektnr</th><th>Projektnamn</th><th>Beredare</th><th>IB Nr</th><th>Tilldelat</th><th>Beredning</th><th>Fas</th>
+        <th>Projektnr</th><th>Projektnamn</th><th>Beredare</th><th>IB Nr</th><th>Beredning</th><th>Fas</th>
         ${GRUPPER.map(g => `<th style="min-width:90px">${escHtml(g.namn)}</th>`).join('')}
         <th style="min-width:80px">Totalt</th><th></th>
       </tr></thead>
@@ -411,7 +411,6 @@ async function renderProjekt(app) {
           <td><strong>${escHtml(p.projektnamn)}</strong></td>
           <td>${escHtml(p.beredare || '–')}</td>
           <td>${escHtml(p.ib_nummer || '–')}</td>
-          <td>${escHtml(p.tilldelat_till || '–')}</td>
           <td style="font-size:11px;white-space:nowrap">${escHtml(period)}</td>
           <td>${badgeFas(p.fas)}</td>
           ${grpCols}
