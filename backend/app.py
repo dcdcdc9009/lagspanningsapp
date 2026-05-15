@@ -1802,50 +1802,6 @@ def konstruktioner_materiallista_excel():
 
 
 # ============================================================
-# DASHBOARD
-# ============================================================
-
-@app.get('/api/dashboard')
-def hamta_dashboard():
-    from datetime import date, timedelta
-    idag  = date.today().isoformat()
-    om21  = (date.today() + timedelta(days=21)).isoformat()
-    om30  = (date.today() + timedelta(days=30)).isoformat()
-    with get_db() as conn:
-        projekt_stats = {
-            'totalt':   conn.execute("SELECT COUNT(*) FROM projekt").fetchone()[0],
-            'pagaende': conn.execute("SELECT COUNT(*) FROM projekt WHERE status='Pågående'").fetchone()[0],
-            'planerat': conn.execute("SELECT COUNT(*) FROM projekt WHERE status='Planerat'").fetchone()[0],
-            'klart':    conn.execute("SELECT COUNT(*) FROM projekt WHERE status='Klart'").fetchone()[0],
-        }
-        senaste_projekt = rows_to_list(conn.execute(
-            "SELECT id, projektnummer, projektnamn, beredare, status FROM projekt ORDER BY skapad DESC LIMIT 5"
-        ).fetchall())
-        oppna_tillstand = conn.execute(
-            "SELECT COUNT(*) FROM projekt_tillstand WHERE status='Inväntas'"
-        ).fetchone()[0]
-        kommande_montage = rows_to_list(conn.execute(
-            "SELECT id, namn, kund, fas, montStart FROM anslutning_projekt "
-            "WHERE montStart >= ? AND montStart <= ? AND driftDat IS NULL "
-            "AND fas NOT IN ('Avslutat','Drifttagning klar') ORDER BY montStart",
-            (idag, om30)
-        ).fetchall())
-        risk_arenden = conn.execute(
-            "SELECT COUNT(*) FROM anslutning_projekt WHERE driftDat IS NULL "
-            "AND fas NOT IN ('Avslutat','Drifttagning klar') "
-            "AND (blockering IS NOT NULL OR (montStart IS NOT NULL AND montStart <= ?))",
-            (om21,)
-        ).fetchone()[0]
-    return jsonify({
-        'projekt_stats':    projekt_stats,
-        'senaste_projekt':  senaste_projekt,
-        'oppna_tillstand':  oppna_tillstand,
-        'kommande_montage': kommande_montage,
-        'risk_arenden':     risk_arenden,
-    })
-
-
-# ============================================================
 # ANSLUTNING (Analys-fliken)
 # ============================================================
 
