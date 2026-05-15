@@ -2965,9 +2965,9 @@ function anslFasBarHtml(p) {
 }
 
 function anslRiskListHtml(p) {
-  const risks = p.filter(anslRisk).slice(0,8);
+  const risks = p.filter(anslRisk);
   if (!risks.length) return `<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:12px;font-family:monospace">Inga riskprojekt just nu ✓</div>`;
-  return risks.map(r => {
+  const items = risks.map(r => {
     const dtm = anslDTM(r);
     const dot = r.blockering ? 'var(--red)' : 'var(--amber)';
     const dEl = dtm !== null
@@ -2982,6 +2982,7 @@ function anslRiskListHtml(p) {
         ${dEl}
       </div>`;
   }).join('');
+  return `<div style="max-height:320px;overflow-y:auto">${items}</div>`;
 }
 
 function anslBarChartHtml(p) {
