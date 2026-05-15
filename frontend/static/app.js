@@ -420,7 +420,6 @@ async function renderProjekt(app) {
           </td>
           <td><div class="flex gap-1">
             <button class="btn btn-sm btn-navy" data-id="${p.id}" data-a="oppna">Öppna</button>
-            <button class="btn btn-sm btn-outline" data-id="${p.id}" data-a="red">✎</button>
             <button class="btn btn-sm btn-danger" data-id="${p.id}" data-a="del">✕</button>
           </div></td>
         </tr>`;
