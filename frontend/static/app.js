@@ -996,10 +996,11 @@ async function renderBudgetTab(projektId) {
     return;
   }
 
-  const { budget, kostnader, summering: s } = data;
-  const TYPER = ['material', 'arbete', 'UE', 'övrigt'];
-  const typFarg = { material: '#d97706', arbete: '#7c3aed', UE: '#10b981', övrigt: '#0891b2' };
+  const { budget, kostnader, intakter, summering: s } = data;
+  const TYPER = ['Timmar', 'Material', 'UE', 'Avgifter', 'Resor'];
+  const typFarg = { Timmar: '#7c3aed', Material: '#d97706', UE: '#10b981', Avgifter: '#0891b2', Resor: '#e11d48' };
   const pctFarg = s.förbrukat_procent > 90 ? 'var(--red)' : s.förbrukat_procent > 75 ? 'var(--amber)' : 'var(--green)';
+  const resultatFarg = s.resultat >= 0 ? 'var(--green)' : 'var(--red)';
 
   const typKortHtml = TYPER.map(t => {
     const pt = s.per_typ[t];
@@ -1062,6 +1063,14 @@ async function renderBudgetTab(projektId) {
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Återstår</div>
             <div style="font-size:24px;font-weight:700;color:${s['återstår'] < 0 ? 'var(--red)' : 'var(--green)'}">${formatKr(s['återstår'])}</div>
           </div>
+          <div style="flex:1;min-width:160px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Projektintäkter</div>
+            <div style="font-size:24px;font-weight:700;color:var(--green)">${formatKr(s.total_intakt)}</div>
+          </div>
+          <div style="flex:1;min-width:160px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.5px">Resultat</div>
+            <div style="font-size:24px;font-weight:700;color:${resultatFarg}">${formatKr(s.resultat)}</div>
+          </div>
           <div style="min-width:100px;text-align:right">
             <div style="font-size:32px;font-weight:700;color:${pctFarg}">${s.förbrukat_procent}%</div>
             <div style="font-size:11px;color:var(--text-muted)">förbrukat</div>
@@ -1087,7 +1096,7 @@ async function renderBudgetTab(projektId) {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card mb-2">
       <div class="card-header">
         <span class="card-title">Kostnader</span>
         <button class="btn btn-navy btn-sm" id="btnNyKostnad">+ Lägg till kostnad</button>
@@ -1099,6 +1108,34 @@ async function renderBudgetTab(projektId) {
             <th class="right">Belopp</th><th></th>
           </tr></thead>
           <tbody id="kostnadBody">${kostnadRadHtml}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Projektintäkter</span>
+        <button class="btn btn-navy btn-sm" id="btnNyIntakt">+ Lägg till intäkt</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Datum</th><th>Beskrivning</th><th>Faktura nr</th>
+            <th class="right">Belopp</th><th></th>
+          </tr></thead>
+          <tbody id="intaktBody">${intakter.length
+            ? intakter.map(i => `<tr>
+                <td>${escHtml(i.datum || '–')}</td>
+                <td>${escHtml(i.beskrivning || '–')}</td>
+                <td>${escHtml(i.faktura_nr || '–')}</td>
+                <td class="right">${formatKr(i.belopp)}</td>
+                <td><div class="flex gap-1">
+                  <button class="btn btn-sm btn-outline" data-iid="${i.id}" data-ia="edit">✎</button>
+                  <button class="btn btn-sm btn-danger"  data-iid="${i.id}" data-ia="del">✕</button>
+                </div></td>
+              </tr>`).join('')
+            : `<tr><td colspan="5" class="muted" style="padding:16px;text-align:center">Inga intäkter registrerade</td></tr>`
+          }</tbody>
         </table>
       </div>
     </div>`;
@@ -1144,6 +1181,27 @@ async function renderBudgetTab(projektId) {
       } catch (e) { toast(e.message, 'error'); }
     }
   });
+
+  document.getElementById('btnNyIntakt').addEventListener('click', () =>
+    modalIntaktForm(projektId, null, () => renderBudgetTab(projektId)));
+
+  document.getElementById('intaktBody').addEventListener('click', async e => {
+    const btn = e.target.closest('button[data-iid]');
+    if (!btn) return;
+    const iid = btn.dataset.iid;
+    if (btn.dataset.ia === 'edit') {
+      const i = intakter.find(x => x.id == iid);
+      modalIntaktForm(projektId, i, () => renderBudgetTab(projektId));
+    } else if (btn.dataset.ia === 'del') {
+      const ok = await confirm('Ta bort intäkt', 'Ta bort denna intäkt?');
+      if (!ok) return;
+      try {
+        await api('DELETE', `/projekt/${projektId}/intakt/${iid}`);
+        toast('Borttagen', 'success');
+        renderBudgetTab(projektId);
+      } catch (e) { toast(e.message, 'error'); }
+    }
+  });
 }
 
 // ----------------------------------------------------------------
@@ -1151,7 +1209,7 @@ async function renderBudgetTab(projektId) {
 // ----------------------------------------------------------------
 function modalBudgetpostForm(projektId, existing, onDone) {
   const d = existing || {};
-  const TYPER = ['material', 'arbete', 'UE', 'övrigt'];
+  const TYPER = ['Timmar', 'Material', 'UE', 'Avgifter', 'Resor'];
   const typOpts = TYPER.map(t =>
     `<option value="${t}" ${(d.budget_typ || '') === t ? 'selected' : ''}>${t}</option>`).join('');
   Modal.open(
@@ -1201,7 +1259,7 @@ function modalBudgetpostForm(projektId, existing, onDone) {
 // ----------------------------------------------------------------
 function modalKostnadForm(projektId, existing, onDone) {
   const d = existing || {};
-  const TYPER = ['material', 'arbete', 'UE', 'övrigt'];
+  const TYPER = ['Timmar', 'Material', 'UE', 'Avgifter', 'Resor'];
   const typOpts = TYPER.map(t =>
     `<option value="${t}" ${(d.budget_typ || '') === t ? 'selected' : ''}>${t}</option>`).join('');
   Modal.open(
@@ -1253,6 +1311,57 @@ function modalKostnadForm(projektId, existing, onDone) {
       } else {
         await api('POST', `/projekt/${projektId}/kostnad`, body);
         toast('Kostnad tillagd', 'success');
+      }
+      Modal.close();
+      if (onDone) onDone();
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+// ----------------------------------------------------------------
+// MODAL: INTÄKT
+// ----------------------------------------------------------------
+function modalIntaktForm(projektId, existing, onDone) {
+  const d = existing || {};
+  Modal.open(
+    existing ? 'Redigera intäkt' : 'Ny intäkt',
+    `<form id="intaktForm">
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Datum</label>
+          <input type="date" name="datum" class="form-control" value="${d.datum || ''}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Faktura nr</label>
+          <input name="faktura_nr" class="form-control" value="${escHtml(d.faktura_nr || '')}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Beskrivning</label>
+        <input name="beskrivning" class="form-control" value="${escHtml(d.beskrivning || '')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Belopp (kr) <span class="req">*</span></label>
+        <input type="number" name="belopp" class="form-control"
+          value="${d.belopp || ''}" min="0" step="1" required>
+      </div>
+    </form>`,
+    `<button class="btn btn-navy" id="sparaIntakt">${existing ? 'Spara' : 'Lägg till'}</button>
+     <button class="btn btn-secondary" id="avbrytIntakt">Avbryt</button>`
+  );
+  document.getElementById('avbrytIntakt').addEventListener('click', Modal.close);
+  document.getElementById('sparaIntakt').addEventListener('click', async () => {
+    const f = document.getElementById('intaktForm');
+    if (!f.reportValidity()) return;
+    const body = Object.fromEntries(new FormData(f).entries());
+    body.belopp = parseFloat(body.belopp) || 0;
+    try {
+      if (existing) {
+        await api('PUT', `/projekt/${projektId}/intakt/${existing.id}`, body);
+        toast('Intäkt sparad', 'success');
+      } else {
+        await api('POST', `/projekt/${projektId}/intakt`, body);
+        toast('Intäkt tillagd', 'success');
       }
       Modal.close();
       if (onDone) onDone();
