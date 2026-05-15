@@ -778,15 +778,15 @@ async function renderProjektDetail(app, id) {
     </div>`;
 
   function renderCk() {
-    const done   = ckSet.size;
     const ejRels = ejRelSet.size;
+    const done   = ckSet.size + ejRels;
     const pct    = Math.round(100 * done / CHECKLISTA.length);
     document.getElementById('ckBar').style.width = pct + '%';
     document.getElementById('ckProg').textContent =
       `${done}/${CHECKLISTA.length} utförda${ejRels ? ` · ${ejRels} ej relevant` : ''}`;
     document.getElementById('ckLista').innerHTML = GRUPPER.map(g => {
       const items = CHECKLISTA.filter(c => c.grupp === g.id);
-      const doneG = items.filter(c => ckSet.has(c.nr)).length;
+      const doneG = items.filter(c => ckSet.has(c.nr) || ejRelSet.has(c.nr)).length;
       return `<div class="ck-grupp">
         <div class="ck-grp-hdr" style="border-left-color:${g.color}">
           <span style="color:${g.color};font-weight:700">${escHtml(g.namn)}</span>

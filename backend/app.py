@@ -437,7 +437,7 @@ def hamta_checklista(pid):
         if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
             return fel('Projektet hittades inte.', 404)
         rader = rows_to_list(conn.execute(
-            "SELECT item_nr, utford FROM projekt_checklistor WHERE projekt_id=? ORDER BY item_nr",
+            "SELECT item_nr, utford, ej_relevant FROM projekt_checklistor WHERE projekt_id=? ORDER BY item_nr",
             (pid,)
         ).fetchall())
     return jsonify({'checklista': rader})
