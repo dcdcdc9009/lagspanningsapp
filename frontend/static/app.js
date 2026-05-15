@@ -2914,6 +2914,7 @@ const anslLT  = p => { const s=anslPD(p.berStart),e=anslPD(p.driftDat); return s
 const anslDTM = p => { const d=anslPD(p.montStart); return d?anslDD(new Date(),d):null; };
 const anslRisk = p => {
   if (p.fas==='Avslutat'||p.fas==='Drifttagning klar') return false;
+  if (p.driftDat) return false;
   const dtm = anslDTM(p);
   return (dtm!==null && dtm<21) || !!p.blockering;
 };
