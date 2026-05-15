@@ -102,6 +102,7 @@ function render(view, params = {}) {
   app.dataset.view = view;
   document.body.dataset.view = view;
   switch (view) {
+    case 'dashboard':       renderDashboard(app); break;
     case 'projekt':         renderProjekt(app); break;
     case 'projekt-detail':  renderProjektDetail(app, params.id); break;
     case 'artiklar':        renderArtiklar(app); break;
@@ -229,6 +230,91 @@ function rodFlaggHtml(fas, dagar) {
   const troskel = FAS_TROSKEL[fas];
   if (!troskel || dagar <= troskel) return '';
   return `<span class="rod-flagg" title="${dagar} dagar – gräns ${troskel}d">⚑ ${dagar}d</span>`;
+}
+
+// ----------------------------------------------------------------
+// VIEW: DASHBOARD (startsida)
+// ----------------------------------------------------------------
+async function renderDashboard(app) {
+  app.innerHTML = `<div style="padding:48px;text-align:center;color:var(--text-muted)">Laddar dashboard…</div>`;
+  let d;
+  try { d = await api('GET', '/dashboard'); }
+  catch(e) { app.innerHTML = `<div style="padding:48px;text-align:center;color:var(--red)">Kunde inte ladda dashboard: ${escHtml(e.message)}</div>`; return; }
+
+  const ps = d.projekt_stats;
+  const statusColor = s => s==='Pågående'?'var(--cyan)':s==='Klart'?'var(--green)':'var(--text-muted)';
+
+  const kpiCard = (label, value, accent, sub) => `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 22px;border-top:2px solid ${accent}">
+      <div style="font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">${label}</div>
+      <div style="font-size:36px;font-weight:800;color:var(--text-strong);line-height:1;margin-bottom:4px">${value}</div>
+      ${sub ? `<div style="font-size:11px;color:var(--text-muted);font-family:monospace">${sub}</div>` : ''}
+    </div>`;
+
+  const kpis = `
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px">
+      ${kpiCard('Totalt projekt', ps.totalt, 'var(--cyan)', '')}
+      ${kpiCard('Pågående', ps.pagaende, 'var(--cyan)', '')}
+      ${kpiCard('Planerade', ps.planerat, 'var(--text-muted)', '')}
+      ${kpiCard('Klara', ps.klart, 'var(--green)', '')}
+      ${kpiCard('Öppna tillstånd', d.oppna_tillstand, d.oppna_tillstand>0?'var(--amber)':'var(--green)', 'väntar på svar')}
+    </div>`;
+
+  const montageRows = d.kommande_montage.length === 0
+    ? `<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:12px;font-family:monospace">Inga montagestart kommande 30 dagar</div>`
+    : d.kommande_montage.map(x => {
+        const dt = x.montStart ? x.montStart.slice(5).replace('-','/') : '–';
+        const dtFull = x.montStart || '–';
+        const daysLeft = x.montStart ? Math.round((new Date(x.montStart)-new Date())/86400000) : null;
+        const dlColor = daysLeft!==null&&daysLeft<=7?'var(--red)':daysLeft<=14?'var(--amber)':'var(--cyan)';
+        return `
+          <div style="display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--border)">
+            <div style="font-size:13px;font-family:monospace;font-weight:700;color:${dlColor};flex-shrink:0;min-width:36px">${dt}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600;color:var(--text-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(x.namn)}</div>
+              <div style="font-size:11px;color:var(--text-muted);font-family:monospace">${escHtml(x.kund||'–')}</div>
+            </div>
+            ${daysLeft!==null?`<div style="font-size:11px;font-family:monospace;font-weight:600;color:${dlColor};flex-shrink:0">${daysLeft}d</div>`:''}
+          </div>`;
+      }).join('');
+
+  const projektRows = d.senaste_projekt.length === 0
+    ? `<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:12px;font-family:monospace">Inga projekt</div>`
+    : d.senaste_projekt.map(x => `
+        <div style="display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--border)">
+          <div style="font-size:11px;font-family:monospace;color:var(--text-muted);flex-shrink:0;min-width:60px">${escHtml(x.projektnummer)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:600;color:var(--text-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(x.projektnamn)}</div>
+            <div style="font-size:11px;color:var(--text-muted);font-family:monospace">${escHtml(x.beredare)}</div>
+          </div>
+          <div style="font-size:11px;font-family:monospace;font-weight:600;color:${statusColor(x.status)};flex-shrink:0">${escHtml(x.status)}</div>
+        </div>`).join('');
+
+  const panelHtml = (title, badge, content, badgeColor) => {
+    const b = badge!=null ? `<span style="font-size:10px;font-family:monospace;padding:3px 8px;border-radius:4px;background:var(--surface-3);color:${badgeColor||'var(--text-muted)'}">${badge}</span>` : '';
+    return `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)">
+          <span style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)">${title}</span>
+          ${b}
+        </div>
+        <div style="padding:16px 18px">${content}</div>
+      </div>`;
+  };
+
+  app.innerHTML = `
+    <div style="background:var(--bg);min-height:100%;color:var(--text);font-family:var(--font);padding:24px;display:flex;flex-direction:column;gap:20px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <h1 style="font-size:20px;font-weight:800;color:var(--text-strong);margin:0">Dashboard</h1>
+        <span style="font-size:12px;color:var(--text-muted);font-family:monospace">Sammanfattning av verksamheten</span>
+      </div>
+      ${kpis}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        ${panelHtml('Kommande montagestart', `${d.kommande_montage.length} st inom 30 dagar`, montageRows, d.kommande_montage.length>0?'var(--cyan)':null)}
+        ${panelHtml('Senaste projekt', null, projektRows)}
+      </div>
+      ${d.risk_arenden > 0 ? panelHtml('Riskärenden (Analys)', `${d.risk_arenden} st`, `<div style="font-size:13px;color:var(--text-muted)">Gå till <strong style="color:var(--cyan)">Analys</strong>-fliken för att se detaljer.</div>`, 'var(--red)') : ''}
+    </div>`;
 }
 
 // ----------------------------------------------------------------
