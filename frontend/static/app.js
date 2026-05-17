@@ -3172,7 +3172,7 @@ function anslAnalysHtml(p) {
   const risker   = p.filter(anslRisk);
   const blockerade = p.filter(x=>x.blockering);
   const driftklara = p.filter(x=>x.fas==='Drifttagning klar'||x.fas==='Avslutat');
-  const done     = p.filter(x=>x.fas==='Avslutat'||x.fas==='Drifttagning klar');
+  const done     = p.filter(x=>x.fas==='Avslutat'||x.fas==='Drifttagning klar'||!!x.driftDat);
   const withLT   = done.filter(x=>anslLT(x));
   const avgLT    = withLT.length ? Math.round(withLT.map(anslLT).reduce((a,b)=>a+b,0)/withLT.length) : '–';
 
