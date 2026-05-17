@@ -238,6 +238,9 @@ async function renderProjekt(app) {
   app.innerHTML = `<div class="text-muted" style="padding:48px;text-align:center">Laddar dashboard…</div>`;
   let checklistor = {};
   let kommandeMontage = [];
+  let anslProjekt = [];
+  let anslAktivaCount = 0, anslRiskerCount = 0, anslBlkCount = 0, anslDoneCount = 0;
+  let anslAvgLT = '–', anslNyaManed = 0, nyaDelta = 0;
   try {
     const [pr, ck, ansl] = await Promise.all([
       api('GET', '/projekt'),
@@ -254,6 +257,20 @@ async function renderProjekt(app) {
       const d = new Date(x.montStart);
       return d >= idag && d <= om30;
     }).sort((a,b)=>a.montStart.localeCompare(b.montStart));
+    anslProjekt = ansl.projekt || [];
+    anslAktivaCount = anslProjekt.filter(x=>x.fas!=='Avslutat').length;
+    anslRiskerCount = anslProjekt.filter(anslRisk).length;
+    anslBlkCount    = anslProjekt.filter(x=>x.blockering).length;
+    const anslDone  = anslProjekt.filter(x=>x.fas==='Avslutat'||x.fas==='Drifttagning klar'||!!x.driftDat);
+    anslDoneCount   = anslDone.length;
+    const withLT    = anslDone.filter(x=>anslLT(x));
+    anslAvgLT       = withLT.length ? Math.round(withLT.map(anslLT).reduce((a,b)=>a+b,0)/withLT.length) : '–';
+    const nowD      = new Date();
+    anslNyaManed    = anslProjekt.filter(x=>{ if(!x.berStart) return false; const d=new Date(x.berStart); return d.getFullYear()===nowD.getFullYear()&&d.getMonth()===nowD.getMonth(); }).length;
+    const prevMs    = new Date(nowD.getFullYear(),nowD.getMonth()-1,1);
+    const prevMe    = new Date(nowD.getFullYear(),nowD.getMonth(),0);
+    const anslForeg = anslProjekt.filter(x=>{ if(!x.berStart) return false; const d=new Date(x.berStart); return d>=prevMs&&d<=prevMe; }).length;
+    nyaDelta        = anslNyaManed - anslForeg;
   } catch (e) {
     app.innerHTML = `<p class="text-red" style="padding:24px">Fel: ${e.message}</p>`;
     return;
@@ -287,21 +304,38 @@ async function renderProjekt(app) {
       }).join('');
 
   app.innerHTML = `
+    <div class="pk-banner" style="align-items:flex-start;flex-direction:column;gap:16px">
+      <div class="pk-banner-title" style="position:relative;z-index:1">Projektöversikt</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;width:100%;position:relative;z-index:1">
+        ${anslKpiHtml('Ärenden totalt',anslProjekt.length,`${anslAktivaCount} aktiva`,undefined,'var(--cyan)')}
+        ${anslKpiHtml('Nya denna månad',anslNyaManed,'beställda denna månad',nyaDelta,'var(--blue)')}
+        ${anslKpiHtml('Riskärenden',anslRiskerCount,'< 21d eller blockerade',anslRiskerCount>3?1:-1,'var(--red)')}
+        ${anslKpiHtml('Blockerade',anslBlkCount,'väntar på åtgärd',undefined,'var(--amber)')}
+        ${anslKpiHtml('Avg. ledtid',anslAvgLT,`dagar (${anslDoneCount} avslutade)`,undefined,'var(--green)')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr min(360px,40%);gap:16px;width:100%;position:relative;z-index:1">
+        <div style="background:rgba(0,0,0,.25);border-radius:10px;border:1px solid rgba(0,212,255,.12);backdrop-filter:blur(4px);padding:14px 16px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(0,212,255,.6);margin-bottom:12px">Nya ärenden / månad</div>
+          ${anslBarChartHtml(anslProjekt)}
+        </div>
+        <div style="background:rgba(0,0,0,.30);border-radius:10px;border:1px solid rgba(0,212,255,.15);backdrop-filter:blur(6px)">
+          <div style="padding:11px 16px;border-bottom:1px solid rgba(0,212,255,.10);display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(0,212,255,.7)">Kommande montagestart</span>
+            <span style="font-size:10px;font-family:monospace;color:rgba(200,224,248,.4)">${kommandeMontage.length} st / 30 dagar</span>
+          </div>
+          <div class="ansl-scroll" style="padding:4px 16px;max-height:160px">${montageListHtml}</div>
+        </div>
+      </div>
+    </div>
+
     <div class="pk-banner" style="align-items:flex-start">
       <div class="pk-banner-left">
-        <div class="pk-banner-title">Projektöversikt</div>
+        <div class="pk-banner-title">Beredningsöversikt</div>
         <div class="pk-banner-sub" id="pkSub"></div>
         <div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:relative;z-index:1">
           <div class="pk-fas-stats" id="pkFasStat"></div>
           <button class="btn btn-primary btn-lg" id="btnNyttProjekt" style="flex-shrink:0">+ Nytt projekt</button>
         </div>
-      </div>
-      <div style="flex-shrink:0;min-width:300px;max-width:400px;background:rgba(0,0,0,.30);border-radius:10px;border:1px solid rgba(0,212,255,.15);backdrop-filter:blur(6px);position:relative;z-index:1">
-        <div style="padding:11px 16px;border-bottom:1px solid rgba(0,212,255,.10);display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(0,212,255,.7)">Kommande montagestart</span>
-          <span style="font-size:10px;font-family:monospace;color:rgba(200,224,248,.4)">${kommandeMontage.length} st / 30 dagar</span>
-        </div>
-        <div class="ansl-scroll" style="padding:4px 16px;max-height:220px">${montageListHtml}</div>
       </div>
     </div>
 
@@ -3390,18 +3424,10 @@ function anslRenderContent(app) {
       const withLT=done.filter(x=>anslLT(x));
       const avgLT=withLT.length?Math.round(withLT.map(anslLT).reduce((a,b)=>a+b,0)/withLT.length):'–';
       el.innerHTML=`
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
-          ${anslKpiHtml('Ärenden totalt',p.length,`${aktiva.length} aktiva`,4,'var(--cyan)')}
-          ${anslKpiHtml('Nya denna månad',4,'beställda senaste månaden',1,'var(--blue)')}
-          ${anslKpiHtml('Riskärenden',risker.length,'< 21d eller blockerade',risker.length>3?1:-1,'var(--red)')}
-          ${anslKpiHtml('Blockerade',blk.length,'väntar på åtgärd',undefined,'var(--amber)')}
-          ${anslKpiHtml('Avg. ledtid',avgLT,`dagar (${done.length} avslutade)`,undefined,'var(--green)')}
-        </div>
         ${anslPanelHtml('Fas-fördelning',`${p.length} ärenden`,anslFasBarHtml(p))}
         <div style="display:grid;grid-template-columns:1fr min(340px,100%);gap:16px">
           ${anslPanelHtml('Riskärenden — kräver action',`${risker.length} st`,anslRiskListHtml(p),'var(--red)')}
           <div style="display:flex;flex-direction:column;gap:16px">
-            ${anslPanelHtml('Nya ärenden / månad',null,anslBarChartHtml(p))}
             ${anslPanelHtml('Mönsteranalys',null,anslMonsterHtml(p))}
           </div>
         </div>`;
