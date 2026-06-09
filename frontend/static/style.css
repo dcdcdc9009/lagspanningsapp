@@ -24,7 +24,7 @@
   --blue-l:    rgba(59,130,246,.14);
   --text:      #c8e0f8;
   --text-strong:#e8f4ff;
-  --text-muted: #4a6a8a;
+  --text-muted: #7596b8;
   --border:    rgba(0,212,255,.12);
   --border-hi: rgba(0,212,255,.30);
   --gray-50:   #050e20;
@@ -64,7 +64,8 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background: rgba(4,13,30,.15);
+  /* Dämpa den livliga bakgrundsbilden kraftigt så text blir lättläst */
+  background: linear-gradient(rgba(4,13,30,.86), rgba(4,13,30,.78));
   z-index: 0;
   pointer-events: none;
 }
