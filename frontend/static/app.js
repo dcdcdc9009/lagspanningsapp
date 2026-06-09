@@ -301,14 +301,14 @@ async function renderProjekt(app) {
   const FAS_COLOR = { 'Beredning': '#d97706', 'Projektledning': '#7c3aed', 'Utförda': '#16a34a' };
 
   const montageListHtml = kommandeMontage.length === 0
-    ? `<div style="padding:16px 0;text-align:center;color:rgba(200,224,248,.4);font-size:11px;font-family:monospace">Inga montagestart inom 30 dagar</div>`
+    ? `<div style="padding:16px 0;text-align:center;color:rgba(42,36,64,.4);font-size:11px;font-family:monospace">Inga montagestart inom 30 dagar</div>`
     : kommandeMontage.map(x => {
         const dt = x.montStart.slice(5).replace('-','/');
         const daysLeft = Math.round((new Date(x.montStart)-new Date())/86400000);
-        const dlColor = daysLeft<=7?'var(--red)':daysLeft<=14?'var(--amber)':'rgba(0,212,255,.9)';
-        return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(0,212,255,.08)">
+        const dlColor = daysLeft<=7?'var(--red)':daysLeft<=14?'var(--amber)':'rgba(124,58,237,.9)';
+        return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(124,58,237,.08)">
           <div style="font-size:12px;font-family:monospace;font-weight:700;color:${dlColor};flex-shrink:0;min-width:34px">${dt}</div>
-          <div style="flex:1;min-width:0;font-size:11px;font-weight:600;color:rgba(200,224,248,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(x.namn)}</div>
+          <div style="flex:1;min-width:0;font-size:11px;font-weight:600;color:rgba(42,36,64,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(x.namn)}</div>
           <div style="font-size:11px;font-family:monospace;font-weight:700;color:${dlColor};flex-shrink:0">${daysLeft}d</div>
         </div>`;
       }).join('');
@@ -324,14 +324,14 @@ async function renderProjekt(app) {
         ${anslKpiHtml('Avg. ledtid',anslAvgLT,`dagar (${anslDoneCount} avslutade)`,undefined,'var(--green)')}
       </div>
       <div style="display:grid;grid-template-columns:1fr min(360px,40%);gap:16px;width:100%;position:relative;z-index:1">
-        <div style="background:rgba(0,0,0,.25);border-radius:10px;border:1px solid rgba(0,212,255,.12);backdrop-filter:blur(4px);padding:14px 16px">
-          <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(0,212,255,.6);margin-bottom:12px">Nya ärenden / månad</div>
+        <div style="background:rgba(124,58,237,.05);border-radius:10px;border:1px solid rgba(124,58,237,.12);backdrop-filter:blur(4px);padding:14px 16px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(124,58,237,.6);margin-bottom:12px">Nya ärenden / månad</div>
           ${anslBarChartHtml(anslProjekt)}
         </div>
-        <div style="background:rgba(0,0,0,.30);border-radius:10px;border:1px solid rgba(0,212,255,.15);backdrop-filter:blur(6px)">
-          <div style="padding:11px 16px;border-bottom:1px solid rgba(0,212,255,.10);display:flex;align-items:center;justify-content:space-between">
-            <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(0,212,255,.7)">Kommande montagestart</span>
-            <span style="font-size:10px;font-family:monospace;color:rgba(200,224,248,.4)">${kommandeMontage.length} st / 30 dagar</span>
+        <div style="background:rgba(124,58,237,.05);border-radius:10px;border:1px solid rgba(124,58,237,.15);backdrop-filter:blur(6px)">
+          <div style="padding:11px 16px;border-bottom:1px solid rgba(124,58,237,.10);display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(124,58,237,.7)">Kommande montagestart</span>
+            <span style="font-size:10px;font-family:monospace;color:rgba(42,36,64,.4)">${kommandeMontage.length} st / 30 dagar</span>
           </div>
           <div class="ansl-scroll" style="padding:4px 16px;max-height:160px">${montageListHtml}</div>
         </div>
@@ -503,7 +503,7 @@ async function renderProjekt(app) {
           <td>${badgeFas(p.fas)}</td>
           ${grpCols}
           <td>
-            <div style="font-size:12px;font-weight:700;color:#00d4ff">${pct}%</div>
+            <div style="font-size:12px;font-weight:700;color:#7c3aed">${pct}%</div>
             <div class="pm-prog" style="margin-top:3px"><div class="pm-prog-fill" style="width:${pct}%"></div></div>
           </td>
           <td><div class="flex gap-1">
@@ -1315,7 +1315,7 @@ async function modalVisaProtokoll(bpid, projektId, protokollLista, onDone) {
      <div class="mt-2 flex gap-1 items-center">
        <button class="btn btn-outline btn-sm" id="btnLaggTillRad">+ Lägg till rad</button>
      </div>
-     <div id="inlineRadForm" style="display:none;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.22);border-radius:6px;padding:12px;margin-top:8px">
+     <div id="inlineRadForm" style="display:none;background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.22);border-radius:6px;padding:12px;margin-top:8px">
        <div class="form-row cols-2" style="margin-bottom:6px">
          <div class="form-group" style="margin:0">
            <label class="form-label">Kategori</label>
@@ -1905,16 +1905,16 @@ async function modalVisaKonstruktion(kid, onDone) {
     if (!erKabelskap) return '';
     const { kapacitet, anvant, kvar } = beraknaModuler(rader);
     const pct = kapacitet > 0 ? Math.min(100, Math.round(anvant / kapacitet * 100)) : 0;
-    const färg = kvar < 0 ? '#ef4444' : kvar <= 2 ? '#f59e0b' : '#00d4ff';
+    const färg = kvar < 0 ? '#ef4444' : kvar <= 2 ? '#f59e0b' : '#7c3aed';
     return `
-      <div style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.22);border-radius:6px;padding:10px 14px;margin-bottom:10px">
-        <div style="font-weight:600;color:#00d4ff;margin-bottom:6px;font-size:13px">Moduler – ${escHtml(k.namn)}</div>
+      <div style="background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.22);border-radius:6px;padding:10px 14px;margin-bottom:10px">
+        <div style="font-weight:600;color:#7c3aed;margin-bottom:6px;font-size:13px">Moduler – ${escHtml(k.namn)}</div>
         <div style="display:flex;gap:16px;font-size:12px;margin-bottom:6px">
           <span>Kapacitet: <strong>${kapacitet}</strong></span>
           <span>Använt: <strong>${anvant}</strong></span>
           <span style="color:${färg}">Kvar: <strong>${kvar}</strong></span>
         </div>
-        <div style="background:rgba(0,0,0,.35);border-radius:4px;height:10px;overflow:hidden">
+        <div style="background:rgba(124,58,237,.12);border-radius:4px;height:10px;overflow:hidden">
           <div style="width:${pct}%;height:100%;background:${färg};transition:width .3s"></div>
         </div>
       </div>`;
@@ -2032,13 +2032,13 @@ async function modalVisaKonstruktion(kid, onDone) {
         <select id="konstrStatus" class="form-control" style="width:140px">${statusOpts}</select>
         <span class="ml-auto text-sm text-muted">Skapad: ${(k.skapad || '').slice(0, 10)}</span>
       </div>
-      ${k.anmarkning ? `<p class="text-sm text-muted mb-2" style="background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12);padding:6px 10px;border-radius:4px">${escHtml(k.anmarkning)}</p>` : ''}
+      ${k.anmarkning ? `<p class="text-sm text-muted mb-2" style="background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.12);padding:6px 10px;border-radius:4px">${escHtml(k.anmarkning)}</p>` : ''}
       <div id="konstrModulIndikator">${modulIndikatorHtml(rader)}</div>
       <div id="konstrRadWrapper">${radTabellHtml(rader)}</div>
       <div class="mt-2 flex gap-1 items-center">
         <button class="btn btn-outline btn-sm" id="btnKonstrLaggTillRad">+ Lägg till rad</button>
       </div>
-      <div id="konstrInlineForm" style="display:none;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.22);border-radius:6px;padding:12px;margin-top:8px">
+      <div id="konstrInlineForm" style="display:none;background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.22);border-radius:6px;padding:12px;margin-top:8px">
         <div class="form-row cols-2" style="margin-bottom:6px">
           <div class="form-group" style="margin:0">
             <label class="form-label">Kategori</label>
@@ -3347,7 +3347,7 @@ async function renderKontrollrum(app) {
   if (typeof Chart !== 'undefined') {
     Chart.defaults.color = '#4a6a8a';
     Chart.defaults.font.family = 'Segoe UI, system-ui, sans-serif';
-    const ttOpts = { backgroundColor:'#071428', borderColor:'rgba(0,212,255,.2)', borderWidth:1, titleColor:'#e8f4ff', bodyColor:'#c8e0f8' };
+    const ttOpts = { backgroundColor:'#071428', borderColor:'rgba(124,58,237,.2)', borderWidth:1, titleColor:'#e8f4ff', bodyColor:'#c8e0f8' };
 
     const fasCtx = document.getElementById('kpiFasChart');
     if (fasCtx) {
@@ -3371,15 +3371,15 @@ async function renderKontrollrum(app) {
         data: {
           labels: berSorted.map(([n]) => n),
           datasets: [{ label:'Aktiva projekt', data: berSorted.map(([,c]) => c),
-            backgroundColor: berSorted.map((_,i) => `rgba(0,212,255,${0.2+i*0.06})`),
-            borderColor:'rgba(0,212,255,.6)', borderWidth:1, borderRadius:4 }]
+            backgroundColor: berSorted.map((_,i) => `rgba(124,58,237,${0.2+i*0.06})`),
+            borderColor:'rgba(124,58,237,.6)', borderWidth:1, borderRadius:4 }]
         },
         options: {
           indexAxis:'y', responsive:true, maintainAspectRatio:false,
           plugins: { legend:{display:false}, tooltip:{...ttOpts} },
           scales: {
-            x: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(0,212,255,.12)'} },
-            y: { grid:{display:false}, ticks:{color:'#c8e0f8',font:{size:12,weight:'600'}}, border:{color:'rgba(0,212,255,.12)'} }
+            x: { grid:{color:'rgba(124,58,237,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(124,58,237,.12)'} },
+            y: { grid:{display:false}, ticks:{color:'#c8e0f8',font:{size:12,weight:'600'}}, border:{color:'rgba(124,58,237,.12)'} }
           }
         }
       });
@@ -3404,8 +3404,8 @@ async function renderKontrollrum(app) {
             responsive:true, maintainAspectRatio:false,
             plugins: { legend:{display:false}, tooltip:{...ttOpts} },
             scales: {
-              x: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#c8e0f8',font:{size:10}}, border:{color:'rgba(0,212,255,.12)'} },
-              y: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(0,212,255,.12)'} }
+              x: { grid:{color:'rgba(124,58,237,.07)'}, ticks:{color:'#c8e0f8',font:{size:10}}, border:{color:'rgba(124,58,237,.12)'} },
+              y: { grid:{color:'rgba(124,58,237,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(124,58,237,.12)'} }
             }
           }
         });
@@ -3432,8 +3432,8 @@ async function renderKontrollrum(app) {
             responsive:true, maintainAspectRatio:false,
             plugins: { legend:{display:false}, tooltip:{...ttOpts} },
             scales: {
-              x: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#c8e0f8',font:{size:10}}, border:{color:'rgba(0,212,255,.12)'} },
-              y: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(0,212,255,.12)'} }
+              x: { grid:{color:'rgba(124,58,237,.07)'}, ticks:{color:'#c8e0f8',font:{size:10}}, border:{color:'rgba(124,58,237,.12)'} },
+              y: { grid:{color:'rgba(124,58,237,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(124,58,237,.12)'} }
             }
           }
         });
@@ -3464,8 +3464,8 @@ async function renderKontrollrum(app) {
             tooltip: { ...ttOpts, mode:'index', intersect:false }
           },
           scales: {
-            x: { stacked:true, grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(0,212,255,.12)'} },
-            y: { stacked:true, grid:{display:false}, ticks:{color:'#c8e0f8',font:{size:11,weight:'600'}}, border:{color:'rgba(0,212,255,.12)'} }
+            x: { stacked:true, grid:{color:'rgba(124,58,237,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(124,58,237,.12)'} },
+            y: { stacked:true, grid:{display:false}, ticks:{color:'#c8e0f8',font:{size:11,weight:'600'}}, border:{color:'rgba(124,58,237,.12)'} }
           }
         }
       });
@@ -3733,7 +3733,7 @@ async function renderStatistik(app) {
     }
 
     const plColors = [
-      'rgba(0,212,255,.7)','rgba(249,115,22,.7)','rgba(16,185,129,.7)',
+      'rgba(124,58,237,.7)','rgba(249,115,22,.7)','rgba(16,185,129,.7)',
       'rgba(155,89,182,.7)','rgba(239,68,68,.7)','rgba(245,158,11,.7)'
     ];
 
@@ -3868,7 +3868,7 @@ async function renderStatistik(app) {
 
   function buildCharts(rows) {
     if (typeof Chart === 'undefined') return;
-    const ttOpts = { backgroundColor:'#071428', borderColor:'rgba(0,212,255,.2)', borderWidth:1, titleColor:'#e8f4ff', bodyColor:'#c8e0f8' };
+    const ttOpts = { backgroundColor:'#071428', borderColor:'rgba(124,58,237,.2)', borderWidth:1, titleColor:'#e8f4ff', bodyColor:'#c8e0f8' };
     Chart.defaults.color = '#4a6a8a';
     Chart.defaults.font.family = 'Segoe UI, system-ui, sans-serif';
 
@@ -3884,14 +3884,14 @@ async function renderStatistik(app) {
         type:'bar',
         data:{ labels: allManaderAsc.map(mkLbl),
           datasets:[
-            { label:'Fakturerat', data:verklData, backgroundColor:'rgba(0,212,255,.55)', borderColor:'rgba(0,212,255,.9)', borderWidth:1, borderRadius:4 },
+            { label:'Fakturerat', data:verklData, backgroundColor:'rgba(124,58,237,.55)', borderColor:'rgba(124,58,237,.9)', borderWidth:1, borderRadius:4 },
             { label:'Budget',     data:budgData,  backgroundColor:'rgba(249,115,22,.3)', borderColor:'rgba(249,115,22,.6)', borderWidth:1, borderRadius:4 }
           ]},
         options:{ responsive:true, maintainAspectRatio:false,
           plugins:{ legend:{ position:'top', labels:{ color:'#c8e0f8', font:{size:11}, boxWidth:12 } }, tooltip:{...ttOpts} },
           scales:{
-            x:{ grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#c8e0f8'}, border:{color:'rgba(0,212,255,.12)'} },
-            y:{ grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a', callback:v=>Math.round(v).toLocaleString('sv-SE')+' kr'}, border:{color:'rgba(0,212,255,.12)'} }
+            x:{ grid:{color:'rgba(124,58,237,.07)'}, ticks:{color:'#c8e0f8'}, border:{color:'rgba(124,58,237,.12)'} },
+            y:{ grid:{color:'rgba(124,58,237,.07)'}, ticks:{color:'#4a6a8a', callback:v=>Math.round(v).toLocaleString('sv-SE')+' kr'}, border:{color:'rgba(124,58,237,.12)'} }
           }
         }
       });
@@ -3911,15 +3911,15 @@ async function renderStatistik(app) {
         type:'bar',
         data:{ labels: plSorted.map(([n])=>n),
           datasets:[
-            { label:'Fakturerat', data:plSorted.map(([,v])=>v.verkl), backgroundColor:'rgba(0,212,255,.55)', borderColor:'rgba(0,212,255,.9)', borderWidth:1, borderRadius:4 },
+            { label:'Fakturerat', data:plSorted.map(([,v])=>v.verkl), backgroundColor:'rgba(124,58,237,.55)', borderColor:'rgba(124,58,237,.9)', borderWidth:1, borderRadius:4 },
             { label:'Budget',     data:plSorted.map(([,v])=>v.budg),  backgroundColor:'rgba(249,115,22,.3)', borderColor:'rgba(249,115,22,.6)', borderWidth:1, borderRadius:4 },
             { label:'Utestående', data:plSorted.map(([,v])=>v.ute),   backgroundColor:'rgba(239,68,68,.4)',  borderColor:'rgba(239,68,68,.7)',   borderWidth:1, borderRadius:4 }
           ]},
         options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
           plugins:{ legend:{ position:'top', labels:{ color:'#c8e0f8', font:{size:11}, boxWidth:12 } }, tooltip:{...ttOpts, callbacks:{ label: ctx => `${ctx.dataset.label}: ${Math.round(ctx.raw).toLocaleString('sv-SE')} kr` }} },
           scales:{
-            x:{ grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a', callback:v=>Math.round(v).toLocaleString('sv-SE')}, border:{color:'rgba(0,212,255,.12)'} },
-            y:{ grid:{display:false}, ticks:{color:'#c8e0f8',font:{size:12,weight:'600'}}, border:{color:'rgba(0,212,255,.12)'} }
+            x:{ grid:{color:'rgba(124,58,237,.07)'}, ticks:{color:'#4a6a8a', callback:v=>Math.round(v).toLocaleString('sv-SE')}, border:{color:'rgba(124,58,237,.12)'} },
+            y:{ grid:{display:false}, ticks:{color:'#c8e0f8',font:{size:12,weight:'600'}}, border:{color:'rgba(124,58,237,.12)'} }
           }
         }
       });
@@ -4298,7 +4298,7 @@ const ANSL_FAS_C = {
   "Tidig fas":         "#4a6a8a",
   "Beredning":         "#3b82f6",
   "Montage":           "#f59e0b",
-  "Drifttagning klar": "#00d4ff",
+  "Drifttagning klar": "#7c3aed",
   "Avslutat":          "#10b981",
 };
 const ANSL_FAS_MAP = {
@@ -4481,9 +4481,9 @@ function anslArendenHtml(p) {
   const thI = c => sortCol===c?(sortDir===1?' ↑':' ↓'):'';
   const cols = [['id','IB-nr'],['namn','Projektbenämning'],['fas','Fas'],['berSlut','Beredning slut'],['montStart','Montage start'],['montSlut','Montage slut'],['blockering','Blockering'],['driftDat','Drifttagning']];
   const thStyle = 'padding:8px 12px;text-align:left;font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface-2);cursor:pointer;user-select:none';
-  const tdBase = 'padding:9px 12px;vertical-align:middle;border-bottom:1px solid rgba(0,212,255,.06)';
+  const tdBase = 'padding:9px 12px;vertical-align:middle;border-bottom:1px solid rgba(124,58,237,.06)';
   const filterBtns = ANSL_FAS_ORDER.map(f=>`
-    <button class="ansl-ff" data-fas="${escHtml(f)}" style="font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer;border:1px solid ${filterFas===f?'var(--cyan-d)':'var(--border)'};background:${filterFas===f?'rgba(0,212,255,.1)':'none'};color:${filterFas===f?'var(--cyan)':'var(--text-muted)'};font-weight:600;letter-spacing:.04em;white-space:nowrap">${f}</button>`).join('');
+    <button class="ansl-ff" data-fas="${escHtml(f)}" style="font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer;border:1px solid ${filterFas===f?'var(--cyan-d)':'var(--border)'};background:${filterFas===f?'rgba(124,58,237,.1)':'none'};color:${filterFas===f?'var(--cyan)':'var(--text-muted)'};font-weight:600;letter-spacing:.04em;white-space:nowrap">${f}</button>`).join('');
   const clearBtn = (search||filterFas) ? `<button id="ansl-fc" style="font-size:11px;padding:4px 8px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--text-muted)">× Rensa</button>` : '';
   const rows = td.length===0
     ? `<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--text-muted);font-family:monospace;font-size:12px">Inga ärenden matchar filtret</td></tr>`
@@ -4551,7 +4551,7 @@ function anslCalendarHtml(p, year, month) {
     const starts  = startDates[dateStr];
     const isToday = dateStr === todayStr;
     const hasMont = starts && starts.length > 0;
-    const bg      = hasMont ? `rgba(0,212,255,${starts.length>1?0.28:0.16})` : isToday ? 'rgba(0,212,255,0.07)' : 'transparent';
+    const bg      = hasMont ? `rgba(124,58,237,${starts.length>1?0.28:0.16})` : isToday ? 'rgba(124,58,237,0.07)' : 'transparent';
     const border  = (hasMont || isToday) ? '1px solid var(--cyan)' : '1px solid transparent';
     const color   = hasMont ? 'var(--cyan)' : isToday ? 'var(--cyan)' : 'var(--text)';
     const badge   = hasMont && starts.length > 1 ? `<div style="position:absolute;top:2px;right:3px;font-size:9px;font-family:monospace;color:var(--cyan);font-weight:700">${starts.length}</div>` : '';
@@ -4603,7 +4603,7 @@ function anslAnalysHtml(p) {
     ['Blockerade',blockerade.length],['Driftklara hittills',driftklara.length],
     ['Andel i riskzon',`${Math.round(risker.length/Math.max(aktiva.length,1)*100)}%`],
   ].map(([l,v])=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(0,212,255,.06);font-size:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(124,58,237,.06);font-size:12px">
       <span style="color:var(--text-muted)">${l}</span>
       <span style="color:var(--text-strong);font-family:monospace;font-weight:500">${v}</span>
     </div>`).join('');
@@ -4646,7 +4646,7 @@ function anslDrawerHtml(p) {
     </div>`;
   })() : '';
   const datumsHtml = [['Beredning start',p.berStart],['Beredning slut',p.berSlut],['Montage start',p.montStart],['Montage slut',p.montSlut],['Drifttagning',p.driftDat]]
-    .map(([l,v])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(0,212,255,.06);font-size:12px"><span style="color:var(--text-muted)">${l}</span><span style="color:var(--text-strong);font-family:monospace;font-weight:500">${anslFD(v)}</span></div>`).join('');
+    .map(([l,v])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(124,58,237,.06);font-size:12px"><span style="color:var(--text-muted)">${l}</span><span style="color:var(--text-strong);font-family:monospace;font-weight:500">${anslFD(v)}</span></div>`).join('');
   const dtmEl = dtm!==null ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--text-muted)">Dagar till montage</span><span style="color:${dtm<14?'var(--red)':dtm<21?'var(--amber)':'var(--green)'};font-family:monospace;font-weight:500">${dtm}d</span></div>` : '';
   const ltEl  = lt!==null  ? `<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--text-muted)">Total ledtid</span><span style="color:var(--text-strong);font-family:monospace;font-weight:500">${lt} dagar</span></div>` : '';
   const fasOpts = ANSL_FAS_ORDER.map(f=>`<option value="${f}"${p.fas===f?' selected':''}>${f}</option>`).join('');
