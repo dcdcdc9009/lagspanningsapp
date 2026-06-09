@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Beredning-Projektledning</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -16,6 +19,11 @@
     <a href="#artiklar"       class="nav-link" data-view="artiklar">Artiklar</a>
     <a href="#admin"          class="nav-link" data-view="admin">Admin</a>
     <a href="#anslutning"     class="nav-link" data-view="anslutning">Analys</a>
+    <a href="#maskinplanering" class="nav-link" data-view="maskinplanering">Maskinplanering</a>
+    <a href="#tidplan"        class="nav-link" data-view="tidplan">Tidplan</a>
+    <a href="#kontrollrum"    class="nav-link" data-view="kontrollrum">Dashboard</a>
+    <a href="#rapport"        class="nav-link" data-view="rapport">Rapporter</a>
+    <a href="#statistik"      class="nav-link" data-view="statistik">Statistik</a>
   </div>
   <div class="nav-right" id="navRight">
     <span id="adminBadge" class="badge badge-admin hidden">Admin</span>
@@ -56,6 +64,7 @@
 <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

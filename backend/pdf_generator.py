@@ -565,7 +565,7 @@ def skapa_konstruktioner_materiallista_pdf(konstruktioner, installningar, enr_lo
 
 # ── BYGGPROTOKOLL (Konstruktion) PDF ─────────────────────────────────────────
 
-def skapa_konstruktion_pdf(konstruktion, installningar):
+def skapa_konstruktion_pdf(konstruktion, installningar, enr_lookup=None):
     foretag = installningar.get('foretagsnamn',
                installningar.get('foretag_namn', 'Oneco Networks AB'))
     buf = BytesIO()
@@ -607,18 +607,23 @@ def skapa_konstruktion_pdf(konstruktion, installningar):
                                textColor=WHITE, leading=10)
         cel_s = ParagraphStyle('bc', fontName='Helvetica', fontSize=8,
                                textColor=DARK, leading=10)
+        enr_s = ParagraphStyle('be', fontName='Helvetica', fontSize=7,
+                               textColor=DARK, leading=9)
 
-        col_w = [100 * mm, 22 * mm, 22 * mm, 22 * mm]
-        col_w[-1] = W - MARGIN * 2 - sum(col_w[:-1])
+        col_enr   = 28 * mm
+        col_enhet = 18 * mm
+        col_antal = 20 * mm
+        col_art   = W - MARGIN * 2 - col_enr - col_enhet - col_antal
+        col_w = [col_art, col_enr, col_enhet, col_antal]
 
-        rows = [[Paragraph(h, hdr_s) for h in ['Artikel', 'Enhet', 'Antal', 'Moduler']]]
+        rows = [[Paragraph(h, hdr_s) for h in ['Artikel', 'E-nummer', 'Enhet', 'Antal']]]
         for r in rader:
-            moduler_val = r.get('moduler', 0)
+            enr = r.get('artikelnummer') or (enr_lookup or {}).get(r.get('artikelnamn', '')) or '–'
             rows.append([
                 Paragraph(r.get('artikelnamn', ''), cel_s),
+                Paragraph(enr, enr_s),
                 r.get('enhet', ''),
                 f"{r.get('antal', 0):g}",
-                str(int(moduler_val)) if moduler_val else '-',
             ])
 
         t = Table(rows, colWidths=col_w, repeatRows=1)
@@ -626,7 +631,7 @@ def skapa_konstruktion_pdf(konstruktion, installningar):
             ('BACKGROUND',    (0, 0), (-1, 0), PURPLE),
             ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE',      (0, 0), (-1, -1), 8),
-            ('ALIGN',         (2, 0), (-1, -1), 'RIGHT'),
+            ('ALIGN',         (3, 0), (3, -1), 'RIGHT'),
             ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
             ('TOPPADDING',    (0, 0), (-1, -1), 4),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
@@ -658,7 +663,7 @@ def skapa_konstruktion_pdf(konstruktion, installningar):
 
 # ── BYGGPROTOKOLL ALLA KONSTRUKTIONER – 1 per sida ───────────────────────────
 
-def skapa_konstruktioner_byggprotokoll_pdf(konstruktioner, installningar):
+def skapa_konstruktioner_byggprotokoll_pdf(konstruktioner, installningar, enr_lookup=None):
     """Genererar ett byggprotokoll-PDF med 1 konstruktion per sida."""
     foretag = installningar.get('foretagsnamn',
                installningar.get('foretag_namn', 'Oneco Networks AB'))
@@ -705,23 +710,28 @@ def skapa_konstruktioner_byggprotokoll_pdf(konstruktioner, installningar):
         story += _sektion_rubrik('Material')
         story.append(Spacer(1, 1 * mm))
         if rader:
-            col_w = [100 * mm, 22 * mm, 22 * mm, 22 * mm]
-            col_w[-1] = W - MARGIN * 2 - sum(col_w[:-1])
-            rows = [[Paragraph(h, hdr_s) for h in ['Artikel', 'Enhet', 'Antal', 'Moduler']]]
+            enr_s = ParagraphStyle('bpe', fontName='Helvetica', fontSize=7,
+                                   textColor=DARK, leading=9)
+            col_enr   = 28 * mm
+            col_enhet = 18 * mm
+            col_antal = 20 * mm
+            col_art   = W - MARGIN * 2 - col_enr - col_enhet - col_antal
+            col_w = [col_art, col_enr, col_enhet, col_antal]
+            rows = [[Paragraph(h, hdr_s) for h in ['Artikel', 'E-nummer', 'Enhet', 'Antal']]]
             for r in rader:
-                moduler_val = r.get('moduler', 0)
+                enr = r.get('artikelnummer') or (enr_lookup or {}).get(r.get('artikelnamn', '')) or '–'
                 rows.append([
                     Paragraph(r.get('artikelnamn', ''), cel_s),
+                    Paragraph(enr, enr_s),
                     r.get('enhet', ''),
                     f"{r.get('antal', 0):g}",
-                    str(int(moduler_val)) if moduler_val else '-',
                 ])
             t = Table(rows, colWidths=col_w, repeatRows=1)
             t.setStyle(TableStyle([
                 ('BACKGROUND',    (0, 0), (-1, 0), PURPLE),
                 ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE',      (0, 0), (-1, -1), 8),
-                ('ALIGN',         (2, 0), (-1, -1), 'RIGHT'),
+                ('ALIGN',         (3, 0), (3, -1), 'RIGHT'),
                 ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
                 ('TOPPADDING',    (0, 0), (-1, -1), 4),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 4),

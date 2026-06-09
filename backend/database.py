@@ -833,6 +833,377 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','25')")
         conn.commit()
 
+    if v < 26:
+        # v26: Återställ admin-lösenord till "admin" (sha256)
+        import hashlib
+        admin_hash = hashlib.sha256(b'admin').hexdigest()
+        conn.execute(
+            "INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('admin_losenord',?)",
+            (admin_hash,)
+        )
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','26')")
+        conn.commit()
+
+    if v < 27:
+        # v27: Lägg till kategorier, artiklar, mallar och inputfält för
+        #      Stolpar, Tillbehör Stolpar, ALUS och HSP material
+
+        def _kat27(namn, sort):
+            conn.execute("INSERT OR IGNORE INTO kategorier (namn, sortering) VALUES (?,?)", (namn, sort))
+            return conn.execute("SELECT id FROM kategorier WHERE namn=?", (namn,)).fetchone()['id']
+
+        def _art27(namn, kat_id, enhet, sort):
+            conn.execute(
+                "INSERT OR IGNORE INTO artiklar (artikelnamn, kategori_id, enhet, sortering) VALUES (?,?,?,?)",
+                (namn, kat_id, enhet, sort)
+            )
+            return conn.execute(
+                "SELECT id FROM artiklar WHERE artikelnamn=? AND kategori_id=?", (namn, kat_id)
+            ).fetchone()['id']
+
+        def _enr27(art_id, lev_id, enr):
+            conn.execute(
+                "INSERT OR IGNORE INTO artikel_leverantor (artikel_id, leverantor_id, artikelnummer) "
+                "VALUES (?,?,?)",
+                (art_id, lev_id, enr)
+            )
+
+        # Säkerställ Onninen-leverantör
+        conn.execute("INSERT OR IGNORE INTO leverantorer (namn) VALUES ('Onninen')")
+        lev_id = conn.execute("SELECT id FROM leverantorer WHERE namn='Onninen'").fetchone()['id']
+
+        # --- Kategorier ---
+        kat_stolpar    = _kat27('Stolpar',            10)
+        kat_tillbehor  = _kat27('Tillbehör Stolpar',  11)
+        kat_alus       = _kat27('ALUS',               12)
+        kat_hsp        = _kat27('HSP material',        13)
+
+        # --- Stolpar ---
+        stolpar_art = [
+            ('FURUSTOLPE RVP REP N7',  'st'), ('FURUSTOLPE RVP REP N8',  'st'),
+            ('FURUSTOLPE RVP REP N9',  'st'), ('FURUSTOLPE RVP REP N10', 'st'),
+            ('FURUSTOLPE RVP REP N11', 'st'), ('FURUSTOLPE RVP REP N12', 'st'),
+            ('FURUSTOLPE RVP REP N13', 'st'), ('FURUSTOLPE RVP REP N14', 'st'),
+            ('FURUSTOLPE RVP REP N15', 'st'), ('FURUSTOLPE RVP REP N16', 'st'),
+            ('FURUSTOLPE RVP REP N17', 'st'), ('FURUSTOLPE RVP REP N18', 'st'),
+            ('FURUSTOLPE RVP REP N19', 'st'), ('FURUSTOLPE RVP REP N20', 'st'),
+            ('FURUSTOLPE RVP REP G8',  'st'), ('FURUSTOLPE RVP REP G9',  'st'),
+            ('FURUSTOLPE RVP REP G10', 'st'), ('FURUSTOLPE RVP REP G11', 'st'),
+            ('FURUSTOLPE RVP REP G12', 'st'), ('FURUSTOLPE RVP REP G13', 'st'),
+            ('FURUSTOLPE RVP REP G14', 'st'), ('FURUSTOLPE RVP REP G15', 'st'),
+            ('FURUSTOLPE RVP REP G16', 'st'), ('FURUSTOLPE RVP REP G17', 'st'),
+            ('FURUSTOLPE RVP REP G18', 'st'), ('FURUSTOLPE RVP REP G19', 'st'),
+            ('FURUSTOLPE RVP REP G20', 'st'), ('FURUSTOLPE RVP REP G21', 'st'),
+        ]
+        stolpar_enr = [
+            'E0620367', 'E0620371', 'E0620379', 'E0620389', 'E0620469', 'E0620486',
+            'E0620496', 'E0620528', 'E0620557', 'E0620576', 'E0620587', 'E0620593',
+            'E0620603', 'E0620714', 'E0620373', 'E0620381', 'E0620391', 'E0620471',
+            'E0620487', 'E0620497', 'E0620536', 'E0620558', 'E0620577', 'E0620588',
+            'E0620594', 'E0620653', 'E0620715', 'E0620719',
+        ]
+        for i, ((namn, enhet), enr) in enumerate(zip(stolpar_art, stolpar_enr)):
+            aid = _art27(namn, kat_stolpar, enhet, i)
+            _enr27(aid, lev_id, enr)
+
+        # --- Tillbehör Stolpar ---
+        tillbehor_art = [
+            ('STOLPTAK 180 MM',                'st', 'E0630278'),
+            ('STOLPTAK 210 MM 0037/F',         'st', 'E0630277'),
+            ('STOLPTAK 270 MM 0034/F',         'st', 'E0630279'),
+            ('0001/11 STAG RAKKILAD',          'st', 'E0600018'),
+            ('0001/18 STAG RAKKILAD',          'st', 'E0600019'),
+            ('0004/22 STAG RAKKILAD',          'st', 'E0600042'),
+            ('0012/15 STAG RAKKILAD ISO 24',   'st', 'E0600123'),
+            ('0012/22 STAG RAKKILAD ISO 24',   'st', 'E0600124'),
+            ('0016P FÖRANKRING PLAST LÅNG',    'st', 'E0610171'),
+            ('UPPLEDNINGSRÖR 58/50 1,7M SV',   'st', 'E0663731'),
+            ('UPPLEDNINGSRÖR 83/75 1,7M SV',   'st', 'E0663733'),
+            ('UPPLEDNINGSRÖR 120/110 1,7M SV', 'st', 'E0663735'),
+            ('STOLPFÄSTE FÖR RÖR 58/50',       'st', 'E0665449'),
+            ('STOLPFÄSTE FÖR RÖR 83/75',       'st', 'E0665450'),
+            ('STOLPFÄSTE FÖR RÖR 120/110',     'st', 'E0665452'),
+        ]
+        for i, (namn, enhet, enr) in enumerate(tillbehor_art):
+            aid = _art27(namn, kat_tillbehor, enhet, i)
+            _enr27(aid, lev_id, enr)
+
+        # --- ALUS ---
+        alus_art = [
+            ('ALUS-D 4X25',                         'm',    'E0031800'),
+            ('ALUS-D 4X50',                         'm',    'E0031810'),
+            ('ALUS-D 4X95',                         'm',    'E0031820'),
+            ('ALUS-D 4X25 T500',                    '500m', 'E0031805'),
+            ('ALUS-D 4X50 T500',                    '500m', 'E0031815'),
+            ('ALUS-D 4X95 T500',                    '500m', 'E0031825'),
+            ('0170 ALUS 0,4KV GENOMGÅENDE KROK',    'sats', 'E0601700'),
+            ('0171 ALUS 0,4KV GENOMGÅENDE 2ST KROK','sats', 'E0601710'),
+            ('0174 ALUS 0,4KV DUBBLA ALUS',         'sats', 'E0601740'),
+            ('SPÄNNDON ALUS',                       'st',   'E0647404'),
+            ('SPÄNNDON SO118.1201S',                'st',   'E0645121'),
+            ('PINNKROK SOT21.216',                  'st',   'E0645145'),
+            ('HÄNGDON 25-120mm²',                   'st',   'E0623000'),
+            ('HÄNGDON ALUS 4 LED 25-95',            'st',   'E0647220'),
+            ('UNIVERSALKLÄMMA UKRS 90',             'st',   'E0702972'),
+            ('KABELFÄSTE SH709',                    'st',   'E0630084'),
+            ('JORDNINGSKLÄMMA KG 42',               'st',   'E0632005'),
+            ('FÖRLÄNGNINGSRÖR FS-31',               'st',   'E0632233'),
+            ('FRÄMRE RÖR FS-21',                    'st',   'E0632201'),
+            ('HÄRDAD STÅLSPETS FS-11',              'st',   'E0632207'),
+            ('NEDLEDNINGSSKYDD FÖR LINA SH 208',    'st',   'E0632030'),
+            ('SKENKLÄMMA KG 16',                    'st',   'E0650539'),
+            ('JORDKLÄMMA CU 10-70',                 'st',   'E0632023'),
+            ('JORDKLÄMMA CU 16-120',                'st',   'E0632386'),
+            ('GRENKLÄMMA CU 6-70',                  'st',   'E0651010'),
+            ('GRENKLÄMMA SL8.21 50-240 MM2',        'st',   'E0650059'),
+            ('SKYDDSKÅPA SP16',                     'st',   'E0650209'),
+            ('AVGRENINGSKLÄMMA SLIW50',             'st',   'E0650244'),
+            ('AVGRENINGSKLÄMMA SLIW52',             'st',   'E0650002'),
+            ('AVGRENINGSKLÄMMA SLIW 54',            'st',   'E0650245'),
+            ('AVGRENINGSKLÄMMA SLIW57',             'st',   'E0650246'),
+            ('AVGRENINGSKLÄMMA SLIW58',             'st',   'E0650247'),
+            ('ÄNDSTOPP 4-50',                       'st',   'E0650200'),
+        ]
+        for i, (namn, enhet, enr) in enumerate(alus_art):
+            aid = _art27(namn, kat_alus, enhet, i)
+            _enr27(aid, lev_id, enr)
+
+        # --- HSP material ---
+        hsp_art = [
+            ('KABELAVSLUT IXSU-F 3333-M',           'st', 'E0706339'),
+            ('KABELSKARV MXSU 5311 24KV',           'st', 'E0716042'),
+            ('KABELSKARV CPKJ-3311 12KV 3X35-95',   'st', 'E0716311'),
+            ('KABELSKARV CPKJ-3331 12KV 3X95-240',  'st', 'E0716312'),
+            ('KABELSKARV CPKJ-5311 24KV 3X35-95',   'st', 'E0716321'),
+            ('KABELSKARV CPKJ-5331 24KV 3X95-240',  'st', 'E0716322'),
+            ('KOMPLETTERINGSSATS TRIX MK II',        'st', 'E0716610'),
+            ('KABELAVSLUT OXSU-F 5334-M',            'st', 'E0706322'),
+            ('KABELAVSLUT OXSU-F 5131',              'st', 'E0706478'),
+            ('KABELAVSLUT OXSU-F 5334',              'st', 'E0706496'),
+            ('TILLÄGGSSATS TSFK 1',                  'st', 'E0706640'),
+            ('ANSL-DON RSTI-5851-SE02',              'st', 'E0706780'),
+            ('ANSL-DON RSTI-5854-SE02',              'st', 'E0706781'),
+            ('TRANSFORMATORADAPTER PITO-E',          'st', 'E0709010'),
+            ('FÄSTEN TILL PITO-E',                   'st', 'E0709021'),
+            ('SKRUVKABELSKO BLMT-95/240-13',         'st', 'E0836914'),
+            ('0053 FÖRANKRING',                      'st', 'E0600530'),
+            ('NEDLEDNINGSSKYDD FÖR LINA SH 208',    'st', 'E0632030'),
+            ('VENTILAVLEDARFÄSTE F. STOLPE',         'st', 'E0634035'),
+            ('VENTILAVLEDARE 23KV',                  'st', 'E0634164'),
+            ('GRENKLÄMMA SL 4.25',                   'st', 'E0650057'),
+            ('CU-SKENA PSS 10.01',                   'st', 'E0650505'),
+            ('SKENKLÄMMA KG 16',                     'st', 'E0650539'),
+            ('SKENKLÄMMA',                           'st', 'E0650540'),
+            ('AMS-KLÄMMA BLL 50-157 AL25-185',       'st', 'E0650606'),
+            ('FRILEDNINNGSKLÄMMA FK 120',             'st', 'E0702962'),
+            ('FRILEDNINNGSKLÄMMA FK 300',             'st', 'E0702963'),
+            ('FÅGELSKYDD HU 150',                    'st', 'E0702315'),
+            ('FÄSTE FKFB',                           'st', 'E0702967'),
+            ('GRENFORMGODS 402 W248',                'st', 'E0776446'),
+            ('2133 BLL FLEX KOMPOSIT',               'st', 'UF12633'),
+        ]
+        for i, (namn, enhet, enr) in enumerate(hsp_art):
+            aid = _art27(namn, kat_hsp, enhet, i)
+            _enr27(aid, lev_id, enr)
+
+        # --- Mallar ---
+        nya_mallar = [
+            (5, 'Stolpar',            'Stolpar för luftledningsnät.',                   5),
+            (6, 'Tillbehör Stolpar',  'Tillbehör och fästen för stolpmontering.',       6),
+            (7, 'ALUS',               'Material för ALUS-ledningar (0,4 kV luftledning).', 7),
+            (8, 'HSP material',       'Högspänningsmaterial, kabelskarvar och avslut.', 8),
+        ]
+        for mid, namn, beskr, sort in nya_mallar:
+            conn.execute(
+                "INSERT OR IGNORE INTO mallar (id, namn, beskrivning, sortering) VALUES (?,?,?,?)",
+                (mid, namn, beskr, sort)
+            )
+
+        # --- Inputfält per mall (ett artikel_select-fält kopplat till rätt kategori) ---
+        mall_falt = [
+            (5, 'stolpe_artikel_id',    'Stolptyp',           'artikel_select',
+             '{"kategori_namn":"Stolpar"}',
+             'Välj stolptyp', 1, 1),
+            (6, 'tillbehor_artikel_id', 'Tillbehör',          'artikel_select',
+             '{"kategori_namn":"Tillbehör Stolpar"}',
+             'Välj tillbehör', 1, 1),
+            (7, 'alus_artikel_id',      'ALUS-material',      'artikel_select',
+             '{"kategori_namn":"ALUS"}',
+             'Välj ALUS-artikel', 1, 1),
+            (8, 'hsp_artikel_id',       'HSP-material',       'artikel_select',
+             '{"kategori_namn":"HSP material"}',
+             'Välj HSP-material', 1, 1),
+        ]
+        for mid, faltnamn, etikett, typ, alternativ, hjalp, obligatorisk, sortering in mall_falt:
+            conn.execute(
+                "INSERT OR IGNORE INTO mall_inputfalt "
+                "(mall_id, faltnamn, etikett, typ, alternativ, hjalp, obligatorisk, sortering) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (mid, faltnamn, etikett, typ, alternativ, hjalp, obligatorisk, sortering)
+            )
+
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','27')")
+        conn.commit()
+
+    if v < 28:
+        # v28: Lägg till bestallningKlar och beredare i anslutning_projekt
+        for col in (
+            "ALTER TABLE anslutning_projekt ADD COLUMN bestallningKlar DATE",
+            "ALTER TABLE anslutning_projekt ADD COLUMN beredare TEXT",
+        ):
+            try:
+                conn.execute(col)
+            except Exception:
+                pass
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','28')")
+        conn.commit()
+
+    if v < 29:
+        # v29: Faktureringsstatistik-tabell
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS fakturering (
+                id             TEXT NOT NULL,
+                projektnamn    TEXT NOT NULL DEFAULT '',
+                projektledare  TEXT NOT NULL DEFAULT '',
+                utestående     REAL NOT NULL DEFAULT 0,
+                verklIntakt    REAL NOT NULL DEFAULT 0,
+                budgIntakt     REAL NOT NULL DEFAULT 0,
+                fardigt        REAL NOT NULL DEFAULT 0,
+                manad          TEXT NOT NULL,
+                importerad     DATETIME NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_fakturering_manad ON fakturering(manad)")
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','29')")
+        conn.commit()
+
+    if v < 30:
+        # v30: Lägg till verklKostn (Tot. verkl. kostn.) i fakturering
+        try:
+            conn.execute("ALTER TABLE fakturering ADD COLUMN verklKostn REAL NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','30')")
+        conn.commit()
+
+    if v < 31:
+        # v31: Lägg till budgKostn (Tot. budgeterad kostn.) i fakturering
+        try:
+            conn.execute("ALTER TABLE fakturering ADD COLUMN budgKostn REAL NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','31')")
+        conn.commit()
+
+    if v < 32:
+        # v32: Lägg till SAK300 och SAKI300 (anslutningsdon för STITEC) med Onninen-E-nummer.
+        kat = conn.execute(
+            "SELECT id FROM kategorier WHERE namn='Anslutningsdon'"
+        ).fetchone()
+        if kat:
+            kat_id = kat['id']
+            conn.execute("INSERT OR IGNORE INTO leverantorer (namn) VALUES ('Onninen')")
+            lev = conn.execute("SELECT id FROM leverantorer WHERE namn='Onninen'").fetchone()
+            lev_id = lev['id'] if lev else None
+            max_sort = conn.execute(
+                "SELECT COALESCE(MAX(sortering), 0) FROM artiklar WHERE kategori_id=?",
+                (kat_id,)
+            ).fetchone()[0]
+            nya = [
+                ('ANSLUTNINGSDON SAK300 (STITEC)',  'E0733139'),
+                ('ANSLUTNINGSDON SAKI300 (STITEC)', 'E0733132'),
+            ]
+            for i, (namn, enr) in enumerate(nya):
+                exists = conn.execute(
+                    "SELECT id FROM artiklar WHERE artikelnamn=? AND kategori_id=?",
+                    (namn, kat_id)
+                ).fetchone()
+                if exists:
+                    aid = exists['id']
+                else:
+                    cur = conn.execute(
+                        "INSERT INTO artiklar (artikelnamn, kategori_id, enhet, sortering, moduler) "
+                        "VALUES (?,?,?,?,?)",
+                        (namn, kat_id, 'st', max_sort + 1 + i, -1)
+                    )
+                    aid = cur.lastrowid
+                if lev_id:
+                    conn.execute(
+                        "INSERT INTO artikel_leverantor (artikel_id, leverantor_id, artikelnummer) "
+                        "VALUES (?,?,?) "
+                        "ON CONFLICT(artikel_id, leverantor_id) DO UPDATE SET artikelnummer=excluded.artikelnummer",
+                        (aid, lev_id, enr)
+                    )
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','32')")
+        conn.commit()
+
+    if v < 33:
+        # v33: Användarkonton. Skapa tabell + admin-konto + konto per befintlig beredare.
+        import hashlib, re
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS anvandare (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                anvandarnamn  TEXT UNIQUE NOT NULL,
+                namn          TEXT NOT NULL DEFAULT '',
+                losenord_hash TEXT NOT NULL,
+                roll          TEXT NOT NULL DEFAULT 'beredare',
+                beredare      TEXT,
+                aktiv         INTEGER NOT NULL DEFAULT 1,
+                skapad        DATETIME
+            )
+        """)
+
+        def _h(p):
+            return hashlib.sha256(p.encode()).hexdigest()
+
+        def _slug(namn):
+            s = namn.lower().translate(str.maketrans('åäöé', 'aaoe'))
+            return re.sub(r'[^a-z0-9]', '', s)
+
+        # Admin-konto (matchar standard admin-lösenord 'admin')
+        conn.execute(
+            "INSERT OR IGNORE INTO anvandare (anvandarnamn,namn,losenord_hash,roll,aktiv) "
+            "VALUES ('admin','Administratör',?, 'admin', 1)",
+            (_h('admin'),)
+        )
+
+        # Ett konto per befintlig beredare (standardlösenord 'oneco' – ska bytas)
+        for rad in conn.execute("SELECT namn FROM beredare").fetchall():
+            namn = rad['namn']
+            slug = _slug(namn)
+            if not slug:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO anvandare "
+                "(anvandarnamn,namn,losenord_hash,roll,beredare,aktiv) "
+                "VALUES (?,?,?, 'beredare', ?, 1)",
+                (slug, namn, _h('oneco'), namn)
+            )
+
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','33')")
+        conn.commit()
+
+    if v < 34:
+        # v34: Maskinplanering (delad planering med UE – ersätter Excel-filen).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS maskinplanering (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id  INTEGER REFERENCES projekt(id) ON DELETE SET NULL,
+                projektnamn TEXT NOT NULL DEFAULT '',
+                maskin      TEXT NOT NULL DEFAULT '',
+                ue          TEXT,
+                startdatum  DATE,
+                slutdatum   DATE,
+                status      TEXT NOT NULL DEFAULT 'Planerad',
+                notat       TEXT,
+                skapad      DATETIME NOT NULL,
+                uppdaterad  DATETIME NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_maskinplan_start ON maskinplanering(startdatum)")
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','34')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -1073,18 +1444,60 @@ def _create_tables(conn):
         );
 
         CREATE TABLE IF NOT EXISTS anslutning_projekt (
-            id         TEXT PRIMARY KEY,
-            namn       TEXT NOT NULL DEFAULT '',
-            kund       TEXT DEFAULT '',
-            fas        TEXT NOT NULL DEFAULT 'Tidig fas',
-            berStart   DATE,
-            berSlut    DATE,
-            montStart  DATE,
-            montSlut   DATE,
-            driftDat   DATE,
-            blockering TEXT,
-            notat      TEXT DEFAULT '',
-            skapad     DATETIME NOT NULL
+            id               TEXT PRIMARY KEY,
+            namn             TEXT NOT NULL DEFAULT '',
+            kund             TEXT DEFAULT '',
+            fas              TEXT NOT NULL DEFAULT 'Tidig fas',
+            berStart         DATE,
+            berSlut          DATE,
+            montStart        DATE,
+            montSlut         DATE,
+            driftDat         DATE,
+            blockering       TEXT,
+            notat            TEXT DEFAULT '',
+            bestallningKlar  DATE,
+            beredare         TEXT,
+            skapad           DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS fakturering (
+            id             TEXT NOT NULL,
+            projektnamn    TEXT NOT NULL DEFAULT '',
+            projektledare  TEXT NOT NULL DEFAULT '',
+            utestående     REAL NOT NULL DEFAULT 0,
+            verklIntakt    REAL NOT NULL DEFAULT 0,
+            verklKostn     REAL NOT NULL DEFAULT 0,
+            budgIntakt     REAL NOT NULL DEFAULT 0,
+            budgKostn      REAL NOT NULL DEFAULT 0,
+            fardigt        REAL NOT NULL DEFAULT 0,
+            manad          TEXT NOT NULL,
+            importerad     DATETIME NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_fakturering_manad ON fakturering(manad);
+
+        CREATE TABLE IF NOT EXISTS anvandare (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            anvandarnamn  TEXT UNIQUE NOT NULL,
+            namn          TEXT NOT NULL DEFAULT '',
+            losenord_hash TEXT NOT NULL,
+            roll          TEXT NOT NULL DEFAULT 'beredare',
+            beredare      TEXT,
+            aktiv         INTEGER NOT NULL DEFAULT 1,
+            skapad        DATETIME
+        );
+
+        CREATE TABLE IF NOT EXISTS maskinplanering (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id  INTEGER REFERENCES projekt(id) ON DELETE SET NULL,
+            projektnamn TEXT NOT NULL DEFAULT '',
+            maskin      TEXT NOT NULL DEFAULT '',
+            ue          TEXT,
+            startdatum  DATE,
+            slutdatum   DATE,
+            status      TEXT NOT NULL DEFAULT 'Planerad',
+            notat       TEXT,
+            skapad      DATETIME NOT NULL,
+            uppdaterad  DATETIME NOT NULL
         );
     """)
 

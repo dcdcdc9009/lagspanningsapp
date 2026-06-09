@@ -16,6 +16,8 @@ const S = {
   mallar: [],
   installningar: {},
   valtProjektKonstr: null,
+  user: null,          // { anvandarnamn, namn, roll, beredare }
+  minBeredare: null,   // beredare-namn för auto-filter på egna jobb
 };
 
 // ----------------------------------------------------------------
@@ -84,6 +86,8 @@ const Modal = {
 // ROUTING
 // ----------------------------------------------------------------
 function navigate(view, params = {}) {
+  // UE-konton är låsta till maskinplaneringen
+  if (S.user && S.user.roll === 'ue' && view !== 'maskinplanering') view = 'maskinplanering';
   S.view = view;
   document.querySelectorAll('.nav-link').forEach(a => {
     a.classList.toggle('active', a.dataset.view === view);
@@ -108,6 +112,11 @@ function render(view, params = {}) {
     case 'konstruktioner':  renderKonstruktioner(app); break;
     case 'admin':           renderAdmin(app); break;
     case 'anslutning':      renderAnslutning(app); break;
+    case 'maskinplanering': renderMaskinplanering(app); break;
+    case 'tidplan':         renderTidplan(app); break;
+    case 'kontrollrum':     renderKontrollrum(app); break;
+    case 'rapport':         renderRapport(app); break;
+    case 'statistik':       renderStatistik(app); break;
     default:                renderProjekt(app);
   }
 }
@@ -153,6 +162,7 @@ function escHtml(s) {
 // FAS-HJÄLPFUNKTIONER
 // ----------------------------------------------------------------
 const FASER = ['Beredning', 'Projektledning', 'Utförda'];
+const C_OMRADEN = ['C05', 'C12', 'C13'];  // E.ON C-områden
 const FAS_TROSKEL = { 'Beredning': 30, 'Projektledning': 21, 'Utförda': 14 };
 const FAS_CSS = {
   'Beredning': 'badge-beredning', 'Projektledning': 'badge-offert', 'Utförda': 'badge-klart',
@@ -347,7 +357,11 @@ async function renderProjekt(app) {
       </select>
       <select class="form-control" id="pkBer" style="max-width:170px">
         <option value="">Alla beredare</option>
-        ${S.beredare.map(b => `<option>${escHtml(b.namn)}</option>`).join('')}
+        ${S.beredare.map(b => `<option ${S.minBeredare === b.namn ? 'selected' : ''}>${escHtml(b.namn)}</option>`).join('')}
+      </select>
+      <select class="form-control" id="pkOmrade" style="max-width:150px">
+        <option value="">Alla områden</option>
+        ${C_OMRADEN.map(o => `<option>${o}</option>`).join('')}
       </select>
       <div class="pk-toggle">
         <button class="pk-tb" id="pkTKort" title="Kortvyn">▦ Kort</button>
@@ -385,9 +399,11 @@ async function renderProjekt(app) {
     const sok = document.getElementById('pkSok').value.toLowerCase();
     const fas = document.getElementById('pkFas').value;
     const ber = document.getElementById('pkBer').value;
+    const omr = document.getElementById('pkOmrade').value;
     return S.projekt.filter(p => {
       if (fas && p.fas !== fas) return false;
       if (ber && p.beredare !== ber) return false;
+      if (omr && (p.omrade || '') !== omr) return false;
       if (sok) {
         const hay = `${p.projektnummer} ${p.projektnamn} ${p.beredare} ${p.kund||''} ${p.ib_nummer||''} ${p.tilldelat_till||''}`.toLowerCase();
         if (!hay.includes(sok)) return false;
@@ -536,6 +552,7 @@ async function renderProjekt(app) {
   document.getElementById('pkSok').addEventListener('input', renderAll);
   document.getElementById('pkFas').addEventListener('change', renderAll);
   document.getElementById('pkBer').addEventListener('change', renderAll);
+  document.getElementById('pkOmrade').addEventListener('change', renderAll);
   document.getElementById('btnNyttProjekt').addEventListener('click', () => modalNyttProjekt());
   document.getElementById('pkTKort').addEventListener('click', () => {
     viewMode = 'kort';
@@ -649,8 +666,9 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
       </div>
       <div class="form-row cols-2">
         <div class="form-group">
-          <label class="form-label">Område</label>
-          <input name="omrade" class="form-control" value="${escHtml(data.omrade || '')}">
+          <label class="form-label">Område (C-område)</label>
+          <input name="omrade" class="form-control" list="cOmradenList" value="${escHtml(data.omrade || '')}" placeholder="t.ex. C05">
+          <datalist id="cOmradenList">${C_OMRADEN.map(o => `<option value="${o}">`).join('')}</datalist>
         </div>
         <div class="form-group">
           <label class="form-label">Kund</label>
@@ -1563,7 +1581,11 @@ async function renderKonstruktioner(app) {
       <h1 class="page-title">Konstruktioner</h1>
     </div>
     <div class="card" style="margin-bottom:1rem;padding:1rem 1.25rem;">
-      <div class="flex gap-2 items-center">
+      <div class="flex gap-2 items-center flex-wrap">
+        <label class="form-label" style="margin:0;white-space:nowrap;font-weight:600;">Beredare:</label>
+        <select class="form-control" id="filtKonstrBeredare" style="max-width:200px;">
+          <option value="">Alla beredare</option>
+        </select>
         <label class="form-label" style="margin:0;white-space:nowrap;font-weight:600;">Välj projekt:</label>
         <select class="form-control" id="projektValjare" style="max-width:320px;">
           <option value="">– välj projekt –</option>
@@ -1580,21 +1602,43 @@ async function renderKonstruktioner(app) {
     try {
       allaProjekt = (await api('GET', '/projekt')).projekt || [];
     } catch(e) { toast(e.message, 'error'); }
+    byggProjektOptions(valjId);
+  }
+
+  function byggProjektOptions(valjId) {
     const sel = document.getElementById('projektValjare');
+    const ber = document.getElementById('filtKonstrBeredare')?.value || '';
     // Behåll bara default-option, rensa resten
     while (sel.options.length > 1) sel.remove(1);
-    allaProjekt.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = `${p.projektnummer} – ${p.projektnamn}`;
-      sel.appendChild(opt);
-    });
+    allaProjekt
+      .filter(p => !ber || p.beredare === ber)
+      .forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `${p.projektnummer} – ${p.projektnamn}`;
+        sel.appendChild(opt);
+      });
     if (valjId) sel.value = valjId;
   }
+
+  // Fyll beredare-filtret
+  if (!S.beredare.length) {
+    try { S.beredare = (await api('GET', '/beredare')).beredare || []; } catch {}
+  }
+  const berSel = document.getElementById('filtKonstrBeredare');
+  S.beredare.forEach(b => { berSel.innerHTML += `<option>${escHtml(b.namn)}</option>`; });
+  if (S.minBeredare) berSel.value = S.minBeredare;
 
   await laddaProjektDropdown(S.valtProjektKonstr);
 
   const sel = document.getElementById('projektValjare');
+
+  berSel.addEventListener('change', () => {
+    byggProjektOptions();
+    S.valtProjektKonstr = sel.value || null;
+    uppdateraRaderaKnapp();
+    renderKonstrKontainer(sel.value);
+  });
 
   function uppdateraRaderaKnapp() {
     document.getElementById('btnRaderaProjektKonstr').style.display =
@@ -1933,6 +1977,52 @@ async function modalVisaKonstruktion(kid, onDone) {
   // Lokal kopia av rader
   let rader = JSON.parse(JSON.stringify(k.rader || []));
 
+  // ── Autospar ──────────────────────────────────────────────────
+  let _saveTimer = null;
+
+  function samlaPayload() {
+    syncRader();
+    const egkData = [];
+    document.querySelectorAll('#konstrEgkList .egk-item[data-egk-id]').forEach(item => {
+      egkData.push({
+        id:          parseInt(item.dataset.egkId),
+        utford:      item.querySelector('.egk-utford').checked ? 1 : 0,
+        ej_relevant: item.querySelector('.egk-ej-rel').checked ? 1 : 0,
+      });
+    });
+    const statusEl = document.getElementById('konstrStatus');
+    const antEl    = document.getElementById('konstrAnt');
+    return {
+      status:       statusEl ? statusEl.value : k.status,
+      anmarkning:   antEl ? antEl.value : k.anmarkning,
+      rader,
+      egenkontroll: egkData,
+    };
+  }
+
+  function visaSparStatus(text, cls) {
+    const el = document.getElementById('konstrSparStatus');
+    if (el) el.className = 'text-sm ' + (cls || 'text-muted');
+    if (el) el.textContent = text;
+  }
+
+  async function saveNow() {
+    if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+    try {
+      visaSparStatus('Sparar…', 'text-muted');
+      await api('PUT', `/konstruktioner/${kid}`, samlaPayload());
+      visaSparStatus('Sparat ✓', 'text-success');
+    } catch (e) {
+      visaSparStatus('Kunde inte spara: ' + e.message, 'text-danger');
+    }
+  }
+
+  function scheduleSave() {
+    visaSparStatus('Ändrat…', 'text-muted');
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(saveNow, 700);
+  }
+
   function byggModalBody() {
     return `
       <div class="flex gap-2 items-center mb-2 flex-wrap">
@@ -1958,9 +2048,13 @@ async function modalVisaKonstruktion(kid, onDone) {
             </select>
           </div>
           <div class="form-group" style="margin:0">
-            <label class="form-label">Artikel</label>
-            <select id="konstrInlineArt" class="form-control"><option value="">Laddar...</option></select>
+            <label class="form-label">Sök artikel</label>
+            <input type="search" id="konstrInlineSok" class="form-control" placeholder="🔍 Namn eller E-nummer…" autocomplete="off">
           </div>
+        </div>
+        <div class="form-group" style="margin:0 0 6px">
+          <label class="form-label">Artikel</label>
+          <select id="konstrInlineArt" class="form-control" size="8" style="height:auto"><option value="">Laddar...</option></select>
         </div>
         <div class="form-row cols-2" style="margin-bottom:8px">
           <div class="form-group" style="margin:0">
@@ -1987,9 +2081,10 @@ async function modalVisaKonstruktion(kid, onDone) {
   Modal.open(
     `${escHtml(k.namn)}`,
     byggModalBody(),
-    `<button class="btn btn-success" id="sparaKonstrModal">Spara</button>
+    `<span id="konstrSparStatus" class="text-sm text-muted">Sparas automatiskt</span>
      <a class="btn btn-secondary" href="/api/konstruktioner/${kid}/pdf" target="_blank">⬇ PDF</a>
-     <button class="btn btn-outline" id="avbrytKonstrModal">Stäng</button>`
+     <button class="btn btn-outline" id="avbrytKonstrModal">Stäng</button>`,
+    { noBackdropClose: true }
   );
 
   function uppdateraModulIndikator() {
@@ -2016,32 +2111,50 @@ async function modalVisaKonstruktion(kid, onDone) {
   function bindRadEvents() {
     const radBody = document.getElementById('konstrRadBody');
     if (!radBody) return;
-    radBody.addEventListener('input', () => { syncRader(); uppdateraModulIndikator(); });
+    radBody.addEventListener('input', () => { syncRader(); uppdateraModulIndikator(); scheduleSave(); });
     radBody.addEventListener('click', e => {
       const btn = e.target.closest('button[data-del]');
       if (!btn) return;
       syncRader();
       rader.splice(parseInt(btn.dataset.del), 1);
       renderRadWrapper();
+      saveNow();
     });
   }
 
   bindRadEvents();
 
   // Inline lägg till rad
+  let inlineArtiklar = [];
+
+  function renderInlineOptions() {
+    const sel = document.getElementById('konstrInlineArt');
+    if (!sel) return;
+    const sok = (document.getElementById('konstrInlineSok').value || '').trim().toLowerCase();
+    const filtrerade = sok
+      ? inlineArtiklar.filter(a =>
+          (a.artikelnamn || '').toLowerCase().includes(sok) ||
+          (a.artikelnummer || '').toLowerCase().includes(sok))
+      : inlineArtiklar;
+    if (!filtrerade.length) {
+      sel.innerHTML = '<option value="">Inga artiklar matchar</option>';
+      return;
+    }
+    sel.innerHTML = filtrerade.map(a => `<option value="${a.id}"
+        data-namn="${escHtml(a.artikelnamn)}"
+        data-enhet="${escHtml(a.enhet || '')}"
+        data-enr="${escHtml(a.artikelnummer || '')}"
+        data-moduler="${a.moduler || 0}">${escHtml(a.artikelnamn)}${a.artikelnummer ? '  ·  ' + escHtml(a.artikelnummer) : ''}</option>`).join('');
+  }
+
   async function laddaKonstrArtiklar() {
     const katId = document.getElementById('konstrInlineKat').value;
     const sel   = document.getElementById('konstrInlineArt');
     sel.innerHTML = '<option value="">Laddar...</option>';
     try {
       const url  = katId ? `/artiklar?kategori_id=${katId}` : '/artiklar';
-      const arts = (await api('GET', url)).artiklar || [];
-      sel.innerHTML = '<option value="">– välj artikel –</option>' +
-        arts.map(a => `<option value="${a.id}"
-            data-enhet="${escHtml(a.enhet || '')}"
-            data-kat="${escHtml(a.kategori_namn || '')}"
-            data-moduler="${a.moduler || 0}">
-          ${escHtml(a.artikelnamn)}</option>`).join('');
+      inlineArtiklar = (await api('GET', url)).artiklar || [];
+      renderInlineOptions();
     } catch { sel.innerHTML = '<option value="">Fel vid laddning</option>'; }
   }
 
@@ -2049,7 +2162,11 @@ async function modalVisaKonstruktion(kid, onDone) {
     const form    = document.getElementById('konstrInlineForm');
     const visible = form.style.display !== 'none';
     form.style.display = visible ? 'none' : '';
-    if (!visible) await laddaKonstrArtiklar();
+    if (!visible) {
+      await laddaKonstrArtiklar();
+      const sokEl = document.getElementById('konstrInlineSok');
+      if (sokEl) sokEl.focus();
+    }
   });
 
   document.getElementById('konstrInlineStang').addEventListener('click', () => {
@@ -2057,6 +2174,7 @@ async function modalVisaKonstruktion(kid, onDone) {
   });
 
   document.getElementById('konstrInlineKat').addEventListener('change', laddaKonstrArtiklar);
+  document.getElementById('konstrInlineSok').addEventListener('input', renderInlineOptions);
 
   document.getElementById('konstrInlineLeggTill').addEventListener('click', () => {
     const artSel = document.getElementById('konstrInlineArt');
@@ -2069,7 +2187,7 @@ async function modalVisaKonstruktion(kid, onDone) {
     syncRader();
     rader.push({
       artikel_id:  artId,
-      artikelnamn: opt.textContent.trim(),
+      artikelnamn: opt.dataset.namn || opt.textContent.trim(),
       enhet:       opt.dataset.enhet || '',
       antal,
       moduler,
@@ -2078,6 +2196,7 @@ async function modalVisaKonstruktion(kid, onDone) {
     renderRadWrapper();
     document.getElementById('konstrInlineAntal').value = '1';
     document.getElementById('konstrInlineAnt').value   = '';
+    saveNow();
     toast('Rad tillagd ✓', 'success');
   });
 
@@ -2103,35 +2222,30 @@ async function modalVisaKonstruktion(kid, onDone) {
       const tot  = allItems.length;
       const progEl = egkListEl.closest('.egk-section')?.querySelector('.egk-progress');
       if (progEl) progEl.textContent = `${done}/${tot} utförda`;
+      saveNow();
     });
   }
 
-  document.getElementById('avbrytKonstrModal').addEventListener('click', Modal.close);
+  // Status och anmärkning autosparas också
+  const statusEl = document.getElementById('konstrStatus');
+  if (statusEl) statusEl.addEventListener('change', saveNow);
+  const antEl = document.getElementById('konstrAnt');
+  if (antEl) antEl.addEventListener('input', scheduleSave);
 
-  document.getElementById('sparaKonstrModal').addEventListener('click', async () => {
-    syncRader();
-    const egkData = [];
-    document.querySelectorAll('#konstrEgkList .egk-item[data-egk-id]').forEach(item => {
-      egkData.push({
-        id:          parseInt(item.dataset.egkId),
-        utford:      item.querySelector('.egk-utford').checked ? 1 : 0,
-        ej_relevant: item.querySelector('.egk-ej-rel').checked ? 1 : 0,
-      });
-    });
-    const nyStatus    = document.getElementById('konstrStatus').value;
-    const nyAnmarkning = document.getElementById('konstrAnt').value;
-    try {
-      await api('PUT', `/konstruktioner/${kid}`, {
-        status:     nyStatus,
-        anmarkning: nyAnmarkning,
-        rader,
-        egenkontroll: egkData,
-      });
-      toast('Konstruktion sparad', 'success');
-      Modal.close();
-      onDone && await onDone();
-    } catch (e) { toast(e.message, 'error'); }
-  });
+  // Stäng: spara säkert en sista gång, stäng och uppdatera listan
+  const modalCloseBtn = document.getElementById('modalClose');
+  const onX = () => stangKonstrModal();
+  let _stanger = false;
+  async function stangKonstrModal() {
+    if (_stanger) return;
+    _stanger = true;
+    modalCloseBtn.removeEventListener('click', onX);   // undvik läckage till nästa modal
+    await saveNow();
+    Modal.close();
+    onDone && await onDone();
+  }
+  document.getElementById('avbrytKonstrModal').addEventListener('click', stangKonstrModal);
+  modalCloseBtn.addEventListener('click', onX);
 }
 
 // ----------------------------------------------------------------
@@ -2221,6 +2335,7 @@ async function renderAdmin(app) {
       <button class="tab-btn" data-tab="kategorier">Kategorier</button>
       <button class="tab-btn" data-tab="leverantorer">Leverantörer</button>
       <button class="tab-btn" data-tab="beredare">Beredare</button>
+      <button class="tab-btn" data-tab="anvandare">Användare</button>
       <button class="tab-btn" data-tab="installningar">Inställningar</button>
     </div>
     <div id="adminTabContent"></div>`;
@@ -2282,6 +2397,7 @@ async function ladminTab(tab) {
   if (tab === 'kategorier')   await adminKategorier(cont);
   if (tab === 'leverantorer') await adminLeverantorer(cont);
   if (tab === 'beredare')     await adminBeredare(cont);
+  if (tab === 'anvandare')    await adminAnvandare(cont);
   if (tab === 'installningar') await adminInstallningar(cont);
 }
 
@@ -2727,6 +2843,106 @@ async function adminBeredare(cont) {
   });
 }
 
+// ---- ADMIN: ANVÄNDARE ----
+const ROLL_NAMN = { admin: 'Administratör', beredare: 'Beredare', ue: 'UE (underentreprenör)' };
+
+async function adminAnvandare(cont) {
+  await laddaBeredare();
+  let anv = [];
+  try { anv = (await api('GET', '/admin/anvandare')).anvandare || []; } catch (e) { toast(e.message, 'error'); }
+
+  cont.innerHTML = `
+    <div class="flex gap-2 mb-2 items-center">
+      <button class="btn btn-navy btn-sm" id="btnNyAnv">+ Ny användare</button>
+      <span class="text-sm text-muted">Standardlösenord för seedade konton: <strong>oneco</strong> – be alla byta.</span>
+    </div>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr><th>Användarnamn</th><th>Namn</th><th>Roll</th><th>Beredare</th><th>Aktiv</th><th>Åtgärder</th></tr></thead>
+        <tbody>${anv.map(u => `
+          <tr>
+            <td class="mono">${escHtml(u.anvandarnamn)}</td>
+            <td>${escHtml(u.namn || '–')}</td>
+            <td>${escHtml(ROLL_NAMN[u.roll] || u.roll)}</td>
+            <td>${escHtml(u.beredare || '–')}</td>
+            <td>${u.aktiv ? '✔' : '–'}</td>
+            <td class="flex gap-1">
+              <button class="btn btn-sm btn-outline" data-id="${u.id}" data-action="edit">Redigera</button>
+              <button class="btn btn-sm btn-danger"  data-id="${u.id}" data-action="del">Ta bort</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  function rollOpts(vald) {
+    return Object.entries(ROLL_NAMN).map(([v, txt]) =>
+      `<option value="${v}" ${vald === v ? 'selected' : ''}>${txt}</option>`).join('');
+  }
+  function berOpts(vald) {
+    return `<option value="">– ingen –</option>` +
+      S.beredare.map(b => `<option ${vald === b.namn ? 'selected' : ''}>${escHtml(b.namn)}</option>`).join('');
+  }
+
+  function modalAnvForm(u) {
+    Modal.open(u ? `Redigera ${u.anvandarnamn}` : 'Ny användare', `
+      <form id="anvForm">
+        <div class="form-group"><label class="form-label">Användarnamn <span class="req">*</span></label>
+          <input name="anvandarnamn" class="form-control" value="${escHtml(u?.anvandarnamn||'')}" ${u ? 'disabled' : 'required'}></div>
+        <div class="form-group"><label class="form-label">Namn</label>
+          <input name="namn" class="form-control" value="${escHtml(u?.namn||'')}"></div>
+        <div class="form-group"><label class="form-label">Lösenord ${u ? '' : '<span class="req">*</span>'}</label>
+          <input type="password" name="losenord" class="form-control" autocomplete="new-password"
+                 placeholder="${u ? 'Lämna tomt för oförändrat' : ''}" ${u ? '' : 'required'}></div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label class="form-label">Roll</label>
+            <select name="roll" class="form-control">${rollOpts(u?.roll || 'beredare')}</select></div>
+          <div class="form-group"><label class="form-label">Beredare (för auto-filter)</label>
+            <select name="beredare" class="form-control">${berOpts(u?.beredare || '')}</select></div>
+        </div>
+        <div class="form-check">
+          <input type="checkbox" name="aktiv" id="anvAktiv" ${(!u||u.aktiv)?'checked':''}>
+          <label for="anvAktiv">Aktiv</label>
+        </div>
+      </form>`,
+      `<button class="btn btn-navy" id="sparaAnv">Spara</button>
+       <button class="btn btn-secondary" id="avbrytAnv">Avbryt</button>`
+    );
+    document.getElementById('avbrytAnv').addEventListener('click', Modal.close);
+    document.getElementById('sparaAnv').addEventListener('click', async () => {
+      const f = document.getElementById('anvForm');
+      if (!f.reportValidity()) return;
+      const body = Object.fromEntries(new FormData(f).entries());
+      body.aktiv = document.getElementById('anvAktiv').checked ? 1 : 0;
+      if (u && !body.losenord) delete body.losenord;  // behåll befintligt lösenord
+      try {
+        if (u) await api('PUT', `/admin/anvandare/${u.id}`, body);
+        else   await api('POST', '/admin/anvandare', body);
+        toast('Sparad', 'success');
+        Modal.close();
+        await adminAnvandare(cont);
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  }
+
+  document.getElementById('btnNyAnv').addEventListener('click', () => modalAnvForm(null));
+  cont.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const u = anv.find(x => x.id == btn.dataset.id);
+      if (btn.dataset.action === 'edit') modalAnvForm(u);
+      else {
+        const ok = await confirm('Ta bort användare', `Ta bort kontot "${u.anvandarnamn}"?`);
+        if (!ok) return;
+        try {
+          await api('DELETE', `/admin/anvandare/${u.id}`);
+          toast('Borttagen', 'success');
+          await adminAnvandare(cont);
+        } catch (e) { toast(e.message, 'error'); }
+      }
+    });
+  });
+}
+
 // ---- ADMIN: INSTÄLLNINGAR ----
 async function adminInstallningar(cont) {
   let inst = {};
@@ -2803,11 +3019,15 @@ function visaLoginSkarm() {
           <div class="login-logo-dot"></div>
         </div>
         <h1 class="login-title">Beredning-Projektledning</h1>
-        <p class="login-sub">Ange lösenord för att fortsätta</p>
+        <p class="login-sub">Logga in för att fortsätta</p>
         <form id="loginForm" class="login-form">
           <div class="form-group">
+            <input type="text" id="loginUser" class="form-control login-input"
+                   placeholder="Användarnamn" autocomplete="username" autofocus>
+          </div>
+          <div class="form-group">
             <input type="password" id="loginPw" class="form-control login-input"
-                   placeholder="Lösenord" autofocus required>
+                   placeholder="Lösenord" autocomplete="current-password" required>
           </div>
           <div id="loginFel" class="login-fel hidden">
             <img id="gandalfGif" src="https://media.giphy.com/media/njYrp176NQsHS/giphy.gif"
@@ -2822,6 +3042,7 @@ function visaLoginSkarm() {
 
   document.getElementById('loginForm').addEventListener('submit', async e => {
     e.preventDefault();
+    const anvandarnamn = document.getElementById('loginUser').value.trim();
     const pw      = document.getElementById('loginPw').value;
     const felDiv  = document.getElementById('loginFel');
     const btn     = e.target.querySelector('button[type="submit"]');
@@ -2833,7 +3054,7 @@ function visaLoginSkarm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ losenord: pw }),
+        body: JSON.stringify({ anvandarnamn, losenord: pw }),
       });
       if (!r.ok) throw new Error('fel');
       sessionStorage.setItem('logged_in', '1');
@@ -2853,9 +3074,1124 @@ function visaLoginSkarm() {
   });
 }
 
+// ================================================================
+// KONTROLLRUM — KPI Dashboard
+// ================================================================
+async function renderKontrollrum(app) {
+  await anslLoadFromApi();
+  const data  = AnslState.projekt !== null ? AnslState.projekt : ANSL_SAMPLE;
+  const today = new Date();
+  const in30  = new Date(today.getTime() + 30 * 86400000);
+  const in60  = new Date(today.getTime() + 60 * 86400000);
+
+  // === Beräkningar ===
+  const total         = data.length;
+  const aktiva        = data.filter(p => p.fas !== 'Avslutat' && p.fas !== 'Drifttagning klar').length;
+  const klara         = data.filter(p => p.fas === 'Avslutat' || p.fas === 'Drifttagning klar').length;
+  const medBlockering = data.filter(p => p.blockering).length;
+  const atRisk        = data.filter(p => {
+    if (p.fas === 'Avslutat' || p.fas === 'Drifttagning klar') return false;
+    return (p.bestallningKlar && new Date(p.bestallningKlar) < today) || !!p.blockering;
+  }).length;
+  const leverans      = total > 0 ? Math.round(klara / total * 100) : 0;
+
+  const berDays  = data.filter(p => p.berStart && p.berSlut)
+    .map(p => Math.round((new Date(p.berSlut)  - new Date(p.berStart))  / 86400000));
+  const avgBer   = berDays.length  ? Math.round(berDays.reduce((a,b)=>a+b,0)  / berDays.length)  : 0;
+
+  const montDays = data.filter(p => p.montStart && p.montSlut)
+    .map(p => Math.round((new Date(p.montSlut) - new Date(p.montStart)) / 86400000));
+  const avgMont  = montDays.length ? Math.round(montDays.reduce((a,b)=>a+b,0) / montDays.length) : 0;
+
+  const montageNext30     = data.filter(p => p.montStart && new Date(p.montStart) >= today && new Date(p.montStart) <= in30 && p.fas !== 'Avslutat').length;
+  const driftNext60       = data.filter(p => p.driftDat  && new Date(p.driftDat)  >= today && new Date(p.driftDat)  <= in60 && p.fas !== 'Avslutat').length;
+  const pagaendeBeredning = data.filter(p => p.fas === 'Beredning').length;
+  const utanBeredare      = data.filter(p => !p.beredare && p.fas !== 'Avslutat' && p.fas !== 'Drifttagning klar').length;
+  const utanBestallning   = data.filter(p => !p.bestallningKlar && p.fas !== 'Avslutat' && p.fas !== 'Drifttagning klar').length;
+
+  const kundSet = [...new Set(data.filter(p => p.kund && p.kund !== '–').map(p => p.kund))];
+
+  const iMontageFas = data.filter(p => p.fas === 'Montage' || p.fas === 'Byggstart').length;
+
+  const monthNames = ['Jan','Feb','Mar','Apr','Maj','Jun','Jul','Aug','Sep','Okt','Nov','Dec'];
+  const montageByMonth = [];
+  for (let i = 0; i < 12; i++) {
+    const m = new Date(today.getFullYear(), today.getMonth() + i, 1);
+    const count = data.filter(p => {
+      if (!p.montStart) return false;
+      const d = new Date(p.montStart);
+      return d.getFullYear() === m.getFullYear() && d.getMonth() === m.getMonth();
+    }).length;
+    montageByMonth.push({ label: `${monthNames[m.getMonth()]} ${String(m.getFullYear()).slice(2)}`, count });
+  }
+
+  const beredningByMonth = [];
+  for (let i = 0; i < 12; i++) {
+    const m = new Date(today.getFullYear(), today.getMonth() + i, 1);
+    const count = data.filter(p => {
+      if (!p.berStart) return false;
+      const d = new Date(p.berStart);
+      return d.getFullYear() === m.getFullYear() && d.getMonth() === m.getMonth();
+    }).length;
+    beredningByMonth.push({ label: `${monthNames[m.getMonth()]} ${String(m.getFullYear()).slice(2)}`, count });
+  }
+
+  const fasData   = ANSL_FAS_ORDER.map(f => data.filter(p => p.fas === f).length);
+  const fasColors = ANSL_FAS_ORDER.map(f => ANSL_FAS_C[f]);
+
+  const berMap = {};
+  data.filter(p => p.fas !== 'Avslutat').forEach(p => {
+    if (p.beredare) berMap[p.beredare] = (berMap[p.beredare] || 0) + 1;
+  });
+  const berSorted = Object.entries(berMap).sort((a,b) => b[1]-a[1]);
+
+  // Fas-fördelning per beredare (staplat)
+  const fasGrps = [
+    { label:'Tidig fas',  faser:['Tidig fas','Sen fas'],           color:'rgba(59,130,246,.75)' },
+    { label:'Beredning',  faser:['Beredning'],                     color:'rgba(155,89,182,.75)' },
+    { label:'Montage',    faser:['Byggstart','Montage'],           color:'rgba(244,163,24,.75)' },
+    { label:'Klar',       faser:['Drifttagning klar','Avslutat'], color:'rgba(46,204,142,.75)' },
+  ];
+  const berNames = berSorted.map(([n]) => n);
+
+  const kommande = data
+    .filter(p => p.bestallningKlar && new Date(p.bestallningKlar) >= today && p.fas !== 'Avslutat' && p.fas !== 'Drifttagning klar')
+    .sort((a,b) => a.bestallningKlar.localeCompare(b.bestallningKlar))
+    .slice(0, 10);
+
+  const kommandeDrift = data
+    .filter(p => p.driftDat && new Date(p.driftDat) >= today && p.fas !== 'Avslutat')
+    .sort((a,b) => a.driftDat.localeCompare(b.driftDat))
+    .slice(0, 10);
+
+  const blockeringar = data.filter(p => p.blockering && p.fas !== 'Avslutat');
+
+  function fmtD(str) {
+    const d = new Date(str);
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  }
+  function dlRow(p, dateKey, dotStyle = '') {
+    const d    = new Date(p[dateKey]);
+    const days = Math.round((d - today) / 86400000);
+    const cls  = days <= 14 ? 'kpi-dl-urgent' : days <= 30 ? 'kpi-dl-warn' : '';
+    return `<div class="kpi-dl-row ${cls}">
+      <div class="kpi-dl-dot"${dotStyle ? ` style="${dotStyle}"` : ''}></div>
+      <div class="kpi-dl-info">
+        <div class="kpi-dl-name">${escHtml(p.namn)}</div>
+        <div class="kpi-dl-meta">${escHtml(p.id)} · ${escHtml(p.beredare||'–')}</div>
+      </div>
+      <div class="kpi-dl-right">
+        <div class="kpi-dl-date">${fmtD(p[dateKey])}</div>
+        <div class="kpi-dl-days">${days}d</div>
+      </div>
+    </div>`;
+  }
+
+  const dateLong = today.toLocaleDateString('sv-SE', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+  app.innerHTML = `
+  <div class="kpi-root">
+    <div class="kpi-header">
+      <div>
+        <div class="kpi-header-title">Kontrollrum</div>
+        <div class="kpi-header-sub">Realtidsöversikt · ${total} projekt · ${dateLong}</div>
+      </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="kpi-cards">
+      <div class="kpi-card kpi-card-blue">
+        <div class="kpi-card-top">
+          <div class="kpi-card-icon">📋</div>
+          ${kundSet.length > 0 ? `<div class="kpi-card-badge">${kundSet.length} kunder</div>` : ''}
+        </div>
+        <div class="kpi-card-val" data-target="${total}">0</div>
+        <div class="kpi-card-lbl">Totalt projekt</div>
+        <div class="kpi-card-ctx">${aktiva} aktiva · ${klara} klara</div>
+        <div class="kpi-card-accent kpi-accent-blue"></div>
+      </div>
+      <div class="kpi-card kpi-card-cyan">
+        <div class="kpi-card-top"><div class="kpi-card-icon">⚡</div></div>
+        <div class="kpi-card-val" data-target="${aktiva}">0</div>
+        <div class="kpi-card-lbl">Aktiva projekt</div>
+        <div class="kpi-card-ctx">${total > 0 ? Math.round(aktiva/total*100) : 0}% av portföljen</div>
+        <div class="kpi-card-accent kpi-accent-cyan"></div>
+      </div>
+      <div class="kpi-card kpi-card-green">
+        <div class="kpi-card-top">
+          <div class="kpi-card-icon">✅</div>
+          <div class="kpi-card-pct kpi-pct-green">${leverans}%</div>
+        </div>
+        <div class="kpi-card-val" data-target="${klara}">0</div>
+        <div class="kpi-card-lbl">Avslutade</div>
+        <div class="kpi-progress-wrap"><div class="kpi-progress-fill kpi-prog-green" style="width:0%" data-pct="${leverans}"></div></div>
+        <div class="kpi-card-accent kpi-accent-green"></div>
+      </div>
+      <div class="kpi-card kpi-card-red">
+        <div class="kpi-card-top"><div class="kpi-card-icon">⚠️</div></div>
+        <div class="kpi-card-val" data-target="${atRisk}">0</div>
+        <div class="kpi-card-lbl">I riskzon</div>
+        <div class="kpi-card-ctx">${medBlockering} blockerade · ${Math.max(0,atRisk-medBlockering)} försenade</div>
+        <div class="kpi-card-accent kpi-accent-red"></div>
+      </div>
+    </div>
+
+    <!-- Pipeline metrics -->
+    <div class="kpi-pipeline">
+      <div class="kpi-pipe-card">
+        <div class="kpi-pipe-icon">🔨</div>
+        <div class="kpi-pipe-val" style="color:var(--amber)">${montageNext30}</div>
+        <div class="kpi-pipe-lbl">Montage start</div>
+        <div class="kpi-pipe-ctx">nästa 30 dagar</div>
+      </div>
+      <div class="kpi-pipe-card">
+        <div class="kpi-pipe-icon">🔌</div>
+        <div class="kpi-pipe-val" style="color:var(--green)">${driftNext60}</div>
+        <div class="kpi-pipe-lbl">Driftsättning</div>
+        <div class="kpi-pipe-ctx">nästa 60 dagar</div>
+      </div>
+      <div class="kpi-pipe-card">
+        <div class="kpi-pipe-icon">📐</div>
+        <div class="kpi-pipe-val" style="color:var(--blue)">${pagaendeBeredning}</div>
+        <div class="kpi-pipe-lbl">Pågående beredning</div>
+        <div class="kpi-pipe-ctx">fas = Beredning</div>
+      </div>
+      <div class="kpi-pipe-card${utanBeredare > 0 ? ' kpi-pipe-warn' : ''}">
+        <div class="kpi-pipe-icon">👤</div>
+        <div class="kpi-pipe-val" style="color:${utanBeredare > 0 ? 'var(--red)' : 'var(--text-muted)'}">${utanBeredare}</div>
+        <div class="kpi-pipe-lbl">Utan beredare</div>
+        <div class="kpi-pipe-ctx">ej tilldelade</div>
+      </div>
+      <div class="kpi-pipe-card${utanBestallning > 0 ? ' kpi-pipe-warn' : ''}">
+        <div class="kpi-pipe-icon">📅</div>
+        <div class="kpi-pipe-val" style="color:${utanBestallning > 0 ? 'var(--amber)' : 'var(--text-muted)'}">${utanBestallning}</div>
+        <div class="kpi-pipe-lbl">Utan beställningsdatum</div>
+        <div class="kpi-pipe-ctx">aktiva projekt</div>
+      </div>
+      <div class="kpi-pipe-card">
+        <div class="kpi-pipe-icon">⏱</div>
+        <div class="kpi-pipe-val" style="color:var(--cyan)">${avgBer}</div>
+        <div class="kpi-pipe-lbl">Avg beredtid</div>
+        <div class="kpi-pipe-ctx">dagar</div>
+      </div>
+      <div class="kpi-pipe-card">
+        <div class="kpi-pipe-icon">🏗</div>
+        <div class="kpi-pipe-val" style="color:var(--cyan)">${avgMont}</div>
+        <div class="kpi-pipe-lbl">Avg montage-tid</div>
+        <div class="kpi-pipe-ctx">dagar</div>
+      </div>
+      <div class="kpi-pipe-card">
+        <div class="kpi-pipe-icon">⚙️</div>
+        <div class="kpi-pipe-val" style="color:var(--orange)">${iMontageFas}</div>
+        <div class="kpi-pipe-lbl">I montage-fas</div>
+        <div class="kpi-pipe-ctx">Montage / Byggstart</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="kpi-charts kpi-charts-3col">
+      <div class="kpi-chart-box">
+        <div class="kpi-chart-title">Fas-fördelning</div>
+        <div class="kpi-chart-inner"><canvas id="kpiFasChart"></canvas></div>
+      </div>
+      <div class="kpi-chart-box">
+        <div class="kpi-chart-title">Arbetsbelastning per beredare</div>
+        <div class="kpi-chart-inner"><canvas id="kpiBerChart"></canvas></div>
+      </div>
+      <div class="kpi-chart-box">
+        <div class="kpi-chart-title">Montage-pipeline · 12 månader</div>
+        <div class="kpi-chart-inner"><canvas id="kpiMontChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Bottom 3-col -->
+    <div class="kpi-bottom kpi-bottom-3col">
+      <div class="kpi-section">
+        <div class="kpi-section-title">Kommande beställningsdatum</div>
+        ${kommande.length === 0
+          ? '<div class="kpi-empty">Inga kommande deadlines registrerade</div>'
+          : kommande.map(p => dlRow(p, 'bestallningKlar')).join('')}
+      </div>
+      <div class="kpi-section">
+        <div class="kpi-section-title">Beredning-pipeline · 12 månader</div>
+        <div class="kpi-chart-inner" style="height:210px"><canvas id="kpiBerPipChart"></canvas></div>
+      </div>
+      <div class="kpi-section">
+        <div class="kpi-section-title">Fas-fördelning per beredare</div>
+        <div class="kpi-chart-inner" style="height:210px"><canvas id="kpiFasBerChart"></canvas></div>
+      </div>
+    </div>
+  </div>`;
+
+  // Animerade siffror
+  app.querySelectorAll('.kpi-card-val[data-target]').forEach(el => {
+    const target = parseInt(el.dataset.target);
+    if (target === 0) { el.textContent = '0'; return; }
+    let cur = 0;
+    const step = Math.max(1, Math.ceil(target / 25));
+    const timer = setInterval(() => {
+      cur = Math.min(cur + step, target);
+      el.textContent = cur;
+      if (cur >= target) clearInterval(timer);
+    }, 35);
+  });
+
+  // Animerad progress-bar (läs target-pct efter DOM är satt)
+  requestAnimationFrame(() => {
+    app.querySelectorAll('.kpi-progress-fill[data-pct]').forEach(el => {
+      el.style.width = el.dataset.pct + '%';
+    });
+  });
+
+  // Chart.js
+  if (typeof Chart !== 'undefined') {
+    Chart.defaults.color = '#4a6a8a';
+    Chart.defaults.font.family = 'Segoe UI, system-ui, sans-serif';
+    const ttOpts = { backgroundColor:'#071428', borderColor:'rgba(0,212,255,.2)', borderWidth:1, titleColor:'#e8f4ff', bodyColor:'#c8e0f8' };
+
+    const fasCtx = document.getElementById('kpiFasChart');
+    if (fasCtx) {
+      new Chart(fasCtx, {
+        type: 'doughnut',
+        data: { labels: ANSL_FAS_ORDER, datasets: [{ data: fasData, backgroundColor: fasColors, borderColor:'#040d1e', borderWidth:3 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout:'62%',
+          plugins: {
+            legend: { position:'bottom', labels:{ color:'#c8e0f8', font:{size:11}, padding:12, boxWidth:12, borderRadius:3 } },
+            tooltip: { ...ttOpts }
+          }
+        }
+      });
+    }
+
+    const berCtx = document.getElementById('kpiBerChart');
+    if (berCtx && berSorted.length > 0) {
+      new Chart(berCtx, {
+        type: 'bar',
+        data: {
+          labels: berSorted.map(([n]) => n),
+          datasets: [{ label:'Aktiva projekt', data: berSorted.map(([,c]) => c),
+            backgroundColor: berSorted.map((_,i) => `rgba(0,212,255,${0.2+i*0.06})`),
+            borderColor:'rgba(0,212,255,.6)', borderWidth:1, borderRadius:4 }]
+        },
+        options: {
+          indexAxis:'y', responsive:true, maintainAspectRatio:false,
+          plugins: { legend:{display:false}, tooltip:{...ttOpts} },
+          scales: {
+            x: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(0,212,255,.12)'} },
+            y: { grid:{display:false}, ticks:{color:'#c8e0f8',font:{size:12,weight:'600'}}, border:{color:'rgba(0,212,255,.12)'} }
+          }
+        }
+      });
+    } else if (berCtx) {
+      berCtx.parentElement.innerHTML = '<div class="kpi-empty" style="padding:40px 0">Importera Excel med PL Sign för beredare-data</div>';
+    }
+
+    const montCtx = document.getElementById('kpiMontChart');
+    if (montCtx) {
+      const hasAny = montageByMonth.some(m => m.count > 0);
+      if (hasAny) {
+        new Chart(montCtx, {
+          type: 'bar',
+          data: {
+            labels: montageByMonth.map(m => m.label),
+            datasets: [{ label:'Montage-starter', data: montageByMonth.map(m => m.count),
+              backgroundColor: montageByMonth.map(m => m.count > 0 ? 'rgba(249,115,22,.55)' : 'rgba(249,115,22,.12)'),
+              borderColor: montageByMonth.map(m => m.count > 0 ? 'rgba(249,115,22,.9)' : 'rgba(249,115,22,.2)'),
+              borderWidth:1, borderRadius:4 }]
+          },
+          options: {
+            responsive:true, maintainAspectRatio:false,
+            plugins: { legend:{display:false}, tooltip:{...ttOpts} },
+            scales: {
+              x: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#c8e0f8',font:{size:10}}, border:{color:'rgba(0,212,255,.12)'} },
+              y: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(0,212,255,.12)'} }
+            }
+          }
+        });
+      } else {
+        montCtx.parentElement.innerHTML = '<div class="kpi-empty" style="padding:40px 0">Inga montage-datum registrerade</div>';
+      }
+    }
+
+    // Beredning-pipeline per månad
+    const berPipCtx = document.getElementById('kpiBerPipChart');
+    if (berPipCtx) {
+      const hasAny = beredningByMonth.some(m => m.count > 0);
+      if (hasAny) {
+        new Chart(berPipCtx, {
+          type: 'bar',
+          data: {
+            labels: beredningByMonth.map(m => m.label),
+            datasets: [{ label:'Beredning-starter', data: beredningByMonth.map(m => m.count),
+              backgroundColor: beredningByMonth.map(m => m.count > 0 ? 'rgba(59,130,246,.55)' : 'rgba(59,130,246,.10)'),
+              borderColor:     beredningByMonth.map(m => m.count > 0 ? 'rgba(59,130,246,.9)'  : 'rgba(59,130,246,.2)'),
+              borderWidth:1, borderRadius:4 }]
+          },
+          options: {
+            responsive:true, maintainAspectRatio:false,
+            plugins: { legend:{display:false}, tooltip:{...ttOpts} },
+            scales: {
+              x: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#c8e0f8',font:{size:10}}, border:{color:'rgba(0,212,255,.12)'} },
+              y: { grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(0,212,255,.12)'} }
+            }
+          }
+        });
+      } else {
+        berPipCtx.parentElement.innerHTML = '<div class="kpi-empty" style="padding:40px 0">Inga beredning-datum registrerade</div>';
+      }
+    }
+
+    // Fas-fördelning per beredare (staplat horisontellt)
+    const fasBerCtx = document.getElementById('kpiFasBerChart');
+    if (fasBerCtx && berNames.length > 0) {
+      new Chart(fasBerCtx, {
+        type: 'bar',
+        data: {
+          labels: berNames,
+          datasets: fasGrps.map(g => ({
+            label: g.label,
+            data: berNames.map(ber => data.filter(p => p.beredare === ber && g.faser.includes(p.fas)).length),
+            backgroundColor: g.color,
+            borderWidth: 0,
+            borderRadius: 2,
+          }))
+        },
+        options: {
+          indexAxis:'y', responsive:true, maintainAspectRatio:false,
+          plugins: {
+            legend: { position:'bottom', labels:{ color:'#c8e0f8', font:{size:10}, padding:10, boxWidth:10, borderRadius:2 } },
+            tooltip: { ...ttOpts, mode:'index', intersect:false }
+          },
+          scales: {
+            x: { stacked:true, grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a',stepSize:1}, border:{color:'rgba(0,212,255,.12)'} },
+            y: { stacked:true, grid:{display:false}, ticks:{color:'#c8e0f8',font:{size:11,weight:'600'}}, border:{color:'rgba(0,212,255,.12)'} }
+          }
+        }
+      });
+    } else if (fasBerCtx) {
+      fasBerCtx.parentElement.innerHTML = '<div class="kpi-empty" style="padding:40px 0">Importera Excel med PL Sign för beredare-data</div>';
+    }
+  }
+}
+
+// ================================================================
+// RAPPORT — Rapportgenerator
+// ================================================================
+async function renderRapport(app) {
+  await anslLoadFromApi();
+  const data = AnslState.projekt !== null ? AnslState.projekt : ANSL_SAMPLE;
+  const today = new Date();
+
+  let rptType        = 'status';
+  let rptBeredare    = 'alla';
+  let statusBeredare = 'alla';
+  let sortCol        = null;
+  let sortDir        = 1;
+
+  const allBeredare = [...new Set(data.filter(p=>p.beredare).map(p=>p.beredare))].sort();
+
+  function getRows() {
+    let d = [...data];
+    if (rptType === 'deadline') {
+      d = d.filter(p => p.bestallningKlar).sort((a,b)=>a.bestallningKlar.localeCompare(b.bestallningKlar));
+    } else if (rptType === 'beredare') {
+      if (rptBeredare !== 'alla') d = d.filter(p=>p.beredare===rptBeredare);
+      d = d.sort((a,b)=>(a.beredare||'').localeCompare(b.beredare||''));
+    } else {
+      if (statusBeredare !== 'alla') d = d.filter(p=>p.beredare===statusBeredare);
+      d = d.sort((a,b)=>ANSL_FAS_ORDER.indexOf(a.fas)-ANSL_FAS_ORDER.indexOf(b.fas));
+    }
+    if (sortCol) {
+      d = d.sort((a,b) => {
+        if (sortCol === 'fas') {
+          return (ANSL_FAS_ORDER.indexOf(a.fas) - ANSL_FAS_ORDER.indexOf(b.fas)) * sortDir;
+        }
+        const av = String(a[sortCol]||''), bv = String(b[sortCol]||'');
+        return av.localeCompare(bv, 'sv') * sortDir;
+      });
+    }
+    return d;
+  }
+
+  const RPT_COLS = {
+    status:   [['IB nr','id'],['Projektnamn','namn'],['Fas','fas'],['Beredare','beredare'],['Montage start','montStart'],['Beställning klar','bestallningKlar'],['Blockering','blockering']],
+    deadline: [['Beställning klar','bestallningKlar'],['IB nr','id'],['Projektnamn','namn'],['Beredare','beredare'],['Montage start','montStart'],['Fas','fas']],
+    beredare: [['Beredare','beredare'],['IB nr','id'],['Projektnamn','namn'],['Fas','fas'],['Montage start','montStart'],['Beställning klar','bestallningKlar']],
+  };
+
+  function bindTableSort() {
+    app.querySelectorAll('.rpt-th-sort').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (sortCol === col) sortDir *= -1;
+        else { sortCol = col; sortDir = 1; }
+        app.querySelector('.rpt-table-wrap').innerHTML = buildTable(getRows());
+        bindTableSort();
+      });
+    });
+  }
+
+  function buildTable(rows) {
+    if (!rows.length) return '<div class="rpt-empty">Inga projekt matchade</div>';
+    const cols = RPT_COLS[rptType];
+    return `<table class="rpt-table">
+      <thead><tr>${cols.map(([lbl,k]) => {
+        const active = sortCol === k;
+        const arrow  = active ? (sortDir === 1 ? ' ↑' : ' ↓') : '';
+        return `<th class="rpt-th-sort${active?' rpt-th-active':''}" data-col="${k}">${lbl}${arrow}</th>`;
+      }).join('')}</tr></thead>
+      <tbody>${rows.map(p => `<tr class="${p.blockering ? 'rpt-row-blocked' : ''}">
+        ${cols.map(([,k]) => {
+          const val = String(p[k] || '–');
+          if (k === 'fas') {
+            const fc = ANSL_FAS_C[val] || '#4a6a8a';
+            return `<td><span class="rpt-fas-badge" style="background:${fc}22;color:${fc};border-color:${fc}44">${escHtml(val)}</span></td>`;
+          }
+          if (k === 'blockering' && val !== '–') {
+            return `<td class="rpt-td-blocked">${escHtml(val)}</td>`;
+          }
+          return `<td>${escHtml(val)}</td>`;
+        }).join('')}
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
+
+  function buildSummary(rows) {
+    if (rptType !== 'status' || rows.length === 0) return '';
+    const total = rows.length;
+    const fasStats = ANSL_FAS_ORDER.map(fas => {
+      const count = rows.filter(p => p.fas === fas).length;
+      return { fas, count, pct: total > 0 ? Math.round(count / total * 100) : 0, color: ANSL_FAS_C[fas] || '#4a6a8a' };
+    }).filter(s => s.count > 0);
+    const withBlk   = rows.filter(p => p.blockering).length;
+    const utanBer   = rows.filter(p => !p.beredare).length;
+    return `<div class="rpt-summary">
+      <div class="rpt-sum-left">
+        <div class="rpt-sum-total-num">${total}</div>
+        <div class="rpt-sum-total-lbl">ärenden totalt</div>
+        <div class="rpt-sum-chips">
+          ${withBlk > 0 ? `<span class="rpt-sum-chip rpt-chip-red">⚠ ${withBlk} blockerade</span>` : ''}
+          ${utanBer > 0 ? `<span class="rpt-sum-chip rpt-chip-amber">👤 ${utanBer} utan beredare</span>` : ''}
+        </div>
+      </div>
+      <div class="rpt-sum-right">
+        ${fasStats.map(s => `
+          <div class="rpt-sum-row">
+            <span class="rpt-sum-dot" style="background:${s.color}"></span>
+            <span class="rpt-sum-name">${escHtml(s.fas)}</span>
+            <div class="rpt-sum-bar-wrap">
+              <div class="rpt-sum-bar-fill" style="width:${s.pct}%;background:${s.color}"></div>
+            </div>
+            <span class="rpt-sum-count">${s.count}</span>
+            <span class="rpt-sum-pct">${s.pct}%</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  const typeLabels = { status:'Statusrapport', deadline:'Deadline-rapport', beredare:'Beredare-rapport' };
+
+  function rebuild() {
+    const rows = getRows();
+    const lbl  = typeLabels[rptType];
+    app.innerHTML = `
+    <div class="rpt-root">
+      <div class="rpt-sidebar">
+        <div class="rpt-sidebar-logo">📄</div>
+        <div class="rpt-sidebar-heading">Rapporttyp</div>
+        <button class="rpt-type-btn${rptType==='status'?' rpt-type-on':''}" data-rtype="status">
+          <span class="rpt-btn-icon">📊</span>Statusrapport
+        </button>
+        <button class="rpt-type-btn${rptType==='deadline'?' rpt-type-on':''}" data-rtype="deadline">
+          <span class="rpt-btn-icon">📅</span>Deadline-rapport
+        </button>
+        <button class="rpt-type-btn${rptType==='beredare'?' rpt-type-on':''}" data-rtype="beredare">
+          <span class="rpt-btn-icon">👷</span>Beredare-rapport
+        </button>
+
+        ${rptType==='status'?`
+        <div class="rpt-sidebar-heading" style="margin-top:20px">Filtrera</div>
+        <select class="rpt-ber-sel" id="rptStatusBerSel">
+          <option value="alla">Alla beredare</option>
+          ${allBeredare.map(b=>`<option value="${escHtml(b)}"${statusBeredare===b?' selected':''}>${escHtml(b)}</option>`).join('')}
+        </select>`:''}
+
+        ${rptType==='beredare'?`
+        <div class="rpt-sidebar-heading" style="margin-top:20px">Filtrera</div>
+        <select class="rpt-ber-sel" id="rptBerSel">
+          <option value="alla">Alla beredare</option>
+          ${allBeredare.map(b=>`<option value="${escHtml(b)}"${rptBeredare===b?' selected':''}>${escHtml(b)}</option>`).join('')}
+        </select>`:''}
+
+        <div class="rpt-sidebar-divider"></div>
+        <div class="rpt-sidebar-heading">Exportera</div>
+        <button class="btn btn-primary rpt-export-btn" id="rptXlsBtn">⬇ Excel (.xlsx)</button>
+        <button class="btn btn-navy rpt-export-btn" id="rptPrintBtn">🖨 Skriv ut / PDF</button>
+      </div>
+
+      <div class="rpt-preview">
+        <div class="rpt-preview-hdr">
+          <div class="rpt-preview-title">${lbl}</div>
+          <div class="rpt-preview-meta">${rows.length} rader · ${today.toLocaleDateString('sv-SE', {day:'numeric',month:'long',year:'numeric'})}</div>
+        </div>
+        ${buildSummary(rows)}
+        <div class="rpt-table-wrap">${buildTable(rows)}</div>
+      </div>
+    </div>`;
+
+    bindTableSort();
+    app.querySelectorAll('[data-rtype]').forEach(b => b.addEventListener('click', () => { rptType=b.dataset.rtype; rptBeredare='alla'; statusBeredare='alla'; sortCol=null; sortDir=1; rebuild(); }));
+    app.querySelector('#rptBerSel')?.addEventListener('change', e => { rptBeredare=e.target.value; app.querySelector('.rpt-table-wrap').innerHTML=buildTable(getRows()); bindTableSort(); });
+    app.querySelector('#rptStatusBerSel')?.addEventListener('change', e => { statusBeredare=e.target.value; rebuild(); });
+
+    document.getElementById('rptXlsBtn')?.addEventListener('click', () => {
+      if (typeof XLSX === 'undefined') { toast('SheetJS saknas','error'); return; }
+      const cols = RPT_COLS[rptType];
+      const ws = XLSX.utils.json_to_sheet(getRows().map(p => Object.fromEntries(cols.map(([lbl,k])=>[lbl,p[k]||'']))));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, typeLabels[rptType]);
+      XLSX.writeFile(wb, `${rptType}_rapport_${today.toISOString().slice(0,10)}.xlsx`);
+      toast('Excel-fil exporterad ✓','success');
+    });
+
+    document.getElementById('rptPrintBtn')?.addEventListener('click', () => window.print());
+  }
+
+  rebuild();
+}
+
+// ================================================================
+// STATISTIK — Faktureringsstatistik
+// ================================================================
+const StatState = { allData: null };
+
+async function statLoadFromApi() {
+  if (StatState.allData !== null) return;
+  try {
+    const r = await api('GET', '/fakturering');
+    StatState.allData = r.rader || [];
+  } catch { StatState.allData = []; }
+}
+
+async function renderStatistik(app) {
+  await statLoadFromApi();
+
+  // Alla tillgängliga månader
+  const allManader = [...new Set((StatState.allData||[]).map(r=>r.manad))].sort().reverse();
+  let valdManad = allManader[0] || null;
+
+  function getManadData() {
+    if (!valdManad) return [];
+    return (StatState.allData||[]).filter(r => r.manad === valdManad);
+  }
+
+  function fmtKr(n) {
+    return Math.round(n).toLocaleString('sv-SE') + ' kr';
+  }
+  function fmtPct(n) {
+    return n.toFixed(1) + '%';
+  }
+
+  function buildContent() {
+    const rows = getManadData();
+    const totalVerkl = rows.reduce((s,r)=>s+r.verklIntakt,0);
+    const totalKostn = rows.reduce((s,r)=>s+(r.verklKostn||0),0);
+    const totalBudg  = rows.reduce((s,r)=>s+r.budgIntakt,0);
+    const totalBudgKostn = rows.reduce((s,r)=>s+(r.budgKostn||0),0);
+    const totalUte   = rows.reduce((s,r)=>s+r.utestående,0);
+    const totalPct   = totalBudg > 0 ? ((totalBudg-totalBudgKostn)/totalBudg*100) : 0;
+    const antalProjekt = rows.length;
+
+    // Per projektledare
+    const plMap = {};
+    rows.forEach(r => {
+      const pl = r.projektledare || 'Okänd';
+      if (!plMap[pl]) plMap[pl] = { verkl:0, kostn:0, budg:0, budgKostn:0, ute:0, count:0 };
+      plMap[pl].verkl += r.verklIntakt;
+      plMap[pl].kostn += r.verklKostn || 0;
+      plMap[pl].budg  += r.budgIntakt;
+      plMap[pl].budgKostn += r.budgKostn || 0;
+      plMap[pl].ute   += r.utestående;
+      plMap[pl].count++;
+    });
+    const plSorted = Object.entries(plMap).sort((a,b)=>b[1].verkl-a[1].verkl);
+
+    // Månadshistorik (alla månader, summerat)
+    const manadHistorik = allManader.slice().reverse().map(m => {
+      const md = (StatState.allData||[]).filter(r=>r.manad===m);
+      return { manad: m, verkl: md.reduce((s,r)=>s+r.verklIntakt,0), budg: md.reduce((s,r)=>s+r.budgIntakt,0) };
+    });
+
+    const manadLabels = {
+      '01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'Maj','06':'Jun',
+      '07':'Jul','08':'Aug','09':'Sep','10':'Okt','11':'Nov','12':'Dec'
+    };
+    function manadLbl(ym) {
+      const [y,m] = ym.split('-');
+      return `${manadLabels[m]||m} ${y}`;
+    }
+
+    const plColors = [
+      'rgba(0,212,255,.7)','rgba(249,115,22,.7)','rgba(16,185,129,.7)',
+      'rgba(155,89,182,.7)','rgba(239,68,68,.7)','rgba(245,158,11,.7)'
+    ];
+
+    return `
+    <div class="stat-content">
+
+      <!-- KPI Cards -->
+      <div class="stat-cards">
+        <div class="stat-card stat-card-cyan">
+          <div class="stat-card-icon">💰</div>
+          <div class="stat-card-val">${Math.round(totalVerkl).toLocaleString('sv-SE')}</div>
+          <div class="stat-card-unit">kr</div>
+          <div class="stat-card-lbl">Fakturerat totalt</div>
+          <div class="stat-card-accent stat-accent-cyan"></div>
+        </div>
+        <div class="stat-card stat-card-orange">
+          <div class="stat-card-icon">⏳</div>
+          <div class="stat-card-val">${Math.round(totalUte).toLocaleString('sv-SE')}</div>
+          <div class="stat-card-unit">kr</div>
+          <div class="stat-card-lbl">Utestående inkl. moms</div>
+          <div class="stat-card-accent stat-accent-orange"></div>
+        </div>
+        <div class="stat-card stat-card-blue">
+          <div class="stat-card-icon">📋</div>
+          <div class="stat-card-val">${Math.round(totalBudg).toLocaleString('sv-SE')}</div>
+          <div class="stat-card-unit">kr</div>
+          <div class="stat-card-lbl">Total budget</div>
+          <div class="stat-card-accent stat-accent-blue"></div>
+        </div>
+        <div class="stat-card ${totalPct >= 15 ? 'stat-card-green' : totalPct >= 0 ? 'stat-card-cyan' : 'stat-card-orange'}">
+          <div class="stat-card-icon">📈</div>
+          <div class="stat-card-val">${totalPct.toFixed(1)}</div>
+          <div class="stat-card-unit">%</div>
+          <div class="stat-card-lbl">Utfall (budg. marginal)</div>
+          <div class="stat-card-progress-wrap"><div class="stat-card-progress-fill" style="width:${Math.max(0,Math.min(totalPct,100))}%"></div></div>
+          <div class="stat-card-accent ${totalPct >= 15 ? 'stat-accent-green' : totalPct >= 0 ? 'stat-accent-cyan' : 'stat-accent-orange'}"></div>
+        </div>
+        <div class="stat-card stat-card-muted">
+          <div class="stat-card-icon">📁</div>
+          <div class="stat-card-val">${antalProjekt}</div>
+          <div class="stat-card-unit">st</div>
+          <div class="stat-card-lbl">Projekt i perioden</div>
+          <div class="stat-card-accent stat-accent-muted"></div>
+        </div>
+      </div>
+
+      ${allManader.length > 1 ? `
+      <!-- Månadshistorik chart -->
+      <div class="stat-section">
+        <div class="stat-section-title">Fakturering per månad</div>
+        <div class="stat-chart-wrap"><canvas id="statManadChart"></canvas></div>
+      </div>` : ''}
+
+      <!-- Per projektledare -->
+      <div class="stat-section">
+        <div class="stat-section-title">Per projektledare</div>
+        <div class="stat-pl-grid">
+          ${plSorted.map(([pl,v],i) => {
+            const pct = v.budg > 0 ? ((v.budg-v.budgKostn)/v.budg*100) : 0;
+            const barW = Math.max(0, Math.min(pct, 100));
+            const c = pct >= 15 ? 'rgba(16,185,129,.8)' : pct >= 0 ? plColors[i % plColors.length] : 'rgba(239,68,68,.8)';
+            return `<div class="stat-pl-card">
+              <div class="stat-pl-name">${escHtml(pl)}</div>
+              <div class="stat-pl-count">${v.count} projekt</div>
+              <div class="stat-pl-row">
+                <span class="stat-pl-lbl">Fakturerat (intäkt)</span>
+                <span class="stat-pl-val stat-cyan">${fmtKr(v.verkl)}</span>
+              </div>
+              <div class="stat-pl-row">
+                <span class="stat-pl-lbl">Verklig kostnad</span>
+                <span class="stat-pl-val stat-muted">${fmtKr(v.kostn)}</span>
+              </div>
+              <div class="stat-pl-row">
+                <span class="stat-pl-lbl">Utestående</span>
+                <span class="stat-pl-val stat-orange">${fmtKr(v.ute)}</span>
+              </div>
+              <div class="stat-pl-bar-wrap">
+                <div class="stat-pl-bar-fill" style="width:${barW}%;background:${c}"></div>
+              </div>
+              <div class="stat-pl-pct" style="color:${c}">Utfall ${fmtPct(pct)} (budg. marginal)</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="stat-chart-wrap" style="height:${Math.max(200, plSorted.length*40+60)}px; margin-top:20px">
+          <canvas id="statPlChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Per ärende -->
+      <div class="stat-section">
+        <div class="stat-section-title">Per ärende</div>
+        <div class="stat-table-wrap">
+          <table class="stat-table">
+            <thead><tr>
+              <th>Projektnamn</th>
+              <th>Projektledare</th>
+              <th class="stat-num">Fakturerat</th>
+              <th class="stat-num">Budget</th>
+              <th class="stat-num">Utestående</th>
+              <th class="stat-num">Utfall %</th>
+              <th class="stat-num">Färdigt %</th>
+            </tr></thead>
+            <tbody>
+              ${rows.sort((a,b)=>b.verklIntakt-a.verklIntakt).map(r => {
+                const pct = r.budgIntakt > 0 ? ((r.budgIntakt-(r.budgKostn||0))/r.budgIntakt*100) : 0;
+                const pctCls = pct >= 15 ? 'stat-green' : pct >= 0 ? 'stat-cyan' : 'stat-orange';
+                const fardCls = r.fardigt >= 90 ? 'stat-green' : r.fardigt >= 50 ? 'stat-cyan' : 'stat-muted';
+                return `<tr>
+                  <td class="stat-namn">${escHtml(r.projektnamn)}</td>
+                  <td>${escHtml(r.projektledare)}</td>
+                  <td class="stat-num stat-cyan">${fmtKr(r.verklIntakt)}</td>
+                  <td class="stat-num stat-muted">${fmtKr(r.budgIntakt)}</td>
+                  <td class="stat-num stat-orange">${fmtKr(r.utestående)}</td>
+                  <td class="stat-num ${pctCls}">${fmtPct(pct)}</td>
+                  <td class="stat-num ${fardCls}">${r.fardigt.toFixed(1)}%</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+            <tfoot><tr>
+              <td colspan="2"><strong>TOTALT</strong></td>
+              <td class="stat-num stat-cyan"><strong>${fmtKr(totalVerkl)}</strong></td>
+              <td class="stat-num stat-muted"><strong>${fmtKr(totalBudg)}</strong></td>
+              <td class="stat-num stat-orange"><strong>${fmtKr(totalUte)}</strong></td>
+              <td class="stat-num"><strong>${fmtPct(totalPct)}</strong></td>
+              <td class="stat-num"></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function buildCharts(rows) {
+    if (typeof Chart === 'undefined') return;
+    const ttOpts = { backgroundColor:'#071428', borderColor:'rgba(0,212,255,.2)', borderWidth:1, titleColor:'#e8f4ff', bodyColor:'#c8e0f8' };
+    Chart.defaults.color = '#4a6a8a';
+    Chart.defaults.font.family = 'Segoe UI, system-ui, sans-serif';
+
+    // Månadshistorik
+    const manadCtx = document.getElementById('statManadChart');
+    if (manadCtx) {
+      const allManaderAsc = [...new Set((StatState.allData||[]).map(r=>r.manad))].sort();
+      const manadLabels = {'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'Maj','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Okt','11':'Nov','12':'Dec'};
+      const mkLbl = ym => { const [y,m]=ym.split('-'); return `${manadLabels[m]||m} ${y}`; };
+      const verklData = allManaderAsc.map(m => (StatState.allData||[]).filter(r=>r.manad===m).reduce((s,r)=>s+r.verklIntakt,0));
+      const budgData  = allManaderAsc.map(m => (StatState.allData||[]).filter(r=>r.manad===m).reduce((s,r)=>s+r.budgIntakt,0));
+      new Chart(manadCtx, {
+        type:'bar',
+        data:{ labels: allManaderAsc.map(mkLbl),
+          datasets:[
+            { label:'Fakturerat', data:verklData, backgroundColor:'rgba(0,212,255,.55)', borderColor:'rgba(0,212,255,.9)', borderWidth:1, borderRadius:4 },
+            { label:'Budget',     data:budgData,  backgroundColor:'rgba(249,115,22,.3)', borderColor:'rgba(249,115,22,.6)', borderWidth:1, borderRadius:4 }
+          ]},
+        options:{ responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{ position:'top', labels:{ color:'#c8e0f8', font:{size:11}, boxWidth:12 } }, tooltip:{...ttOpts} },
+          scales:{
+            x:{ grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#c8e0f8'}, border:{color:'rgba(0,212,255,.12)'} },
+            y:{ grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a', callback:v=>Math.round(v).toLocaleString('sv-SE')+' kr'}, border:{color:'rgba(0,212,255,.12)'} }
+          }
+        }
+      });
+    }
+
+    // Per projektledare - horisontellt grupperat
+    const plCtx = document.getElementById('statPlChart');
+    if (plCtx) {
+      const plMap = {};
+      rows.forEach(r => {
+        const pl = r.projektledare||'Okänd';
+        if (!plMap[pl]) plMap[pl]={verkl:0,budg:0,ute:0};
+        plMap[pl].verkl+=r.verklIntakt; plMap[pl].budg+=r.budgIntakt; plMap[pl].ute+=r.utestående;
+      });
+      const plSorted = Object.entries(plMap).sort((a,b)=>b[1].verkl-a[1].verkl);
+      new Chart(plCtx, {
+        type:'bar',
+        data:{ labels: plSorted.map(([n])=>n),
+          datasets:[
+            { label:'Fakturerat', data:plSorted.map(([,v])=>v.verkl), backgroundColor:'rgba(0,212,255,.55)', borderColor:'rgba(0,212,255,.9)', borderWidth:1, borderRadius:4 },
+            { label:'Budget',     data:plSorted.map(([,v])=>v.budg),  backgroundColor:'rgba(249,115,22,.3)', borderColor:'rgba(249,115,22,.6)', borderWidth:1, borderRadius:4 },
+            { label:'Utestående', data:plSorted.map(([,v])=>v.ute),   backgroundColor:'rgba(239,68,68,.4)',  borderColor:'rgba(239,68,68,.7)',   borderWidth:1, borderRadius:4 }
+          ]},
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{ position:'top', labels:{ color:'#c8e0f8', font:{size:11}, boxWidth:12 } }, tooltip:{...ttOpts, callbacks:{ label: ctx => `${ctx.dataset.label}: ${Math.round(ctx.raw).toLocaleString('sv-SE')} kr` }} },
+          scales:{
+            x:{ grid:{color:'rgba(0,212,255,.07)'}, ticks:{color:'#4a6a8a', callback:v=>Math.round(v).toLocaleString('sv-SE')}, border:{color:'rgba(0,212,255,.12)'} },
+            y:{ grid:{display:false}, ticks:{color:'#c8e0f8',font:{size:12,weight:'600'}}, border:{color:'rgba(0,212,255,.12)'} }
+          }
+        }
+      });
+    }
+  }
+
+  function rebuild() {
+    const rows = getManadData();
+    const manadLabels = {'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'Maj','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Okt','11':'Nov','12':'Dec'};
+    function mkLbl(ym) { if (!ym) return ''; const [y,m]=ym.split('-'); return `${manadLabels[m]||m} ${y}`; }
+
+    app.innerHTML = `
+    <div class="stat-root">
+      <div class="stat-header">
+        <div>
+          <div class="stat-header-title">Faktureringsstatistik</div>
+          <div class="stat-header-sub">${valdManad ? mkLbl(valdManad) : 'Ingen data importerad'} · ${getManadData().length} projekt</div>
+        </div>
+        <div class="stat-toolbar">
+          ${allManader.length > 0 ? `
+          <select class="stat-manad-sel" id="statManadSel">
+            ${allManader.map(m=>`<option value="${m}"${m===valdManad?' selected':''}>${mkLbl(m)}</option>`).join('')}
+          </select>` : ''}
+          <label class="btn btn-primary stat-import-btn" style="cursor:pointer">
+            ⬆ Importera Excel
+            <input type="file" id="statFileInput" accept=".xlsx,.xls" style="display:none">
+          </label>
+          ${valdManad ? `<button class="btn btn-danger btn-sm" id="statDelBtn">🗑 Ta bort ${mkLbl(valdManad)}</button>` : ''}
+        </div>
+      </div>
+
+      ${allManader.length === 0 ? `
+        <div class="stat-empty">
+          <div class="stat-empty-icon">📊</div>
+          <div class="stat-empty-title">Ingen data importerad</div>
+          <div class="stat-empty-sub">Klicka på "Importera Excel" och välj din faktureringsrapport.<br>Du väljer vilken månad rapporten gäller vid importen.</div>
+        </div>` : buildContent()}
+    </div>`;
+
+    // Bind events
+    document.getElementById('statManadSel')?.addEventListener('change', e => { valdManad=e.target.value; rebuild(); });
+
+    document.getElementById('statFileInput')?.addEventListener('change', async e => {
+      const file = e.target.files[0]; if (!file) return;
+      // Månadsväljare
+      const now = new Date();
+      const defaultManad = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+      const vald = prompt(`Vilken månad gäller den här rapporten?\nFormat: ÅÅÅÅ-MM (t.ex. ${defaultManad})`, defaultManad);
+      if (!vald || !/^\d{4}-\d{2}$/.test(vald.trim())) { toast('Ogiltigt månadsformat — använd ÅÅÅÅ-MM', 'error'); return; }
+      const manad = vald.trim();
+
+      // Läs Excel med SheetJS
+      try {
+        const ab = await file.arrayBuffer();
+        const wb = XLSX.read(ab, { type:'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+
+        const projekt = rawRows.map(r => {
+          const pl = String(r['Projektledare']||'').trim();
+          // Ta bort (SWEDCARL) suffix
+          const plNamn = pl.replace(/\s*\([^)]+\)$/, '').trim();
+          return {
+            id:            String(r['Projektnummer']||'').trim(),
+            projektnamn:   String(r['Projektnamn']||'').trim(),
+            projektledare: plNamn,
+            utestående:    parseFloat(r['Utestående inkl VAT']||r['Utestående inkl. VAT']||r['Utestående']||0)||0,
+            verklIntakt:   parseFloat(r['Tot. verkl. intäkt']||r['Tot. verkl. inktakt']||0)||0,
+            verklKostn:    parseFloat(r['Tot. verkl. kostn.']||r['Tot. verkl. kostn']||0)||0,
+            budgIntakt:    parseFloat(r['Tot. budgeterad intäkt']||0)||0,
+            budgKostn:     parseFloat(r['Tot. budgeterad kostn.']||r['Tot. budgeterad kostn']||0)||0,
+            fardigt:       parseFloat(r['Färdigt (%)']||r['Fardigt (%)']||0)||0,
+          };
+        }).filter(p => p.id && p.id !== 'Projektnummer');
+
+        if (projekt.length === 0) { toast('Inga projekt hittades i filen', 'error'); return; }
+
+        await api('POST', '/fakturering/import', { manad, projekt });
+        StatState.allData = null; // rensa cache
+        await statLoadFromApi();
+        valdManad = manad;
+        toast(`${projekt.length} projekt importerade för ${manad} ✓`, 'success');
+        rebuild();
+        setTimeout(() => buildCharts(getManadData()), 50);
+      } catch(err) { toast('Fel vid import: ' + err.message, 'error'); }
+    });
+
+    document.getElementById('statDelBtn')?.addEventListener('click', async () => {
+      if (!valdManad) return;
+      const ok = await confirm('Ta bort period', `Ta bort all data för ${mkLbl(valdManad)}?`, 'Ta bort');
+      if (!ok) return;
+      try {
+        await api('DELETE', `/fakturering/${valdManad}`);
+        StatState.allData = null;
+        await statLoadFromApi();
+        valdManad = allManader.filter(m=>m!==valdManad)[0] || null;
+        toast('Period borttagen', 'success');
+        rebuild();
+      } catch(err) { toast('Fel: '+err.message, 'error'); }
+    });
+
+    if (allManader.length > 0) {
+      setTimeout(() => buildCharts(getManadData()), 50);
+    }
+  }
+
+  rebuild();
+}
+
 // ----------------------------------------------------------------
 // BOOT
 // ----------------------------------------------------------------
+// ================================================================
+// MASKINPLANERING (delad planering med UE)
+// ================================================================
+const MASKIN_STATUS = ['Planerad', 'Pågående', 'Klar', 'Inställd'];
+const MASKIN_STATUS_CSS = {
+  'Planerad': 'badge-planerat', 'Pågående': 'badge-pagaende',
+  'Klar': 'badge-klart', 'Inställd': 'badge-danger',
+};
+
+async function renderMaskinplanering(app) {
+  let projektLista = [];
+  try { projektLista = (await api('GET', '/projekt')).projekt || []; } catch {}
+
+  app.innerHTML = `
+    <div class="page-header">
+      <h1 class="page-title">Maskinplanering</h1>
+      <button class="btn btn-primary" id="btnNyMaskin">+ Ny planering</button>
+    </div>
+    <div class="filter-bar">
+      <input type="search" class="form-control" id="mpSok" placeholder="🔍 Sök projekt, maskin, UE, notat…">
+      <select class="form-control" id="mpStatus" style="max-width:170px">
+        <option value="">Alla statusar</option>
+        ${MASKIN_STATUS.map(s => `<option>${s}</option>`).join('')}
+      </select>
+      <select class="form-control" id="mpMaskin" style="max-width:200px">
+        <option value="">Alla maskiner</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Maskin</th><th>Projekt / plats</th><th>UE / förare</th>
+            <th>Start</th><th>Slut</th><th>Status</th><th>Notat</th><th>Åtgärder</th>
+          </tr></thead>
+          <tbody id="mpBody"></tbody>
+        </table>
+      </div>
+    </div>`;
+
+  let rader = [];
+
+  async function ladda() {
+    const sok    = document.getElementById('mpSok').value.trim();
+    const status = document.getElementById('mpStatus').value;
+    const maskin = document.getElementById('mpMaskin').value;
+    let url = '/maskinplanering?';
+    if (sok)    url += `sok=${encodeURIComponent(sok)}&`;
+    if (status) url += `status=${encodeURIComponent(status)}&`;
+    if (maskin) url += `maskin=${encodeURIComponent(maskin)}&`;
+    try { rader = (await api('GET', url)).maskinplanering || []; }
+    catch (e) { toast(e.message, 'error'); return; }
+    renderRader();
+    fyllMaskinFilter();
+  }
+
+  function fyllMaskinFilter() {
+    const sel = document.getElementById('mpMaskin');
+    const nuvarande = sel.value;
+    const maskiner = [...new Set(rader.map(r => r.maskin).filter(Boolean))].sort();
+    // Behåll valt värde även om det filtrerats bort
+    const alla = nuvarande && !maskiner.includes(nuvarande) ? [nuvarande, ...maskiner] : maskiner;
+    sel.innerHTML = '<option value="">Alla maskiner</option>' +
+      alla.map(m => `<option ${m === nuvarande ? 'selected' : ''}>${escHtml(m)}</option>`).join('');
+  }
+
+  function renderRader() {
+    const tbody = document.getElementById('mpBody');
+    if (!rader.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="muted text-center">Ingen planering ännu. Klicka "+ Ny planering".</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rader.map(r => `
+      <tr>
+        <td><strong>${escHtml(r.maskin)}</strong></td>
+        <td>${escHtml(r.projektnamn || '–')}</td>
+        <td>${escHtml(r.ue || '–')}</td>
+        <td>${escHtml(r.startdatum || '–')}</td>
+        <td>${escHtml(r.slutdatum || '–')}</td>
+        <td><span class="badge ${MASKIN_STATUS_CSS[r.status] || ''}">${escHtml(r.status)}</span></td>
+        <td class="text-sm">${escHtml(r.notat || '')}</td>
+        <td class="flex gap-1">
+          <button class="btn btn-sm btn-outline" data-id="${r.id}" data-action="edit">Redigera</button>
+          <button class="btn btn-sm btn-danger"  data-id="${r.id}" data-action="del">Ta bort</button>
+        </td>
+      </tr>`).join('');
+    tbody.querySelectorAll('button[data-action]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const r = rader.find(x => x.id == btn.dataset.id);
+        if (btn.dataset.action === 'edit') modalMaskinForm(r);
+        else {
+          const ok = await confirm('Ta bort planering', `Ta bort planeringen för "${r.maskin}"?`);
+          if (!ok) return;
+          try { await api('DELETE', `/maskinplanering/${r.id}`); toast('Borttagen', 'success'); await ladda(); }
+          catch (e) { toast(e.message, 'error'); }
+        }
+      });
+    });
+  }
+
+  function modalMaskinForm(r) {
+    const projOpts = `<option value="">– inget kopplat projekt –</option>` +
+      projektLista.map(p => `<option value="${p.id}" ${r && String(r.projekt_id) === String(p.id) ? 'selected' : ''}>${escHtml(p.projektnummer)} – ${escHtml(p.projektnamn)}</option>`).join('');
+    const statusOpts = MASKIN_STATUS.map(s => `<option ${r?.status === s ? 'selected' : ''}>${s}</option>`).join('');
+    Modal.open(r ? 'Redigera planering' : 'Ny maskinplanering', `
+      <form id="mpForm">
+        <div class="form-group"><label class="form-label">Maskin <span class="req">*</span></label>
+          <input name="maskin" class="form-control" value="${escHtml(r?.maskin||'')}" placeholder="t.ex. Grävmaskin 14 ton" required></div>
+        <div class="form-group"><label class="form-label">Kopplat projekt</label>
+          <select name="projekt_id" id="mpProj" class="form-control">${projOpts}</select></div>
+        <div class="form-group"><label class="form-label">Projekt / plats (text)</label>
+          <input name="projektnamn" id="mpProjNamn" class="form-control" value="${escHtml(r?.projektnamn||'')}" placeholder="Visas i listan"></div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label class="form-label">UE / förare</label>
+            <input name="ue" class="form-control" value="${escHtml(r?.ue||'')}"></div>
+          <div class="form-group"><label class="form-label">Status</label>
+            <select name="status" class="form-control">${statusOpts}</select></div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label class="form-label">Startdatum</label>
+            <input type="date" name="startdatum" class="form-control" value="${escHtml(r?.startdatum||'')}"></div>
+          <div class="form-group"><label class="form-label">Slutdatum</label>
+            <input type="date" name="slutdatum" class="form-control" value="${escHtml(r?.slutdatum||'')}"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Notat</label>
+          <textarea name="notat" class="form-control" rows="2">${escHtml(r?.notat||'')}</textarea></div>
+      </form>`,
+      `<button class="btn btn-navy" id="sparaMp">Spara</button>
+       <button class="btn btn-secondary" id="avbrytMp">Avbryt</button>`
+    );
+    // Autofyll projektnamn när man väljer ett projekt (om fältet är tomt)
+    document.getElementById('mpProj').addEventListener('change', e => {
+      const p = projektLista.find(x => String(x.id) === e.target.value);
+      const namnEl = document.getElementById('mpProjNamn');
+      if (p && !namnEl.value.trim()) namnEl.value = `${p.projektnummer} – ${p.projektnamn}`;
+    });
+    document.getElementById('avbrytMp').addEventListener('click', Modal.close);
+    document.getElementById('sparaMp').addEventListener('click', async () => {
+      const f = document.getElementById('mpForm');
+      if (!f.reportValidity()) return;
+      const body = Object.fromEntries(new FormData(f).entries());
+      body.projekt_id = body.projekt_id || null;
+      try {
+        if (r) await api('PUT', `/maskinplanering/${r.id}`, body);
+        else   await api('POST', '/maskinplanering', body);
+        toast('Sparad', 'success');
+        Modal.close();
+        await ladda();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  }
+
+  document.getElementById('btnNyMaskin').addEventListener('click', () => modalMaskinForm(null));
+  document.getElementById('mpSok').addEventListener('input', ladda);
+  document.getElementById('mpStatus').addEventListener('change', ladda);
+  document.getElementById('mpMaskin').addEventListener('change', ladda);
+
+  await ladda();
+}
+
 async function boot() {
   // Kräv inloggning vid varje ny webbläsarsession (ny flik/fönster)
   if (!sessionStorage.getItem('logged_in')) {
@@ -2866,18 +4202,42 @@ async function boot() {
 
   // Kolla app-inloggning
   let loggedIn = false;
+  let status = {};
   try {
     const r = await fetch('/api/auth/status', { credentials: 'same-origin' });
-    const s = await r.json();
-    loggedIn = !!s.loggedin;
+    status = await r.json();
+    loggedIn = !!status.loggedin;
   } catch {}
 
   if (!loggedIn) { visaLoginSkarm(); return; }
+
+  // Spara användarinfo + auto-filter på egna jobb
+  S.user = status.anvandarnamn ? {
+    anvandarnamn: status.anvandarnamn,
+    namn:         status.namn,
+    roll:         status.roll,
+    beredare:     status.beredare,
+  } : null;
+  S.minBeredare = status.beredare || null;
+
+  // UE-konton: dölj alla nav-länkar utom Maskinplanering
+  if (S.user && S.user.roll === 'ue') {
+    document.querySelectorAll('.nav-link').forEach(a => {
+      if (a.dataset.view !== 'maskinplanering') a.style.display = 'none';
+    });
+  }
 
   // Visa navbar och logga ut-knapp
   document.querySelector('.topnav').style.display = '';
   const navRight = document.getElementById('navRight');
   if (navRight && !navRight.querySelector('.btn-logout')) {
+    if (S.user && S.user.namn) {
+      const namnEl = document.createElement('span');
+      namnEl.className = 'nav-user text-sm';
+      namnEl.style.cssText = 'margin-right:8px;opacity:.85;white-space:nowrap';
+      namnEl.textContent = `👤 ${S.user.namn}`;
+      navRight.prepend(namnEl);
+    }
     const logoutBtn = document.createElement('button');
     logoutBtn.className = 'btn btn-outline btn-sm btn-logout';
     logoutBtn.textContent = 'Logga ut';
@@ -2889,12 +4249,17 @@ async function boot() {
     navRight.prepend(logoutBtn);
   }
 
-  // Kolla admin-session
-  try {
-    await api('GET', '/admin/check');
+  // Admin-status (från sessionen)
+  if (status.admin) {
     S.admin = true;
     document.getElementById('adminBadge').classList.remove('hidden');
-  } catch {}
+  } else {
+    try {
+      await api('GET', '/admin/check');
+      S.admin = true;
+      document.getElementById('adminBadge').classList.remove('hidden');
+    } catch {}
+  }
 
   const hash = location.hash.replace('#', '');
   const [view, ...rest] = hash.split('/');
@@ -2906,26 +4271,26 @@ async function boot() {
 // ================================================================
 
 const ANSL_SAMPLE = [
-  {id:"351860",namn:"AM Ny 20A Västra spång 515",kund:"Privat",fas:"Drifttagning klar",berStart:"2026-01-05",berSlut:"2026-02-04",montStart:"2026-03-15",montSlut:"2026-03-17",driftDat:"2026-03-17",blockering:null,notat:"Smidigt ärende"},
-  {id:"351647",namn:"AM Ny 16A Stavshult 1:14",kund:"Privat",fas:"Drifttagning klar",berStart:"2025-11-27",berSlut:"2026-02-25",montStart:"2026-03-31",montSlut:"2026-04-13",driftDat:"2026-04-13",blockering:null,notat:""},
-  {id:"351554",namn:"AM DBO f22 N130593 utök >35A",kund:"Företag",fas:"Avslutat",berStart:"2025-11-21",berSlut:"2026-02-05",montStart:"2026-03-08",montSlut:"2026-03-09",driftDat:"2026-03-09",blockering:null,notat:""},
-  {id:"351804",namn:"AM Ny SS25A, Svedjemarksg 8",kund:"Privat",fas:"Drifttagning klar",berStart:"2026-01-05",berSlut:"2026-03-10",montStart:"2026-04-02",montSlut:"2026-04-14",driftDat:"2026-04-14",blockering:null,notat:""},
-  {id:"351959",namn:"AM Återansluta Rolstorp 1139",kund:"Privat",fas:"Beredning",berStart:"2026-02-06",berSlut:"2026-04-21",montStart:"2026-05-18",montSlut:"2026-05-25",driftDat:null,blockering:"Avvaktar svar elnätsägare",notat:"Skickat påminnelse 3 ggr"},
-  {id:"351977",namn:"AM ny 20A Saltviksv 8, Lödde",kund:"Privat",fas:"Beredning",berStart:"2026-01-13",berSlut:"2026-05-15",montStart:"2026-06-15",montSlut:"2026-06-18",driftDat:null,blockering:null,notat:""},
-  {id:"352017",namn:"AM-OBY-f15 nya sev.led.",kund:"Företag",fas:"Beredning",berStart:"2026-01-13",berSlut:"2026-04-28",montStart:"2026-06-01",montSlut:"2026-06-18",driftDat:null,blockering:"Markavtal ej signerat",notat:"Ägare svår att nå"},
-  {id:"352253",namn:"AM Ny 16A Åbyvägen 134200",kund:"Privat",fas:"Beredning",berStart:"2026-02-06",berSlut:"2026-05-13",montStart:"2026-05-25",montSlut:"2026-06-08",driftDat:null,blockering:null,notat:""},
-  {id:"351922",namn:"AM Nyan 160A+sol 55KW, Brittens Väg",kund:"Solkraft",fas:"Drifttagning klar",berStart:"2026-01-05",berSlut:"2026-03-09",montStart:"2026-04-17",montSlut:"2026-04-28",driftDat:"2026-04-28",blockering:null,notat:"Solinstallation"},
-  {id:"352716",namn:"AM Nyansl 20A Eddavägen 15",kund:"Privat",fas:"Beredning",berStart:"2026-04-16",berSlut:"2026-05-06",montStart:"2026-06-22",montSlut:"2026-06-26",driftDat:null,blockering:null,notat:""},
-  {id:"353227",namn:"AM-Ny 16A Ludaröd 614 Brösarp",kund:"Privat",fas:"Tidig fas",berStart:"2026-05-04",berSlut:"2026-06-01",montStart:"2026-06-08",montSlut:"2026-07-10",driftDat:null,blockering:"Tekniskt underlag saknas",notat:""},
-  {id:"353449",namn:"AM Ny 16A Fäladen 953",kund:"Privat",fas:"Tidig fas",berStart:"2026-05-12",berSlut:"2026-06-05",montStart:"2026-06-15",montSlut:"2026-07-03",driftDat:null,blockering:null,notat:""},
-  {id:"353373",namn:"AM Ny 25A Ettvägen 64 Asmundtorp",kund:"Privat",fas:"Tidig fas",berStart:"2026-05-13",berSlut:"2026-07-01",montStart:"2026-07-13",montSlut:"2026-07-17",driftDat:null,blockering:null,notat:""},
-  {id:"352549",namn:"AM BSN f25 BSN-266 utök. 600A",kund:"Industri",fas:"Beredning",berStart:"2026-03-20",berSlut:"2026-04-22",montStart:"2026-05-04",montSlut:"2026-05-29",driftDat:null,blockering:"Väntar på E.ON tekniskt beslut",notat:"Stor anslutning – prioritet"},
-  {id:"353411",namn:"AM Ny 20A Högs skolväg 43",kund:"Offentlig",fas:"Tidig fas",berStart:"2026-05-18",berSlut:"2026-06-15",montStart:"2026-07-06",montSlut:"2026-07-31",driftDat:null,blockering:null,notat:""},
-  {id:"351685",namn:"AM Ny 16A Skäggeris",kund:"Privat",fas:"Beredning",berStart:"2025-12-11",berSlut:"2026-04-07",montStart:"2026-05-01",montSlut:"2026-05-31",driftDat:null,blockering:null,notat:""},
-  {id:"353239",namn:"AM-Ny 20A Andrarum 2206 Tomelilla",kund:"Privat",fas:"Tidig fas",berStart:"2026-06-01",berSlut:"2026-07-31",montStart:"2026-08-31",montSlut:"2026-09-07",driftDat:null,blockering:null,notat:""},
-  {id:"352192",namn:"AM Ny 16A kamera, Kvistalånga",kund:"Offentlig",fas:"Beredning",berStart:"2026-02-06",berSlut:"2026-04-30",montStart:"2026-06-01",montSlut:"2026-08-28",driftDat:null,blockering:"Tillstånd länsstyrelse inväntas",notat:"Naturreservat – lång handläggningstid"},
-  {id:"352917",namn:"AM Ny 25A KAT1 Källstorp 5227",kund:"Privat",fas:"Tidig fas",berStart:"2026-04-19",berSlut:"2026-06-30",montStart:"2026-07-01",montSlut:"2026-07-31",driftDat:null,blockering:null,notat:""},
-  {id:"353274",namn:"AM Ny 16A Råröd 3:1, Eslöv",kund:"Privat",fas:"Tidig fas",berStart:"2026-07-13",berSlut:"2026-08-28",montStart:"2026-10-05",montSlut:"2026-10-30",driftDat:null,blockering:null,notat:""},
+  {id:"351860",namn:"AM Ny 20A Västra spång 515",kund:"Privat",fas:"Drifttagning klar",berStart:"2026-01-05",berSlut:"2026-02-04",montStart:"2026-03-15",montSlut:"2026-03-17",driftDat:"2026-03-17",bestallningKlar:"2026-03-10",beredare:"Daniel Carlsson",blockering:null,notat:"Smidigt ärende"},
+  {id:"351647",namn:"AM Ny 16A Stavshult 1:14",kund:"Privat",fas:"Drifttagning klar",berStart:"2025-11-27",berSlut:"2026-02-25",montStart:"2026-03-31",montSlut:"2026-04-13",driftDat:"2026-04-13",bestallningKlar:"2026-04-01",beredare:"Antonio Malm",blockering:null,notat:""},
+  {id:"351554",namn:"AM DBO f22 N130593 utök >35A",kund:"Företag",fas:"Avslutat",berStart:"2025-11-21",berSlut:"2026-02-05",montStart:"2026-03-08",montSlut:"2026-03-09",driftDat:"2026-03-09",bestallningKlar:"2026-03-01",beredare:"Björn Nilsson",blockering:null,notat:""},
+  {id:"351804",namn:"AM Ny SS25A, Svedjemarksg 8",kund:"Privat",fas:"Drifttagning klar",berStart:"2026-01-05",berSlut:"2026-03-10",montStart:"2026-04-02",montSlut:"2026-04-14",driftDat:"2026-04-14",bestallningKlar:"2026-04-05",beredare:"Daniel Carlsson",blockering:null,notat:""},
+  {id:"351959",namn:"AM Återansluta Rolstorp 1139",kund:"Privat",fas:"Beredning",berStart:"2026-02-06",berSlut:"2026-04-21",montStart:"2026-05-18",montSlut:"2026-05-25",driftDat:null,bestallningKlar:"2026-05-15",beredare:"Jimmy Buch",blockering:"Avvaktar svar elnätsägare",notat:"Skickat påminnelse 3 ggr"},
+  {id:"351977",namn:"AM ny 20A Saltviksv 8, Lödde",kund:"Privat",fas:"Beredning",berStart:"2026-01-13",berSlut:"2026-05-15",montStart:"2026-06-15",montSlut:"2026-06-18",driftDat:null,bestallningKlar:"2026-06-10",beredare:"Rasmus Grahn",blockering:null,notat:""},
+  {id:"352017",namn:"AM-OBY-f15 nya sev.led.",kund:"Företag",fas:"Beredning",berStart:"2026-01-13",berSlut:"2026-04-28",montStart:"2026-06-01",montSlut:"2026-06-18",driftDat:null,bestallningKlar:"2026-05-28",beredare:"Antonio Malm",blockering:"Markavtal ej signerat",notat:"Ägare svår att nå"},
+  {id:"352253",namn:"AM Ny 16A Åbyvägen 134200",kund:"Privat",fas:"Beredning",berStart:"2026-02-06",berSlut:"2026-05-13",montStart:"2026-05-25",montSlut:"2026-06-08",driftDat:null,bestallningKlar:"2026-06-01",beredare:"Daniel Carlsson",blockering:null,notat:""},
+  {id:"351922",namn:"AM Nyan 160A+sol 55KW, Brittens Väg",kund:"Solkraft",fas:"Drifttagning klar",berStart:"2026-01-05",berSlut:"2026-03-09",montStart:"2026-04-17",montSlut:"2026-04-28",driftDat:"2026-04-28",bestallningKlar:"2026-04-20",beredare:"Björn Nilsson",blockering:null,notat:"Solinstallation"},
+  {id:"352716",namn:"AM Nyansl 20A Eddavägen 15",kund:"Privat",fas:"Beredning",berStart:"2026-04-16",berSlut:"2026-05-06",montStart:"2026-06-22",montSlut:"2026-06-26",driftDat:null,bestallningKlar:"2026-06-18",beredare:"Jimmy Buch",blockering:null,notat:""},
+  {id:"353227",namn:"AM-Ny 16A Ludaröd 614 Brösarp",kund:"Privat",fas:"Tidig fas",berStart:"2026-05-04",berSlut:"2026-06-01",montStart:"2026-06-08",montSlut:"2026-07-10",driftDat:null,bestallningKlar:"2026-07-01",beredare:"Rasmus Grahn",blockering:"Tekniskt underlag saknas",notat:""},
+  {id:"353449",namn:"AM Ny 16A Fäladen 953",kund:"Privat",fas:"Tidig fas",berStart:"2026-05-12",berSlut:"2026-06-05",montStart:"2026-06-15",montSlut:"2026-07-03",driftDat:null,bestallningKlar:"2026-06-28",beredare:"Daniel Carlsson",blockering:null,notat:""},
+  {id:"353373",namn:"AM Ny 25A Ettvägen 64 Asmundtorp",kund:"Privat",fas:"Tidig fas",berStart:"2026-05-13",berSlut:"2026-07-01",montStart:"2026-07-13",montSlut:"2026-07-17",driftDat:null,bestallningKlar:"2026-07-10",beredare:"Antonio Malm",blockering:null,notat:""},
+  {id:"352549",namn:"AM BSN f25 BSN-266 utök. 600A",kund:"Industri",fas:"Beredning",berStart:"2026-03-20",berSlut:"2026-04-22",montStart:"2026-05-04",montSlut:"2026-05-29",driftDat:null,bestallningKlar:"2026-05-20",beredare:"Björn Nilsson",blockering:"Väntar på E.ON tekniskt beslut",notat:"Stor anslutning – prioritet"},
+  {id:"353411",namn:"AM Ny 20A Högs skolväg 43",kund:"Offentlig",fas:"Tidig fas",berStart:"2026-05-18",berSlut:"2026-06-15",montStart:"2026-07-06",montSlut:"2026-07-31",driftDat:null,bestallningKlar:"2026-07-25",beredare:"Jimmy Buch",blockering:null,notat:""},
+  {id:"351685",namn:"AM Ny 16A Skäggeris",kund:"Privat",fas:"Beredning",berStart:"2025-12-11",berSlut:"2026-04-07",montStart:"2026-05-01",montSlut:"2026-05-31",driftDat:null,bestallningKlar:"2026-05-25",beredare:"Rasmus Grahn",blockering:null,notat:""},
+  {id:"353239",namn:"AM-Ny 20A Andrarum 2206 Tomelilla",kund:"Privat",fas:"Tidig fas",berStart:"2026-06-01",berSlut:"2026-07-31",montStart:"2026-08-31",montSlut:"2026-09-07",driftDat:null,bestallningKlar:"2026-09-01",beredare:"Daniel Carlsson",blockering:null,notat:""},
+  {id:"352192",namn:"AM Ny 16A kamera, Kvistalånga",kund:"Offentlig",fas:"Beredning",berStart:"2026-02-06",berSlut:"2026-04-30",montStart:"2026-06-01",montSlut:"2026-08-28",driftDat:null,bestallningKlar:"2026-08-20",beredare:"Antonio Malm",blockering:"Tillstånd länsstyrelse inväntas",notat:"Naturreservat – lång handläggningstid"},
+  {id:"352917",namn:"AM Ny 25A KAT1 Källstorp 5227",kund:"Privat",fas:"Tidig fas",berStart:"2026-04-19",berSlut:"2026-06-30",montStart:"2026-07-01",montSlut:"2026-07-31",driftDat:null,bestallningKlar:"2026-07-28",beredare:"Björn Nilsson",blockering:null,notat:""},
+  {id:"353274",namn:"AM Ny 16A Råröd 3:1, Eslöv",kund:"Privat",fas:"Tidig fas",berStart:"2026-07-13",berSlut:"2026-08-28",montStart:"2026-10-05",montSlut:"2026-10-30",driftDat:null,bestallningKlar:"2026-10-25",beredare:"Jimmy Buch",blockering:null,notat:""},
 ];
 
 const ANSL_FAS_ORDER = ["Tidig fas","Beredning","Montage","Drifttagning klar","Avslutat"];
@@ -3353,18 +4718,24 @@ function anslHandleFile(e, app) {
         if (typeof v==='string'&&v.match(/\d{4}-\d{2}-\d{2}/)) return v.slice(0,10);
         return null;
       };
+      const PL_SIGN_MAP = {
+        'DACA':'Daniel Carlsson','BJNI':'Björn Nilsson',
+        'JIBU':'Jimmy Buch','ANMA':'Antonio Malm','RAGR':'Rasmus Grahn'
+      };
       const mapped = rows.map((r,i)=>({
-        id:        String(r['IB nr']||r['IB_nr']||r['id']||`IMP-${i}`),
-        namn:      r['Projektbenamning']||r['Projektbenämning']||r['namn']||'Okänt',
-        kund:      r['Kund']||r['kund']||'–',
-        fas:       ANSL_FAS_MAP[(r['Arbetsflöde']||r['Arbetsflode']||r['fas']||'').toString().trim()] || 'Tidig fas',
-        berStart:  fmt(r['Beredning Start']||r['berStart']),
-        berSlut:   fmt(r['Beredning Slut']||r['berSlut']),
-        montStart: fmt(r['Montage Start']||r['montStart']),
-        montSlut:  fmt(r['Montage Slut']||r['montSlut']),
-        driftDat:  fmt(r['Drift.datum']||r['driftDat']),
-        blockering:r['blockering']||null,
-        notat:     r['notat']||'',
+        id:              String(r['IB nr']||r['IB_nr']||r['id']||`IMP-${i}`),
+        namn:            r['Projektbenamning']||r['Projektbenämning']||r['namn']||'Okänt',
+        kund:            r['Kund']||r['kund']||'–',
+        fas:             ANSL_FAS_MAP[(r['Arbetsflöde']||r['Arbetsflode']||r['fas']||'').toString().trim()] || 'Tidig fas',
+        berStart:        fmt(r['Beredning Start']||r['berStart']),
+        berSlut:         fmt(r['Beredning Slut']||r['berSlut']),
+        montStart:       fmt(r['Montage Start']||r['montStart']),
+        montSlut:        fmt(r['Montage Slut']||r['montSlut']),
+        driftDat:        fmt(r['Drift.datum']||r['driftDat']),
+        bestallningKlar: fmt(r['Bestallning klar']||r['Beställning klar']||r['bestallningKlar']),
+        beredare:        PL_SIGN_MAP[(r['PL Sign']||r['PL sign']||r['PL_sign']||'').toString().trim().toUpperCase()] || (r['beredare']||null),
+        blockering:      r['blockering']||null,
+        notat:           r['notat']||'',
       }));
       await api('POST', '/anslutning/import', mapped);
       AnslState.projekt = mapped;
@@ -3487,6 +4858,371 @@ function anslArendenInit(el, p, app) {
     });
   });
   el.querySelectorAll('.ansl-tr').forEach(tr=>tr.addEventListener('click',()=>anslShowDrawer(tr.dataset.pid,app)));
+}
+
+// ================================================================
+// TIDPLAN — Gantt-vy
+// ================================================================
+const TP_MILESTONES = [
+  { key:'berStart',        label:'Beredning start',  color:'#3B8EEA' },
+  { key:'berSlut',         label:'Beredning klar',   color:'#9B59B6' },
+  { key:'montStart',       label:'Montage start',    color:'#F4A318' },
+  { key:'driftDat',        label:'Driftsatt',         color:'#2ECC8E' },
+  { key:'bestallningKlar', label:'Beställning klar', color:'#E74C3C' },
+];
+
+async function renderTidplan(app) {
+  await anslLoadFromApi();
+  const allData = AnslState.projekt !== null ? AnslState.projekt : ANSL_SAMPLE;
+
+  const TPS = { search:'', filter:'alla', filterBeredare:'alla', period:'halvar', dagBredd:18 };
+
+  // ---- date helpers ----
+  function daysBetween(a, b) { return Math.round((b - a) / 86400000); }
+  function xPos(dateStr, rangeStart) {
+    if (!dateStr) return null;
+    return daysBetween(rangeStart, new Date(dateStr)) * TPS.dagBredd;
+  }
+  function getRange() {
+    const now = new Date();
+    let start, end;
+    if (TPS.period === 'kvartal') {
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end   = new Date(now.getFullYear(), now.getMonth() + 3, 0);
+    } else if (TPS.period === 'helaar') {
+      start = new Date(now.getFullYear(), 0, 1);
+      end   = new Date(now.getFullYear(), 11, 31);
+    } else {
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end   = new Date(now.getFullYear(), now.getMonth() + 6, 0);
+    }
+    return { start, end };
+  }
+  function applyPeriodZoom() {
+    const w = (document.getElementById('tpGanttArea') || { clientWidth: window.innerWidth - 280 }).clientWidth;
+    const days = TPS.period === 'kvartal' ? 90 : TPS.period === 'helaar' ? 365 : 180;
+    TPS.dagBredd = Math.max(4, Math.min(40, (w || window.innerWidth - 280) / days));
+  }
+
+  // ---- filter / sort ----
+  function getFiltered() {
+    let d = allData;
+    if (TPS.search) { const q = TPS.search.toLowerCase(); d = d.filter(p => p.namn.toLowerCase().includes(q) || (p.id||'').toLowerCase().includes(q)); }
+    if (TPS.filter === 'aktiva') d = d.filter(p => p.fas !== 'Avslutat' && !p.driftDat);
+    else if (TPS.filter === 'klara') d = d.filter(p => p.fas === 'Avslutat' || p.fas === 'Drifttagning klar' || !!p.driftDat);
+    if (TPS.filterBeredare !== 'alla') d = d.filter(p => p.beredare === TPS.filterBeredare);
+    return [...d].sort((a, b) => {
+      if (a.montStart && b.montStart) return a.montStart.localeCompare(b.montStart);
+      if (a.montStart) return -1; if (b.montStart) return 1;
+      if (a.berStart  && b.berStart)  return a.berStart.localeCompare(b.berStart);
+      return 0;
+    });
+  }
+
+  // ---- month header ----
+  function buildMonths(rs, re) {
+    const names = ['JAN','FEB','MAR','APR','MAJ','JUN','JUL','AUG','SEP','OKT','NOV','DEC'];
+    const today = new Date(); let html = '';
+    let cur = new Date(rs.getFullYear(), rs.getMonth(), 1);
+    while (cur <= re) {
+      const next = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+      const ms   = new Date(Math.max(cur, rs));
+      const me   = new Date(Math.min(next - 1, re));
+      const days = daysBetween(ms, me) + 1;
+      const off  = daysBetween(rs, ms);
+      const isCur = cur.getMonth() === today.getMonth() && cur.getFullYear() === today.getFullYear();
+      html += `<div class="tp-month-cell${isCur?' tp-month-cur':''}" style="width:${days*TPS.dagBredd}px;left:${off*TPS.dagBredd}px">${names[cur.getMonth()]} ${cur.getFullYear()}</div>`;
+      cur = next;
+    }
+    return html;
+  }
+
+  // ---- week lines ----
+  function buildWeekLines(rs, re, totalWidth) {
+    let html = '', d = new Date(rs);
+    while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
+    while (d <= re) {
+      const x = daysBetween(rs, d) * TPS.dagBredd;
+      if (x >= 0 && x <= totalWidth)
+        html += `<div class="tp-week-line" style="left:${x}px"></div>`;
+      d.setDate(d.getDate() + 7);
+    }
+    return html;
+  }
+
+  // ---- main build ----
+  function buildUI() {
+    const { start: rs, end: re } = getRange();
+    const totalDays  = daysBetween(rs, re) + 1;
+    const totalWidth = totalDays * TPS.dagBredd;
+    const today      = new Date();
+    const todayX     = daysBetween(rs, today) * TPS.dagBredd;
+    const filtered   = getFiltered();
+
+    let leftHtml = '', ganttHtml = '';
+
+    filtered.forEach((p, i) => {
+      const delay  = Math.min(i * 30, 600);
+      const altCls = i % 2 === 1 ? ' tp-alt' : '';
+
+      leftHtml += `<div class="tp-left-row${altCls}" data-pid="${escHtml(p.id)}" style="animation-delay:${delay}ms">
+        <div class="tp-ibnr">${escHtml(p.id||'')}</div>
+        <div class="tp-pnamn" title="${escHtml(p.namn)}">${escHtml(p.namn)}</div>
+      </div>`;
+
+      // Background bar
+      let barHtml = '';
+      const barS = p.berStart || p.montStart;
+      const barE = p.bestallningKlar || p.driftDat || p.montSlut || p.montStart;
+      if (barS && barE && barS <= barE) {
+        const bx = xPos(barS, rs), ex = xPos(barE, rs);
+        const bw = Math.max((ex - bx) + TPS.dagBredd, 4);
+        barHtml = `<div class="tp-bar" style="left:${bx}px;width:${bw}px;animation-delay:${Math.min(i*20,400)}ms"></div>`;
+      } else if (barS) {
+        const bx = xPos(barS, rs);
+        barHtml = `<div class="tp-bar" style="left:${bx}px;width:${TPS.dagBredd*14}px;opacity:0.3;animation-delay:${Math.min(i*20,400)}ms"></div>`;
+      }
+
+      // Milestones
+      let msHtml = '';
+      TP_MILESTONES.forEach((ms, mi) => {
+        if (!p[ms.key]) return;
+        const d      = new Date(p[ms.key]);
+        const mx     = xPos(p[ms.key], rs);
+        if (mx === null) return;
+        const isPast = d < today;
+        const alwaysFilled = ms.key === 'bestallningKlar';
+        const filled = isPast || alwaysFilled;
+        const msDelay = Math.min(i * 40 + mi * 60 + 200, 900);
+        const showDate = TPS.dagBredd >= 6;
+        msHtml += `<div class="tp-milestone" style="left:${mx}px;animation-delay:${msDelay}ms">
+          <div class="tp-diamond" style="background:${filled?ms.color:'transparent'};border-color:${ms.color};${filled?`box-shadow:0 0 8px ${ms.color}88`:'opacity:.7'}"></div>
+          <div class="tp-ms-vline" style="background:${ms.color}60"></div>
+          ${showDate?`<div class="tp-ms-date" style="color:${ms.color}">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</div>`:''}
+        </div>`;
+      });
+
+      ganttHtml += `<div class="tp-gantt-row${altCls}" data-pid="${escHtml(p.id)}" style="animation-delay:${delay}ms">
+        ${barHtml}${msHtml}
+      </div>`;
+    });
+
+    const ganttHeight = filtered.length * 44;
+    const todayVisible = todayX >= 0 && todayX <= totalWidth;
+    const todayHtml = todayVisible ? `<div class="tp-today-line" style="left:${todayX}px;height:${ganttHeight}px">
+      <div class="tp-today-tri"></div>
+      <div class="tp-today-lbl">IDAG</div>
+      <div class="tp-today-bar"></div>
+    </div>` : '';
+
+    const fBtns = [['alla','Alla'],['aktiva','Aktiva'],['klara','Klara']];
+    const pBtns = [['kvartal','Kvartal'],['halvar','Halvår'],['helaar','Helår']];
+    const allBeredare = [...new Set(allData.filter(p=>p.beredare).map(p=>p.beredare))].sort();
+
+    app.innerHTML = `
+      <div class="tp-root">
+        <div class="tp-toolbar">
+          <div class="tp-tb-left">
+            <div class="tp-search-wrap">
+              <span class="tp-search-icon">⌕</span>
+              <input class="tp-search" id="tpSearch" placeholder="Sök projekt…" value="${escHtml(TPS.search)}">
+            </div>
+            <div class="tp-pills">
+              ${fBtns.map(([v,l])=>`<button class="tp-pill${TPS.filter===v?' tp-pill-on':''}" data-filter="${v}">${l}</button>`).join('')}
+            </div>
+            <div class="tp-pills">
+              ${pBtns.map(([v,l])=>`<button class="tp-pill${TPS.period===v?' tp-pill-on':''}" data-period="${v}">${l}</button>`).join('')}
+            </div>
+            <div class="tp-ber-wrap">
+              <span class="tp-ber-lbl">👷</span>
+              <select class="tp-ber-select" id="tpBerSelect">
+                <option value="alla">Alla beredare</option>
+                ${allBeredare.map(b=>`<option value="${escHtml(b)}" ${TPS.filterBeredare===b?'selected':''}>${escHtml(b)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="tp-tb-right">
+            <span class="tp-proj-count">${filtered.length} projekt</span>
+            <button class="tp-zoom-btn" id="tpZoomOut">−</button>
+            <button class="tp-zoom-btn" id="tpZoomIn">+</button>
+            <button class="tp-zoom-btn" id="tpZoomReset" title="Återställ">↺</button>
+          </div>
+        </div>
+
+        <div class="tp-body" id="tpBody">
+          <div class="tp-left" id="tpLeft">
+            <div class="tp-left-hdr">PROJEKT</div>
+            <div class="tp-left-list" id="tpLeftList">${leftHtml}</div>
+          </div>
+          <div class="tp-gantt-area" id="tpGanttArea">
+            <div class="tp-months" style="width:${totalWidth}px">${buildMonths(rs, re)}</div>
+            <div class="tp-gantt-rows" id="tpGanttRows" style="width:${totalWidth}px">
+              ${buildWeekLines(rs, re, totalWidth)}
+              ${ganttHtml}
+              ${todayHtml}
+              ${filtered.length===0?'<div class="tp-empty">Inga projekt — importera en Excel-fil i Analysfliken</div>':''}
+            </div>
+          </div>
+        </div>
+
+        <div class="tp-legend">
+          <div class="tp-leg-left">
+            ${TP_MILESTONES.map(ms=>`<span class="tp-leg-item"><span class="tp-leg-dia" style="background:${ms.color}"></span>${ms.label}</span>`).join('')}
+          </div>
+          <div class="tp-leg-right">◆ = passerat &nbsp;◇ = kommande</div>
+        </div>
+      </div>`;
+
+    bindTpEvents(todayX);
+  }
+
+  function scrollToToday(todayX) {
+    const ga = document.getElementById('tpGanttArea');
+    if (!ga) return;
+    ga.scrollLeft = Math.max(0, todayX - ga.clientWidth * 0.25);
+  }
+
+  function rebuild() {
+    const ga = document.getElementById('tpGanttArea');
+    const sl = ga ? ga.scrollLeft : 0;
+    const st = ga ? ga.scrollTop  : 0;
+    buildUI();
+    const nga = document.getElementById('tpGanttArea');
+    if (nga) { nga.scrollLeft = sl; nga.scrollTop = st; }
+  }
+
+  // ---- tooltip ----
+  let tpTooltip = null;
+  function showTpTooltip(pid, e) {
+    const p = allData.find(x => x.id === pid); if (!p) return;
+    hideTpTooltip();
+    tpTooltip = document.createElement('div');
+    tpTooltip.className = 'tp-tooltip';
+    tpTooltip.innerHTML = `
+      <div class="tp-tt-name">${escHtml(p.namn)}</div>
+      <div class="tp-tt-id">${escHtml(p.id||'')}</div>
+      <div class="tp-tt-ms">${TP_MILESTONES.map(ms => {
+        if (!p[ms.key]) return '';
+        const d = new Date(p[ms.key]);
+        return `<div class="tp-tt-row">
+          <span class="tp-tt-dia" style="background:${ms.color}"></span>
+          <span class="tp-tt-lbl">${ms.label}</span>
+          <span class="tp-tt-dat" style="color:${ms.color}">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}</span>
+        </div>`;
+      }).join('')}</div>`;
+    document.body.appendChild(tpTooltip);
+    moveTpTooltip(e);
+  }
+  function moveTpTooltip(e) {
+    if (!tpTooltip) return;
+    let x = e.clientX + 16, y = e.clientY + 16;
+    if (x + 270 > window.innerWidth)  x = e.clientX - 270 - 8;
+    if (y + 220 > window.innerHeight) y = e.clientY - 220 - 8;
+    tpTooltip.style.left = x + 'px'; tpTooltip.style.top = y + 'px';
+  }
+  function hideTpTooltip() { if (tpTooltip) { tpTooltip.remove(); tpTooltip = null; } }
+
+  // ---- drawer ----
+  function openTpDrawer(pid) {
+    const p = allData.find(x => x.id === pid); if (!p) return;
+    hideTpTooltip();
+    const today = new Date();
+    const upcoming = TP_MILESTONES
+      .filter(ms => p[ms.key] && new Date(p[ms.key]) >= today)
+      .sort((a, b) => p[a.key].localeCompare(p[b.key]))[0];
+
+    const nextMsHtml = upcoming ? (() => {
+      const d = new Date(p[upcoming.key]);
+      const days = Math.round((d - today) / 86400000);
+      return `<div class="tp-drawer-section">
+        <div class="tp-drawer-sec-lbl">NÄSTA MILSTOLPE</div>
+        <div class="tp-drawer-nextms">
+          <div class="tp-drawer-nextms-name" style="color:${upcoming.color}">${upcoming.label}</div>
+          <div class="tp-drawer-nextms-days" style="color:${upcoming.color}">${days}d</div>
+          <div class="tp-drawer-nextms-date">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}</div>
+        </div>
+      </div>`;
+    })() : '';
+
+    const milsHtml = TP_MILESTONES.map(ms => {
+      if (!p[ms.key]) return `<div class="tp-drawer-ms-row tp-drawer-ms-empty">
+        <span style="color:${ms.color};opacity:.3">◇</span><span style="opacity:.4">${ms.label}</span><span style="opacity:.3">–</span>
+      </div>`;
+      const d = new Date(p[ms.key]); const isPast = d < today;
+      const days = Math.round((d - today) / 86400000);
+      const pill = isPast
+        ? `<span class="tp-drawer-pill" style="background:${ms.color}22;color:${ms.color}">✓</span>`
+        : `<span class="tp-drawer-pill" style="background:#1E2D40;color:#4A6077">${days}d</span>`;
+      return `<div class="tp-drawer-ms-row">
+        <span style="color:${ms.color}">${isPast?'◆':'◇'}</span>
+        <span>${ms.label}</span>
+        <span style="font-family:'DM Mono',monospace;font-size:11px">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}</span>
+        ${pill}
+      </div>`;
+    }).join('');
+
+    const fasColors = {'Tidig fas':'#7A9BB5','Beredning':'#3B8EEA','Sen fas':'#3B8EEA','Byggstart':'#F4A318','Montage':'#F4A318','Drifttagning klar':'#2ECC8E','Avslutat':'#4A6077'};
+    const fc = fasColors[p.fas] || '#4A6077';
+    const overlay = document.createElement('div');
+    overlay.className = 'tp-overlay';
+    overlay.innerHTML = `
+      <div class="tp-drawer">
+        <button class="tp-drawer-close" id="tpDrawerClose">✕</button>
+        <div class="tp-drawer-ibnr">${escHtml(p.id||'')}</div>
+        <div class="tp-drawer-title">${escHtml(p.namn)}</div>
+        <div class="tp-drawer-fas-badge" style="background:${fc}22;color:${fc};border:1px solid ${fc}44">${escHtml(p.fas||'')}</div>
+        ${nextMsHtml}
+        <div class="tp-drawer-section">
+          <div class="tp-drawer-sec-lbl">MILSTOLPAR</div>${milsHtml}
+        </div>
+        ${p.blockering?`<div class="tp-drawer-section">
+          <div class="tp-drawer-sec-lbl">BLOCKERING</div>
+          <div class="tp-drawer-blockering">${escHtml(p.blockering)}</div>
+        </div>`:''}
+        <div class="tp-drawer-section">
+          <div class="tp-drawer-sec-lbl">NOTAT</div>
+          <textarea class="tp-drawer-notat" id="tpDrawerNotat" placeholder="Lägg till notat…">${escHtml(p.notat||'')}</textarea>
+          <button class="tp-drawer-save" id="tpDrawerSave">Spara notat</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const closeOverlay = () => { overlay.style.opacity='0'; overlay.style.transition='opacity .2s'; setTimeout(()=>overlay.remove(),200); };
+    overlay.addEventListener('click', e => { if (e.target===overlay) closeOverlay(); });
+    document.getElementById('tpDrawerClose')?.addEventListener('click', closeOverlay);
+    document.getElementById('tpDrawerSave')?.addEventListener('click', async () => {
+      const notat = document.getElementById('tpDrawerNotat')?.value || '';
+      try {
+        await api('PUT', `/anslutning/${p.id}`, { notat });
+        const proj = AnslState.projekt?.find(x => x.id === p.id);
+        if (proj) proj.notat = notat;
+        p.notat = notat;
+        toast('Notat sparat', 'success');
+      } catch(err) { toast('Fel: ' + err.message, 'error'); }
+    });
+  }
+
+  // ---- bind events ----
+  function bindTpEvents(todayX) {
+    document.getElementById('tpSearch')?.addEventListener('input', e => { TPS.search = e.target.value; rebuild(); });
+    app.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => { TPS.filter = b.dataset.filter; rebuild(); }));
+    app.querySelectorAll('[data-period]').forEach(b => b.addEventListener('click', () => { TPS.period = b.dataset.period; applyPeriodZoom(); rebuild(); }));
+    document.getElementById('tpBerSelect')?.addEventListener('change', e => { TPS.filterBeredare = e.target.value; rebuild(); });
+    document.getElementById('tpZoomIn')?.addEventListener('click',    () => { TPS.dagBredd = Math.min(40, TPS.dagBredd * 1.25); rebuild(); });
+    document.getElementById('tpZoomOut')?.addEventListener('click',   () => { TPS.dagBredd = Math.max(4,  TPS.dagBredd * 0.8);  rebuild(); });
+    document.getElementById('tpZoomReset')?.addEventListener('click', () => { TPS.period='halvar'; TPS.dagBredd=18; rebuild(); requestAnimationFrame(()=>scrollToToday(daysBetween(getRange().start,new Date())*TPS.dagBredd)); });
+    const ga = document.getElementById('tpGanttArea');
+    const ll = document.getElementById('tpLeftList');
+    if (ga && ll) ga.addEventListener('scroll', () => { ll.scrollTop = ga.scrollTop; });
+    app.querySelectorAll('.tp-left-row, .tp-gantt-row').forEach(row => row.addEventListener('click', () => openTpDrawer(row.dataset.pid)));
+    app.querySelectorAll('.tp-gantt-row').forEach(row => {
+      row.addEventListener('mouseenter', e => showTpTooltip(row.dataset.pid, e));
+      row.addEventListener('mouseleave', hideTpTooltip);
+      row.addEventListener('mousemove',  moveTpTooltip);
+    });
+    scrollToToday(todayX);
+  }
+
+  buildUI();
 }
 
 boot();

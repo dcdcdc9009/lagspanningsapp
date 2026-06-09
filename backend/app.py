@@ -151,7 +151,14 @@ def _app_losenord():
 
 @app.get('/api/auth/status')
 def auth_status():
-    return jsonify({'loggedin': bool(session.get('loggedin'))})
+    return jsonify({
+        'loggedin':     bool(session.get('loggedin')),
+        'anvandarnamn': session.get('anvandarnamn'),
+        'namn':         session.get('namn'),
+        'roll':         session.get('roll'),
+        'beredare':     session.get('beredare'),
+        'admin':        bool(session.get('admin')),
+    })
 
 
 @app.post('/api/auth/login')
@@ -160,7 +167,29 @@ def auth_login():
     if not _rate_ok(f'auth:{ip}'):
         return fel('För många inloggningsförsök. Försök igen om en minut.', 429)
     d  = request.get_json(silent=True) or {}
+    anvandarnamn = (d.get('anvandarnamn') or '').strip()
     pw = (d.get('losenord') or '').strip()
+
+    # Inloggning med personligt konto
+    if anvandarnamn:
+        with get_db() as conn:
+            u = conn.execute(
+                "SELECT * FROM anvandare WHERE anvandarnamn=? AND aktiv=1",
+                (anvandarnamn,)).fetchone()
+        if u and u['losenord_hash'] == hash_pw(pw):
+            session.permanent = True
+            session['loggedin']     = True
+            session['user_id']      = u['id']
+            session['anvandarnamn'] = u['anvandarnamn']
+            session['namn']         = u['namn']
+            session['roll']         = u['roll']
+            session['beredare']     = u['beredare']
+            session['admin']        = (u['roll'] == 'admin')
+            return jsonify({'ok': True, 'namn': u['namn'], 'roll': u['roll'],
+                            'beredare': u['beredare'], 'admin': u['roll'] == 'admin'})
+        return fel('Fel användarnamn eller lösenord.', 401)
+
+    # Bakåtkompatibilitet: delat app-lösenord (om inget användarnamn angivits)
     if pw == _app_losenord():
         session.permanent = True
         session['loggedin'] = True
@@ -234,6 +263,7 @@ def byt_losenord():
 def lista_projekt():
     status   = request.args.get('status')
     beredare = request.args.get('beredare')
+    omrade   = request.args.get('omrade', '').strip()
     sok      = request.args.get('sok', '').strip()
     sql = """
         SELECT p.*, pfd.fas_startdatum,
@@ -254,6 +284,7 @@ def lista_projekt():
     params = []
     if status:   sql += " AND p.status=?";   params.append(status)
     if beredare: sql += " AND p.beredare=?"; params.append(beredare)
+    if omrade:   sql += " AND p.omrade=?";   params.append(omrade)
     if sok:
         sql += " AND (p.projektnummer LIKE ? OR p.projektnamn LIKE ? OR p.beredare LIKE ?)"
         params += [f'%{sok}%'] * 3
@@ -1481,6 +1512,94 @@ def admin_ta_bort_beredare(bid):
 
 
 # ============================================================
+# ADMIN – Användare
+# ============================================================
+
+GILTIGA_ROLLER = ('admin', 'beredare', 'ue')
+
+
+@app.get('/api/admin/anvandare')
+@admin_required
+def admin_lista_anvandare():
+    with get_db() as conn:
+        rader = rows_to_list(conn.execute(
+            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, skapad "
+            "FROM anvandare ORDER BY roll, anvandarnamn").fetchall())
+    return jsonify({'anvandare': rader})
+
+
+@app.post('/api/admin/anvandare')
+@admin_required
+def admin_skapa_anvandare():
+    d = request.get_json(silent=True) or {}
+    anvandarnamn = (d.get('anvandarnamn') or '').strip().lower()
+    namn         = (d.get('namn') or '').strip()
+    losenord     = (d.get('losenord') or '').strip()
+    roll         = (d.get('roll') or 'beredare').strip()
+    beredare     = (d.get('beredare') or '').strip() or None
+    if not anvandarnamn: return fel('Användarnamn är obligatoriskt.')
+    if not losenord:     return fel('Lösenord är obligatoriskt.')
+    if roll not in GILTIGA_ROLLER:
+        return fel(f'Ogiltig roll. Välj: {", ".join(GILTIGA_ROLLER)}')
+    with get_db() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO anvandare (anvandarnamn,namn,losenord_hash,roll,beredare,aktiv,skapad) "
+                "VALUES (?,?,?,?,?,1,?)",
+                (anvandarnamn, namn, hash_pw(losenord), roll, beredare, nu()))
+            conn.commit()
+            rad = row_to_dict(conn.execute(
+                "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, skapad "
+                "FROM anvandare WHERE id=?", (cur.lastrowid,)).fetchone())
+            return jsonify({'anvandare': rad}), 201
+        except Exception as e:
+            return fel(f'Användarnamnet "{anvandarnamn}" finns redan.') if 'UNIQUE' in str(e) else fel(str(e))
+
+
+@app.put('/api/admin/anvandare/<int:uid>')
+@admin_required
+def admin_uppdatera_anvandare(uid):
+    with get_db() as conn:
+        bef = conn.execute("SELECT * FROM anvandare WHERE id=?", (uid,)).fetchone()
+        if not bef: return fel('Användaren hittades inte.', 404)
+        d = request.get_json(silent=True) or {}
+        roll = (d.get('roll') or bef['roll']).strip()
+        if roll not in GILTIGA_ROLLER:
+            return fel(f'Ogiltig roll. Välj: {", ".join(GILTIGA_ROLLER)}')
+        namn     = (d.get('namn', bef['namn']) or '').strip()
+        beredare = (d.get('beredare', bef['beredare']) or '').strip() or None
+        aktiv    = int(d.get('aktiv', bef['aktiv']))
+        losenord = (d.get('losenord') or '').strip()
+        if losenord:
+            conn.execute("UPDATE anvandare SET losenord_hash=? WHERE id=?",
+                         (hash_pw(losenord), uid))
+        conn.execute(
+            "UPDATE anvandare SET namn=?, roll=?, beredare=?, aktiv=? WHERE id=?",
+            (namn, roll, beredare, aktiv, uid))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, skapad "
+            "FROM anvandare WHERE id=?", (uid,)).fetchone())
+    return jsonify({'anvandare': rad})
+
+
+@app.delete('/api/admin/anvandare/<int:uid>')
+@admin_required
+def admin_ta_bort_anvandare(uid):
+    with get_db() as conn:
+        rad = conn.execute("SELECT anvandarnamn FROM anvandare WHERE id=?", (uid,)).fetchone()
+        if not rad: return fel('Användaren hittades inte.', 404)
+        # Skydda mot att radera sista admin-kontot
+        if conn.execute("SELECT roll FROM anvandare WHERE id=?", (uid,)).fetchone()['roll'] == 'admin':
+            kvar = conn.execute("SELECT COUNT(*) FROM anvandare WHERE roll='admin' AND aktiv=1").fetchone()[0]
+            if kvar <= 1:
+                return fel('Kan inte ta bort det sista admin-kontot.', 400)
+        conn.execute("DELETE FROM anvandare WHERE id=?", (uid,))
+        conn.commit()
+    return jsonify({'meddelande': f'Användare "{rad["anvandarnamn"]}" borttagen.'})
+
+
+# ============================================================
 # ADMIN – Mall-inputfält
 # ============================================================
 
@@ -1713,7 +1832,13 @@ def konstruktion_pdf(kid):
         if not k: return fel('Konstruktionen hittades inte.', 404)
         inst = {r['nyckel']: r['varde'] for r in
                 conn.execute("SELECT nyckel,varde FROM installningar").fetchall()}
-    pdf = skapa_konstruktion_pdf(k, inst)
+        enr_lookup = {r['artikelnamn']: r['artikelnummer'] for r in conn.execute(
+            "SELECT a.artikelnamn, al.artikelnummer FROM artikel_leverantor al "
+            "JOIN artiklar a ON a.id = al.artikel_id "
+            "JOIN leverantorer l ON l.id = al.leverantor_id "
+            "WHERE l.namn = 'Onninen' AND al.artikelnummer IS NOT NULL"
+        ).fetchall()}
+    pdf = skapa_konstruktion_pdf(k, inst, enr_lookup)
     filnamn = f"konstruktion_{kid}_{k['namn'][:20].replace(' ','_')}.pdf"
     return Response(pdf, mimetype='application/pdf',
                     headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
@@ -1755,6 +1880,12 @@ def konstruktioner_byggprotokoll_pdf():
     with get_db() as conn:
         inst = {r['nyckel']: r['varde'] for r in
                 conn.execute("SELECT nyckel,varde FROM installningar").fetchall()}
+        enr_lookup = {r['artikelnamn']: r['artikelnummer'] for r in conn.execute(
+            "SELECT a.artikelnamn, al.artikelnummer FROM artikel_leverantor al "
+            "JOIN artiklar a ON a.id = al.artikel_id "
+            "JOIN leverantorer l ON l.id = al.leverantor_id "
+            "WHERE l.namn = 'Onninen' AND al.artikelnummer IS NOT NULL"
+        ).fetchall()}
         if projekt_id:
             ids = [r[0] for r in conn.execute(
                 "SELECT id FROM konstruktioner WHERE projekt_id=? ORDER BY typ, namn",
@@ -1766,7 +1897,7 @@ def konstruktioner_byggprotokoll_pdf():
                 "SELECT id FROM konstruktioner ORDER BY typ, namn").fetchall()]
             filnamn = "byggprotokoll.pdf"
         konstruktioner = [_hamta_konstruktion_komplett(conn, kid) for kid in ids]
-    pdf = skapa_konstruktioner_byggprotokoll_pdf(konstruktioner, inst)
+    pdf = skapa_konstruktioner_byggprotokoll_pdf(konstruktioner, inst, enr_lookup)
     return Response(pdf, mimetype='application/pdf',
                     headers={'Content-Disposition': f'attachment; filename="{filnamn}"'})
 
@@ -1828,8 +1959,8 @@ def importera_anslutning():
                 continue
             conn.execute(
                 "INSERT OR REPLACE INTO anslutning_projekt "
-                "(id,namn,kund,fas,berStart,berSlut,montStart,montSlut,driftDat,blockering,notat,skapad)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "(id,namn,kund,fas,berStart,berSlut,montStart,montSlut,driftDat,blockering,notat,bestallningKlar,beredare,skapad)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (pid,
                  str(item.get('namn') or ''),
                  str(item.get('kund') or ''),
@@ -1841,6 +1972,8 @@ def importera_anslutning():
                  item.get('driftDat') or None,
                  item.get('blockering') or None,
                  str(item.get('notat') or ''),
+                 item.get('bestallningKlar') or None,
+                 item.get('beredare') or None,
                  tidpunkt))
         conn.commit()
     return jsonify({'meddelande': f'{len(items)} ärenden importerade.'})
@@ -1866,6 +1999,154 @@ def uppdatera_anslutning(pid):
             "SELECT * FROM anslutning_projekt WHERE id=?", (pid,)
         ).fetchone())
     return jsonify({'projekt': rad})
+
+
+# ============================================================
+# FAKTURERING — Statistik
+# ============================================================
+
+@app.get('/api/fakturering')
+def hamta_fakturering():
+    with get_db() as conn:
+        rader = conn.execute(
+            "SELECT * FROM fakturering ORDER BY manad, projektledare, id"
+        ).fetchall()
+    return jsonify({'rader': rows_to_list(rader)})
+
+
+@app.post('/api/fakturering/import')
+def importera_fakturering():
+    data = request.get_json(force=True)
+    manad   = (data.get('manad') or '').strip()
+    projekt = data.get('projekt', [])
+    if not manad:
+        return fel('manad saknas')
+    if not isinstance(projekt, list) or len(projekt) == 0:
+        return fel('projekt saknas')
+    tidpunkt = nu()
+    with get_db() as conn:
+        conn.execute("DELETE FROM fakturering WHERE manad=?", (manad,))
+        for p in projekt:
+            conn.execute(
+                "INSERT INTO fakturering "
+                "(id,projektnamn,projektledare,utestående,verklIntakt,verklKostn,budgIntakt,budgKostn,fardigt,manad,importerad) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    str(p.get('id') or ''),
+                    str(p.get('projektnamn') or ''),
+                    str(p.get('projektledare') or ''),
+                    float(p.get('utestående') or 0),
+                    float(p.get('verklIntakt') or 0),
+                    float(p.get('verklKostn') or 0),
+                    float(p.get('budgIntakt') or 0),
+                    float(p.get('budgKostn') or 0),
+                    float(p.get('fardigt') or 0),
+                    manad,
+                    tidpunkt,
+                )
+            )
+    return jsonify({'ok': True, 'antal': len(projekt), 'manad': manad})
+
+
+@app.delete('/api/fakturering/<string:manad>')
+def radera_fakturering_manad(manad):
+    with get_db() as conn:
+        conn.execute("DELETE FROM fakturering WHERE manad=?", (manad,))
+    return jsonify({'ok': True})
+
+
+# ============================================================
+# MASKINPLANERING (delad med UE)
+# ============================================================
+
+GILTIGA_MASKIN_STATUS = ('Planerad', 'Pågående', 'Klar', 'Inställd')
+
+
+@app.get('/api/maskinplanering')
+def lista_maskinplanering():
+    status = request.args.get('status', '').strip()
+    maskin = request.args.get('maskin', '').strip()
+    sok    = request.args.get('sok', '').strip()
+    sql = "SELECT * FROM maskinplanering WHERE 1=1"
+    params = []
+    if status: sql += " AND status=?";  params.append(status)
+    if maskin: sql += " AND maskin=?";  params.append(maskin)
+    if sok:
+        sql += " AND (projektnamn LIKE ? OR maskin LIKE ? OR ue LIKE ? OR notat LIKE ?)"
+        params += [f'%{sok}%'] * 4
+    sql += " ORDER BY startdatum IS NULL, startdatum, id"
+    with get_db() as conn:
+        return jsonify({'maskinplanering': rows_to_list(conn.execute(sql, params).fetchall())})
+
+
+@app.post('/api/maskinplanering')
+def skapa_maskinplanering():
+    d = request.get_json(silent=True) or {}
+    maskin = (d.get('maskin') or '').strip()
+    if not maskin:
+        return fel('Maskin är obligatorisk.')
+    status = (d.get('status') or 'Planerad').strip()
+    if status not in GILTIGA_MASKIN_STATUS:
+        return fel(f'Ogiltig status. Välj: {", ".join(GILTIGA_MASKIN_STATUS)}')
+    tidpunkt = nu()
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO maskinplanering "
+            "(projekt_id,projektnamn,maskin,ue,startdatum,slutdatum,status,notat,skapad,uppdaterad) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (d.get('projekt_id') or None,
+             (d.get('projektnamn') or '').strip(),
+             maskin,
+             (d.get('ue') or '').strip() or None,
+             d.get('startdatum') or None,
+             d.get('slutdatum') or None,
+             status,
+             (d.get('notat') or '').strip() or None,
+             tidpunkt, tidpunkt))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM maskinplanering WHERE id=?", (cur.lastrowid,)).fetchone())
+    return jsonify({'rad': rad}), 201
+
+
+@app.put('/api/maskinplanering/<int:mid>')
+def uppdatera_maskinplanering(mid):
+    with get_db() as conn:
+        bef = conn.execute("SELECT * FROM maskinplanering WHERE id=?", (mid,)).fetchone()
+        if not bef: return fel('Planeringsraden hittades inte.', 404)
+        d = request.get_json(silent=True) or {}
+        status = (d.get('status', bef['status']) or 'Planerad').strip()
+        if status not in GILTIGA_MASKIN_STATUS:
+            return fel(f'Ogiltig status. Välj: {", ".join(GILTIGA_MASKIN_STATUS)}')
+        maskin = (d.get('maskin', bef['maskin']) or '').strip()
+        if not maskin:
+            return fel('Maskin är obligatorisk.')
+        conn.execute(
+            "UPDATE maskinplanering SET projekt_id=?,projektnamn=?,maskin=?,ue=?,"
+            "startdatum=?,slutdatum=?,status=?,notat=?,uppdaterad=? WHERE id=?",
+            (d.get('projekt_id', bef['projekt_id']) or None,
+             (d.get('projektnamn', bef['projektnamn']) or '').strip(),
+             maskin,
+             (d.get('ue', bef['ue']) or '').strip() or None,
+             d.get('startdatum', bef['startdatum']) or None,
+             d.get('slutdatum', bef['slutdatum']) or None,
+             status,
+             (d.get('notat', bef['notat']) or '').strip() or None,
+             nu(), mid))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM maskinplanering WHERE id=?", (mid,)).fetchone())
+    return jsonify({'rad': rad})
+
+
+@app.delete('/api/maskinplanering/<int:mid>')
+def ta_bort_maskinplanering(mid):
+    with get_db() as conn:
+        rad = conn.execute("SELECT id FROM maskinplanering WHERE id=?", (mid,)).fetchone()
+        if not rad: return fel('Planeringsraden hittades inte.', 404)
+        conn.execute("DELETE FROM maskinplanering WHERE id=?", (mid,))
+        conn.commit()
+    return jsonify({'meddelande': 'Planeringsrad borttagen.'})
 
 
 # ============================================================
