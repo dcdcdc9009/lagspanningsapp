@@ -86,8 +86,6 @@ const Modal = {
 // ROUTING
 // ----------------------------------------------------------------
 function navigate(view, params = {}) {
-  // UE-konton är låsta till maskinplaneringen
-  if (S.user && S.user.roll === 'ue' && view !== 'maskinplanering') view = 'maskinplanering';
   S.view = view;
   document.querySelectorAll('.nav-link').forEach(a => {
     a.classList.toggle('active', a.dataset.view === view);
@@ -112,7 +110,8 @@ function render(view, params = {}) {
     case 'konstruktioner':  renderKonstruktioner(app); break;
     case 'admin':           renderAdmin(app); break;
     case 'anslutning':      renderAnslutning(app); break;
-    case 'maskinplanering': renderMaskinplanering(app); break;
+    case 'tjallmo':         renderTjallmo(app); break;
+    case 'kabeltrummor':    renderKabeltrummor(app); break;
     case 'tidplan':         renderTidplan(app); break;
     case 'kontrollrum':     renderKontrollrum(app); break;
     case 'rapport':         renderRapport(app); break;
@@ -745,14 +744,15 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
 // ----------------------------------------------------------------
 async function renderProjektDetail(app, id) {
   app.innerHTML = `<div class="text-muted" style="padding:32px;text-align:center">Laddar…</div>`;
-  let p, fasData, tillstandLista, aktiviteter, checklista;
+  let p, fasData, tillstandLista, aktiviteter, checklista, statusVarden;
   try {
-    [p, fasData, tillstandLista, aktiviteter, checklista] = await Promise.all([
+    [p, fasData, tillstandLista, aktiviteter, checklista, statusVarden] = await Promise.all([
       api('GET', `/projekt/${id}`).then(r => r.projekt),
       api('GET', `/projekt/${id}/fas`).catch(() => ({ fas: null, historik: [] })),
       api('GET', `/projekt/${id}/tillstand`).then(r => r.tillstand || []).catch(() => []),
       api('GET', `/projekt/${id}/aktiviteter`).then(r => r.aktiviteter || []).catch(() => []),
       api('GET', `/projekt/${id}/checklista`).then(r => r.checklista || []).catch(() => []),
+      api('GET', `/projekt/${id}/status`).then(r => r.status || {}).catch(() => ({})),
     ]);
   } catch (e) {
     app.innerHTML = `<p class="text-red" style="padding:24px">Kunde inte ladda projekt: ${e.message}</p>`;
@@ -832,6 +832,7 @@ async function renderProjektDetail(app, id) {
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="oversikt">Översikt</button>
+      <button class="tab-btn" data-tab="planering">Planeringsstatus</button>
     </div>
     <div class="tab-pane active" id="pdTabOversikt">
     <div class="detail-layout">
@@ -870,6 +871,9 @@ async function renderProjektDetail(app, id) {
         ${p.anteckningar ? `<div class="card mt-2"><div class="card-body"><p class="text-sm text-muted">${escHtml(p.anteckningar)}</p></div></div>` : ''}
       </div>
     </div>
+    </div>
+    <div class="tab-pane" id="pdTabPlanering">
+      ${projektStatusPaneHtml(statusVarden || {})}
     </div>
     `;
 
@@ -983,6 +987,9 @@ async function renderProjektDetail(app, id) {
       document.getElementById(tabId).classList.add('active');
     });
   });
+
+  const planeringPane = document.getElementById('pdTabPlanering');
+  if (planeringPane) bindStatusAutospar(planeringPane, id);
 }
 
 // ----------------------------------------------------------------
@@ -4033,163 +4040,264 @@ async function renderStatistik(app) {
 // BOOT
 // ----------------------------------------------------------------
 // ================================================================
-// MASKINPLANERING (delad planering med UE)
+// PROJEKTPLANERING – statusfält (Beredning + Tjällmo), Kabeltrummor
 // ================================================================
-const MASKIN_STATUS = ['Planerad', 'Pågående', 'Klar', 'Inställd'];
-const MASKIN_STATUS_CSS = {
-  'Planerad': 'badge-planerat', 'Pågående': 'badge-pagaende',
-  'Klar': 'badge-klart', 'Inställd': 'badge-danger',
-};
+const BEREDNING_FALT = [
+  {key:'planerad_schakt', label:'Planerad schakt', typ:'datum'},
+  {key:'bestallning_klar_datum', label:'Beställning klar datum', typ:'datum'},
+  {key:'skapat_pwb', label:'Skapat i PWB', typ:'dropdown', alt:['Ja','Nej']},
+  {key:'uppstart_beredning', label:'Uppstart beredning', typ:'dropdown', alt:['Ja','Nej']},
+  {key:'ledningskoll_projektering', label:'Ledningskoll Projektering', typ:'text'},
+  {key:'vaghallare_markagare', label:'Väghållare/Markägare OK', typ:'dropdown', alt:['Ja','Nej','Ej aktuellt']},
+  {key:'trafikverket', label:'Trafikverket', typ:'text', alt:['Ej aktuellt','Behövs']},
+  {key:'gravtillstand_kommun', label:'Grävtillstånd Kommun', typ:'dropdown', alt:['Ej aktuellt','Ska sökas','Beviljad','Behövs']},
+  {key:'lansstyrelsen', label:'Länsstyrelsen', typ:'dropdown', alt:['Ej aktuellt','Ska sökas','Beviljad']},
+  {key:'kalkyl_klar', label:'Kalkyl klar', typ:'dropdown', alt:['Påbörjad','Klar']},
+  {key:'budget_pbw', label:'Budget skapad i PBW', typ:'dropdown', alt:['Beredning','Påbörjad','Ja']},
+  {key:'material_byggprotokoll', label:'Material / Byggprotokoll', typ:'dropdown', alt:['Påbörjad','Ej aktuellt','Ja']},
+  {key:'ta_plan', label:'TA-plan framtagen', typ:'dropdown', alt:['Ej aktuellt','Extern','Påbörjad','Ja']},
+  {key:'kalkyl_projektnavet', label:'Kalkyl i projektnavet', typ:'dropdown', alt:['Påbörjad','Inskickad','Tillstyrkt']},
+  {key:'ledningskoll_utsattning', label:'Ledningskoll Utsättning', typ:'text', alt:['Inväntar utförande']},
+  {key:'fset_klar', label:'F-set klar', typ:'dropdown', alt:['Påbörjad','Inskickad','Postad']},
+  {key:'hsseq_plan', label:'HSSEQ Plan klar', typ:'dropdown', alt:['Påbörjad','Klar']},
+  {key:'flikars_15', label:'15-Flikars', typ:'dropdown', alt:['Påbörjad','Klar']},
+  {key:'bestallare_eon', label:'Beställare EON', typ:'text'},
+  {key:'montage_start', label:'Montage start', typ:'text'},
+  {key:'uppskattat_tid_falt', label:'Uppskattat tid i fält', typ:'text'},
+  {key:'avbrott', label:'Avbrott', typ:'dropdown', alt:['Nej','Ja']},
+  {key:'bestallning_klar', label:'Beställning klar', typ:'dropdown', alt:['Påbörjad','Klar']},
+];
+const TJALLMO_FALT = [
+  {key:'planerad_schakt', label:'Planerad schakt', typ:'datum'},
+  {key:'status_fakturering', label:'Status fakturering', typ:'dropdown', alt:['Påbörjad','Godkänd slutbesiktning','Fakturerad 90%','Slutfakturerad']},
+  {key:'prio', label:'Prio', typ:'text'},
+  {key:'kraver_montor', label:'Kräver montör', typ:'dropdown', alt:['Ja','Nej']},
+  {key:'beredning_klar', label:'Beredning klar', typ:'dropdown', alt:['Påbörjad','Klar']},
+  {key:'trafikverket', label:'Trafikverket', typ:'text', alt:['Ej aktuellt','Behövs']},
+  {key:'gravtillstand_kommun', label:'Grävtillstånd Kommun', typ:'dropdown', alt:['Ej aktuellt','Ska sökas','Beviljad','Behövs']},
+  {key:'lansstyrelsen', label:'Länsstyrelsen', typ:'dropdown', alt:['Ej aktuellt','Ska sökas','Beviljad']},
+  {key:'kabelbestallning', label:'Kabelbeställning', typ:'dropdown', alt:['Tas med av Tjällmo','Beställt på plats','Hämtas OneCo']},
+  {key:'ta_plan', label:'TA-plan framtagen', typ:'dropdown', alt:['Ej aktuellt','Extern','Påbörjad','Ja']},
+  {key:'materialbestallning', label:'Materialbeställning', typ:'dropdown', alt:['Hämtas OneCo','Beställt på plats','Beställt Tjällmo']},
+  {key:'ledningskoll_utsattning', label:'Ledningskoll Utsättning', typ:'text'},
+  {key:'gravlag', label:'Grävlag', typ:'dropdown', alt:['Linus Jarmyr','Johanna Kambrink','Rasmus Eklöf','Julia Svensson','Peder Eneman']},
+  {key:'inmatning', label:'Inmätning', typ:'dropdown', alt:['Påbörjad','Klar']},
+  {key:'dagbok', label:'Dagbok', typ:'dropdown', alt:['Påbörjad','Klar']},
+  {key:'aterstallning', label:'Återställning', typ:'dropdown', alt:['Påbörjad','Klar']},
+  {key:'montage_start', label:'Montage start', typ:'text'},
+  {key:'uppskattat_tid_falt', label:'Uppskattat tid i fält', typ:'text'},
+  {key:'avbrott', label:'Avbrott', typ:'dropdown', alt:['Nej','Ja']},
+  {key:'bestallning_klar', label:'Beställning klar', typ:'dropdown', alt:['Påbörjad','Klar']},
+];
 
-async function renderMaskinplanering(app) {
-  let projektLista = [];
-  try { projektLista = (await api('GET', '/projekt')).projekt || []; } catch {}
+function statusInputHtml(f, val) {
+  val = val || '';
+  if (f.typ === 'datum')
+    return `<input type="date" class="form-control status-inp" data-key="${f.key}" value="${escHtml(val)}">`;
+  if (f.typ === 'dropdown') {
+    const opts = [...(f.alt || [])];
+    if (val && !opts.includes(val)) opts.unshift(val);
+    return `<select class="form-control status-inp" data-key="${f.key}">
+      <option value="">–</option>
+      ${opts.map(o => `<option ${o === val ? 'selected' : ''}>${escHtml(o)}</option>`).join('')}
+    </select>`;
+  }
+  const dl = f.alt ? `list="dl_${f.key}"` : '';
+  const datalist = f.alt ? `<datalist id="dl_${f.key}">${f.alt.map(o => `<option value="${escHtml(o)}">`).join('')}</datalist>` : '';
+  return `<input type="text" class="form-control status-inp" data-key="${f.key}" value="${escHtml(val)}" ${dl} autocomplete="off">${datalist}`;
+}
+
+function statusFormHtml(falt, values, titel) {
+  return `<div class="card mb-2">
+    <div class="card-header"><span class="card-title">${escHtml(titel)}</span><span class="text-sm text-muted status-spar"></span></div>
+    <div class="card-body">
+      <div class="status-grid">
+        ${falt.map(f => `<div class="status-cell">
+          <label class="form-label">${escHtml(f.label)}</label>
+          ${statusInputHtml(f, values[f.key])}
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+// Autospar för statusfält inom rootEl (skickar alla fält vid ändring)
+function bindStatusAutospar(rootEl, pid) {
+  let t = null;
+  async function save() {
+    const data = {};
+    rootEl.querySelectorAll('.status-inp').forEach(el => { data[el.dataset.key] = el.value; });
+    rootEl.querySelectorAll('.status-spar').forEach(i => { i.textContent = 'Sparar…'; i.className = 'text-sm text-muted status-spar'; });
+    try {
+      await api('PUT', `/projekt/${pid}/status`, data);
+      rootEl.querySelectorAll('.status-spar').forEach(i => { i.textContent = 'Sparat ✓'; i.className = 'text-sm text-success status-spar'; });
+    } catch (e) {
+      rootEl.querySelectorAll('.status-spar').forEach(i => { i.textContent = 'Fel: ' + e.message; i.className = 'text-sm text-danger status-spar'; });
+    }
+  }
+  rootEl.addEventListener('input', e => { if (!e.target.classList.contains('status-inp')) return; if (t) clearTimeout(t); t = setTimeout(save, 600); });
+  rootEl.addEventListener('change', e => { if (!e.target.classList.contains('status-inp')) return; if (t) clearTimeout(t); save(); });
+}
+
+// Bygg HTML för status-fliken i projektdetaljen (Beredning + Tjällmo, utan dubbletter)
+function projektStatusPaneHtml(status) {
+  const beredKeys = new Set(BEREDNING_FALT.map(f => f.key));
+  const tjallmoEgna = TJALLMO_FALT.filter(f => !beredKeys.has(f.key));
+  return statusFormHtml(BEREDNING_FALT, status, 'Beredningsstatus') +
+         statusFormHtml(tjallmoEgna, status, 'Tjällmo / fältstatus');
+}
+
+// ----------------------------------------------------------------
+// VIEW: TJÄLLMO (fält-/UE-vy – samma projekt, fältstatusar)
+// ----------------------------------------------------------------
+const TJALLMO_KOLUMNER = [
+  {key:'status_fakturering', label:'Fakturering'},
+  {key:'beredning_klar', label:'Beredning'},
+  {key:'gravlag', label:'Grävlag'},
+  {key:'montage_start', label:'Montage'},
+  {key:'aterstallning', label:'Återställ.'},
+  {key:'bestallning_klar', label:'Best. klar'},
+];
+
+async function renderTjallmo(app) {
+  if (!S.beredare.length) { try { S.beredare = (await api('GET', '/beredare')).beredare || []; } catch {} }
+  let projekt = [], statusAlla = {};
+  try {
+    [projekt, statusAlla] = await Promise.all([
+      api('GET', '/projekt').then(r => r.projekt || []),
+      api('GET', '/projekt/status-alla').then(r => r.status || {}),
+    ]);
+  } catch (e) { toast(e.message, 'error'); }
+
+  app.innerHTML = `
+    <div class="page-header"><h1 class="page-title">Tjällmo – fältplanering</h1></div>
+    <div class="filter-bar">
+      <input type="search" class="form-control" id="tjSok" placeholder="🔍 Sök IB-nummer, benämning, beredare…">
+      <select class="form-control" id="tjBer" style="max-width:200px">
+        <option value="">Alla beredare</option>
+        ${S.beredare.map(b => `<option ${S.minBeredare === b.namn ? 'selected' : ''}>${escHtml(b.namn)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr>
+        <th>IB-nummer</th><th>Benämning</th><th>Beredare</th>
+        ${TJALLMO_KOLUMNER.map(k => `<th>${escHtml(k.label)}</th>`).join('')}
+      </tr></thead>
+      <tbody id="tjBody"></tbody>
+    </table></div></div>`;
+
+  function rita() {
+    const sok = document.getElementById('tjSok').value.trim().toLowerCase();
+    const ber = document.getElementById('tjBer').value;
+    const tbody = document.getElementById('tjBody');
+    const rader = projekt.filter(p => {
+      if (ber && p.beredare !== ber) return false;
+      if (sok) {
+        const hay = `${p.projektnummer} ${p.projektnamn} ${p.beredare}`.toLowerCase();
+        if (!hay.includes(sok)) return false;
+      }
+      return true;
+    });
+    if (!rader.length) { tbody.innerHTML = `<tr><td colspan="${3 + TJALLMO_KOLUMNER.length}" class="muted text-center">Inga ärenden</td></tr>`; return; }
+    tbody.innerHTML = rader.map(p => {
+      const st = statusAlla[String(p.id)] || {};
+      return `<tr style="cursor:pointer" data-id="${p.id}">
+        <td><span class="mono" style="color:var(--cyan)">${escHtml(p.projektnummer)}</span></td>
+        <td><strong>${escHtml(p.projektnamn)}</strong></td>
+        <td>${escHtml(p.beredare || '–')}</td>
+        ${TJALLMO_KOLUMNER.map(k => `<td class="text-sm">${escHtml(st[k.key] || '–')}</td>`).join('')}
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('tr[data-id]').forEach(tr =>
+      tr.addEventListener('click', () => navigate('projekt-detail', { id: tr.dataset.id })));
+  }
+  document.getElementById('tjSok').addEventListener('input', rita);
+  document.getElementById('tjBer').addEventListener('change', rita);
+  rita();
+}
+
+// ----------------------------------------------------------------
+// VIEW: KABELTRUMMOR
+// ----------------------------------------------------------------
+async function renderKabeltrummor(app) {
+  let rader = [];
+  try { rader = (await api('GET', '/kabeltrummor')).kabeltrummor || []; } catch (e) { toast(e.message, 'error'); }
 
   app.innerHTML = `
     <div class="page-header">
-      <h1 class="page-title">Maskinplanering</h1>
-      <button class="btn btn-primary" id="btnNyMaskin">+ Ny planering</button>
+      <h1 class="page-title">Kabeltrummor</h1>
+      <button class="btn btn-primary" id="btnNyKt">+ Ny rad</button>
     </div>
-    <div class="filter-bar">
-      <input type="search" class="form-control" id="mpSok" placeholder="🔍 Sök projekt, maskin, UE, notat…">
-      <select class="form-control" id="mpStatus" style="max-width:170px">
-        <option value="">Alla statusar</option>
-        ${MASKIN_STATUS.map(s => `<option>${s}</option>`).join('')}
-      </select>
-      <select class="form-control" id="mpMaskin" style="max-width:200px">
-        <option value="">Alla maskiner</option>
-      </select>
-    </div>
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Maskin</th><th>Projekt / plats</th><th>UE / förare</th>
-            <th>Start</th><th>Slut</th><th>Status</th><th>Notat</th><th>Åtgärder</th>
-          </tr></thead>
-          <tbody id="mpBody"></tbody>
-        </table>
-      </div>
-    </div>`;
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Projekt / IB-nummer</th><th>Kabeltyp</th><th class="right">Uttagen mängd</th><th class="right">Kvar på trummor</th><th>Notat</th><th>Åtgärder</th></tr></thead>
+      <tbody id="ktBody"></tbody>
+    </table></div></div>`;
 
-  let rader = [];
-
-  async function ladda() {
-    const sok    = document.getElementById('mpSok').value.trim();
-    const status = document.getElementById('mpStatus').value;
-    const maskin = document.getElementById('mpMaskin').value;
-    let url = '/maskinplanering?';
-    if (sok)    url += `sok=${encodeURIComponent(sok)}&`;
-    if (status) url += `status=${encodeURIComponent(status)}&`;
-    if (maskin) url += `maskin=${encodeURIComponent(maskin)}&`;
-    try { rader = (await api('GET', url)).maskinplanering || []; }
-    catch (e) { toast(e.message, 'error'); return; }
-    renderRader();
-    fyllMaskinFilter();
-  }
-
-  function fyllMaskinFilter() {
-    const sel = document.getElementById('mpMaskin');
-    const nuvarande = sel.value;
-    const maskiner = [...new Set(rader.map(r => r.maskin).filter(Boolean))].sort();
-    // Behåll valt värde även om det filtrerats bort
-    const alla = nuvarande && !maskiner.includes(nuvarande) ? [nuvarande, ...maskiner] : maskiner;
-    sel.innerHTML = '<option value="">Alla maskiner</option>' +
-      alla.map(m => `<option ${m === nuvarande ? 'selected' : ''}>${escHtml(m)}</option>`).join('');
-  }
-
-  function renderRader() {
-    const tbody = document.getElementById('mpBody');
-    if (!rader.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="muted text-center">Ingen planering ännu. Klicka "+ Ny planering".</td></tr>`;
-      return;
-    }
+  function rita() {
+    const tbody = document.getElementById('ktBody');
+    if (!rader.length) { tbody.innerHTML = `<tr><td colspan="6" class="muted text-center">Inga rader ännu. Klicka "+ Ny rad".</td></tr>`; return; }
     tbody.innerHTML = rader.map(r => `
       <tr>
-        <td><strong>${escHtml(r.maskin)}</strong></td>
-        <td>${escHtml(r.projektnamn || '–')}</td>
-        <td>${escHtml(r.ue || '–')}</td>
-        <td>${escHtml(r.startdatum || '–')}</td>
-        <td>${escHtml(r.slutdatum || '–')}</td>
-        <td><span class="badge ${MASKIN_STATUS_CSS[r.status] || ''}">${escHtml(r.status)}</span></td>
+        <td><strong>${escHtml(r.projekt_text || '–')}</strong></td>
+        <td>${escHtml(r.kabeltyp || '–')}</td>
+        <td class="num">${num(r.uttagen)}</td>
+        <td class="num">${num(r.kvar)}</td>
         <td class="text-sm">${escHtml(r.notat || '')}</td>
         <td class="flex gap-1">
-          <button class="btn btn-sm btn-outline" data-id="${r.id}" data-action="edit">Redigera</button>
-          <button class="btn btn-sm btn-danger"  data-id="${r.id}" data-action="del">Ta bort</button>
+          <button class="btn btn-sm btn-outline" data-id="${r.id}" data-act="edit">Redigera</button>
+          <button class="btn btn-sm btn-danger" data-id="${r.id}" data-act="del">Ta bort</button>
         </td>
       </tr>`).join('');
-    tbody.querySelectorAll('button[data-action]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const r = rader.find(x => x.id == btn.dataset.id);
-        if (btn.dataset.action === 'edit') modalMaskinForm(r);
-        else {
-          const ok = await confirm('Ta bort planering', `Ta bort planeringen för "${r.maskin}"?`);
-          if (!ok) return;
-          try { await api('DELETE', `/maskinplanering/${r.id}`); toast('Borttagen', 'success'); await ladda(); }
-          catch (e) { toast(e.message, 'error'); }
-        }
-      });
-    });
+    tbody.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', async () => {
+      const r = rader.find(x => x.id == b.dataset.id);
+      if (b.dataset.act === 'edit') modalKt(r);
+      else {
+        const ok = await confirm('Ta bort rad', `Ta bort kabeltrumma-raden för "${r.projekt_text}"?`);
+        if (!ok) return;
+        try { await api('DELETE', `/kabeltrummor/${r.id}`); rader = (await api('GET', '/kabeltrummor')).kabeltrummor || []; rita(); toast('Borttagen', 'success'); }
+        catch (e) { toast(e.message, 'error'); }
+      }
+    }));
   }
 
-  function modalMaskinForm(r) {
-    const projOpts = `<option value="">– inget kopplat projekt –</option>` +
-      projektLista.map(p => `<option value="${p.id}" ${r && String(r.projekt_id) === String(p.id) ? 'selected' : ''}>${escHtml(p.projektnummer)} – ${escHtml(p.projektnamn)}</option>`).join('');
-    const statusOpts = MASKIN_STATUS.map(s => `<option ${r?.status === s ? 'selected' : ''}>${s}</option>`).join('');
-    Modal.open(r ? 'Redigera planering' : 'Ny maskinplanering', `
-      <form id="mpForm">
-        <div class="form-group"><label class="form-label">Maskin <span class="req">*</span></label>
-          <input name="maskin" class="form-control" value="${escHtml(r?.maskin||'')}" placeholder="t.ex. Grävmaskin 14 ton" required></div>
-        <div class="form-group"><label class="form-label">Kopplat projekt</label>
-          <select name="projekt_id" id="mpProj" class="form-control">${projOpts}</select></div>
-        <div class="form-group"><label class="form-label">Projekt / plats (text)</label>
-          <input name="projektnamn" id="mpProjNamn" class="form-control" value="${escHtml(r?.projektnamn||'')}" placeholder="Visas i listan"></div>
+  function modalKt(r) {
+    Modal.open(r ? 'Redigera kabeltrumma' : 'Ny kabeltrumma', `
+      <form id="ktForm">
+        <div class="form-group"><label class="form-label">Projekt / IB-nummer <span class="req">*</span></label>
+          <input name="projekt_text" class="form-control" value="${escHtml(r?.projekt_text || '')}" required></div>
         <div class="form-row cols-2">
-          <div class="form-group"><label class="form-label">UE / förare</label>
-            <input name="ue" class="form-control" value="${escHtml(r?.ue||'')}"></div>
-          <div class="form-group"><label class="form-label">Status</label>
-            <select name="status" class="form-control">${statusOpts}</select></div>
+          <div class="form-group"><label class="form-label">Kabeltyp</label>
+            <input name="kabeltyp" class="form-control" list="ktTyper" value="${escHtml(r?.kabeltyp || '')}" placeholder="t.ex. 4G25">
+            <datalist id="ktTyper"><option value="4G25"><option value="4G50"><option value="4G95"><option value="4G150"><option value="4G240"></datalist></div>
+          <div class="form-group"><label class="form-label">Uttagen mängd</label>
+            <input type="number" step="any" name="uttagen" class="form-control" value="${r?.uttagen ?? 0}"></div>
         </div>
         <div class="form-row cols-2">
-          <div class="form-group"><label class="form-label">Startdatum</label>
-            <input type="date" name="startdatum" class="form-control" value="${escHtml(r?.startdatum||'')}"></div>
-          <div class="form-group"><label class="form-label">Slutdatum</label>
-            <input type="date" name="slutdatum" class="form-control" value="${escHtml(r?.slutdatum||'')}"></div>
+          <div class="form-group"><label class="form-label">Kvar på trummor</label>
+            <input type="number" step="any" name="kvar" class="form-control" value="${r?.kvar ?? 0}"></div>
+          <div class="form-group"><label class="form-label">Notat</label>
+            <input name="notat" class="form-control" value="${escHtml(r?.notat || '')}"></div>
         </div>
-        <div class="form-group"><label class="form-label">Notat</label>
-          <textarea name="notat" class="form-control" rows="2">${escHtml(r?.notat||'')}</textarea></div>
       </form>`,
-      `<button class="btn btn-navy" id="sparaMp">Spara</button>
-       <button class="btn btn-secondary" id="avbrytMp">Avbryt</button>`
+      `<button class="btn btn-navy" id="sparaKt">Spara</button><button class="btn btn-secondary" id="avbrytKt">Avbryt</button>`
     );
-    // Autofyll projektnamn när man väljer ett projekt (om fältet är tomt)
-    document.getElementById('mpProj').addEventListener('change', e => {
-      const p = projektLista.find(x => String(x.id) === e.target.value);
-      const namnEl = document.getElementById('mpProjNamn');
-      if (p && !namnEl.value.trim()) namnEl.value = `${p.projektnummer} – ${p.projektnamn}`;
-    });
-    document.getElementById('avbrytMp').addEventListener('click', Modal.close);
-    document.getElementById('sparaMp').addEventListener('click', async () => {
-      const f = document.getElementById('mpForm');
+    document.getElementById('avbrytKt').addEventListener('click', Modal.close);
+    document.getElementById('sparaKt').addEventListener('click', async () => {
+      const f = document.getElementById('ktForm');
       if (!f.reportValidity()) return;
       const body = Object.fromEntries(new FormData(f).entries());
-      body.projekt_id = body.projekt_id || null;
       try {
-        if (r) await api('PUT', `/maskinplanering/${r.id}`, body);
-        else   await api('POST', '/maskinplanering', body);
-        toast('Sparad', 'success');
+        if (r) await api('PUT', `/kabeltrummor/${r.id}`, body);
+        else   await api('POST', '/kabeltrummor', body);
         Modal.close();
-        await ladda();
+        rader = (await api('GET', '/kabeltrummor')).kabeltrummor || [];
+        rita(); toast('Sparad', 'success');
       } catch (e) { toast(e.message, 'error'); }
     });
   }
 
-  document.getElementById('btnNyMaskin').addEventListener('click', () => modalMaskinForm(null));
-  document.getElementById('mpSok').addEventListener('input', ladda);
-  document.getElementById('mpStatus').addEventListener('change', ladda);
-  document.getElementById('mpMaskin').addEventListener('change', ladda);
-
-  await ladda();
+  document.getElementById('btnNyKt').addEventListener('click', () => modalKt(null));
+  rita();
 }
 
 async function boot() {
@@ -4219,13 +4327,6 @@ async function boot() {
     beredare:     status.beredare,
   } : null;
   S.minBeredare = status.beredare || null;
-
-  // UE-konton: dölj alla nav-länkar utom Maskinplanering
-  if (S.user && S.user.roll === 'ue') {
-    document.querySelectorAll('.nav-link').forEach(a => {
-      if (a.dataset.view !== 'maskinplanering') a.style.display = 'none';
-    });
-  }
 
   // Visa navbar och logga ut-knapp
   document.querySelector('.topnav').style.display = '';

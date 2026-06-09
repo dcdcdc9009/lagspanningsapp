@@ -2863,3 +2863,8 @@ body[data-view="tidplan"] #app {
 .stat-green  { color: var(--green) !important; }
 .stat-muted  { color: var(--text-muted) !important; }
 
+
+/* Planeringsstatus-rutnät (Beredning/Tjällmo) */
+.status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 14px; }
+.status-cell .form-label { font-size: 12px; margin-bottom: 3px; }
+.status-spar { white-space: nowrap; }

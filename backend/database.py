@@ -1204,6 +1204,31 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','34')")
         conn.commit()
 
+    if v < 35:
+        # v35: Projektplanering (Excel-import) — nyckel/värde-statusar per projekt + kabeltrummor.
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS projekt_status (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+                falt       TEXT NOT NULL,
+                varde      TEXT,
+                UNIQUE(projekt_id, falt)
+            );
+            CREATE TABLE IF NOT EXISTS kabeltrummor (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                projekt_id   INTEGER REFERENCES projekt(id) ON DELETE SET NULL,
+                projekt_text TEXT NOT NULL DEFAULT '',
+                kabeltyp     TEXT NOT NULL DEFAULT '',
+                uttagen      REAL NOT NULL DEFAULT 0,
+                kvar         REAL NOT NULL DEFAULT 0,
+                notat        TEXT,
+                skapad       DATETIME NOT NULL,
+                uppdaterad   DATETIME NOT NULL
+            );
+        """)
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','35')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -1498,6 +1523,26 @@ def _create_tables(conn):
             notat       TEXT,
             skapad      DATETIME NOT NULL,
             uppdaterad  DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS projekt_status (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id INTEGER NOT NULL REFERENCES projekt(id) ON DELETE CASCADE,
+            falt       TEXT NOT NULL,
+            varde      TEXT,
+            UNIQUE(projekt_id, falt)
+        );
+
+        CREATE TABLE IF NOT EXISTS kabeltrummor (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            projekt_id   INTEGER REFERENCES projekt(id) ON DELETE SET NULL,
+            projekt_text TEXT NOT NULL DEFAULT '',
+            kabeltyp     TEXT NOT NULL DEFAULT '',
+            uttagen      REAL NOT NULL DEFAULT 0,
+            kvar         REAL NOT NULL DEFAULT 0,
+            notat        TEXT,
+            skapad       DATETIME NOT NULL,
+            uppdaterad   DATETIME NOT NULL
         );
     """)
 

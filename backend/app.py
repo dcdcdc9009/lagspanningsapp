@@ -2150,6 +2150,170 @@ def ta_bort_maskinplanering(mid):
 
 
 # ============================================================
+# PROJEKT – STATUS (Excel-planeringsfält, nyckel/värde)
+# ============================================================
+
+@app.get('/api/projekt/status-alla')
+def alla_projekt_status():
+    with get_db() as conn:
+        rader = conn.execute("SELECT projekt_id, falt, varde FROM projekt_status").fetchall()
+    result = {}
+    for r in rader:
+        result.setdefault(str(r['projekt_id']), {})[r['falt']] = r['varde']
+    return jsonify({'status': result})
+
+
+@app.get('/api/projekt/<int:pid>/status')
+def hamta_projekt_status(pid):
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        rader = conn.execute("SELECT falt, varde FROM projekt_status WHERE projekt_id=?", (pid,)).fetchall()
+    return jsonify({'status': {r['falt']: r['varde'] for r in rader}})
+
+
+@app.put('/api/projekt/<int:pid>/status')
+def spara_projekt_status(pid):
+    d = request.get_json(silent=True) or {}
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (pid,)).fetchone():
+            return fel('Projektet hittades inte.', 404)
+        for falt, varde in d.items():
+            v = (str(varde).strip() if varde is not None else '')
+            if v == '':
+                conn.execute("DELETE FROM projekt_status WHERE projekt_id=? AND falt=?", (pid, falt))
+            else:
+                conn.execute(
+                    "INSERT INTO projekt_status (projekt_id, falt, varde) VALUES (?,?,?) "
+                    "ON CONFLICT(projekt_id, falt) DO UPDATE SET varde=excluded.varde",
+                    (pid, falt, v))
+        conn.execute("UPDATE projekt SET uppdaterad=? WHERE id=?", (nu(), pid))
+        conn.commit()
+        rader = conn.execute("SELECT falt, varde FROM projekt_status WHERE projekt_id=?", (pid,)).fetchall()
+    return jsonify({'status': {r['falt']: r['varde'] for r in rader}})
+
+
+# ============================================================
+# KABELTRUMMOR
+# ============================================================
+
+@app.get('/api/kabeltrummor')
+def lista_kabeltrummor():
+    with get_db() as conn:
+        return jsonify({'kabeltrummor': rows_to_list(conn.execute(
+            "SELECT * FROM kabeltrummor ORDER BY projekt_text, kabeltyp, id").fetchall())})
+
+
+@app.post('/api/kabeltrummor')
+def skapa_kabeltrumma():
+    d = request.get_json(silent=True) or {}
+    tid = nu()
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO kabeltrummor (projekt_id,projekt_text,kabeltyp,uttagen,kvar,notat,skapad,uppdaterad) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (d.get('projekt_id') or None, (d.get('projekt_text') or '').strip(),
+             (d.get('kabeltyp') or '').strip(),
+             float(d.get('uttagen') or 0), float(d.get('kvar') or 0),
+             (d.get('notat') or '').strip() or None, tid, tid))
+        conn.commit()
+        rad = row_to_dict(conn.execute("SELECT * FROM kabeltrummor WHERE id=?", (cur.lastrowid,)).fetchone())
+    return jsonify({'rad': rad}), 201
+
+
+@app.put('/api/kabeltrummor/<int:kid>')
+def uppdatera_kabeltrumma(kid):
+    with get_db() as conn:
+        bef = conn.execute("SELECT * FROM kabeltrummor WHERE id=?", (kid,)).fetchone()
+        if not bef: return fel('Raden hittades inte.', 404)
+        d = request.get_json(silent=True) or {}
+        conn.execute(
+            "UPDATE kabeltrummor SET projekt_text=?,kabeltyp=?,uttagen=?,kvar=?,notat=?,uppdaterad=? WHERE id=?",
+            ((d.get('projekt_text', bef['projekt_text']) or '').strip(),
+             (d.get('kabeltyp', bef['kabeltyp']) or '').strip(),
+             float(d.get('uttagen', bef['uttagen']) or 0),
+             float(d.get('kvar', bef['kvar']) or 0),
+             (d.get('notat', bef['notat']) or '').strip() or None, nu(), kid))
+        conn.commit()
+        rad = row_to_dict(conn.execute("SELECT * FROM kabeltrummor WHERE id=?", (kid,)).fetchone())
+    return jsonify({'rad': rad})
+
+
+@app.delete('/api/kabeltrummor/<int:kid>')
+def ta_bort_kabeltrumma(kid):
+    with get_db() as conn:
+        conn.execute("DELETE FROM kabeltrummor WHERE id=?", (kid,))
+        conn.commit()
+    return jsonify({'meddelande': 'Rad borttagen.'})
+
+
+# ============================================================
+# ADMIN – Import av projektplanering (Excel)
+# ============================================================
+
+@app.post('/api/admin/import-projektplanering')
+@admin_required
+def import_projektplanering():
+    d = request.get_json(silent=True) or {}
+    projekt_in = d.get('projekt', [])
+    kabel_in   = d.get('kabeltrummor', [])
+    ersatt_kabel = bool(d.get('ersatt_kabeltrummor'))
+    tid = nu()
+    skapade = uppdaterade = statusrader = 0
+    with get_db() as conn:
+        for p in projekt_in:
+            ib = str(p.get('ib') or '').strip()
+            if not ib:
+                continue
+            namn     = (p.get('namn') or '').strip() or ib
+            beredare = (p.get('beredare') or '').strip()
+            status   = p.get('status') or {}
+            bef = conn.execute(
+                "SELECT id FROM projekt WHERE projektnummer=? OR ib_nummer=?", (ib, ib)).fetchone()
+            if bef:
+                pid = bef['id']
+                conn.execute(
+                    "UPDATE projekt SET projektnamn=?, beredare=COALESCE(NULLIF(?,''),beredare), "
+                    "ib_nummer=?, uppdaterad=? WHERE id=?",
+                    (namn, beredare, ib, tid, pid))
+                uppdaterade += 1
+            else:
+                cur = conn.execute(
+                    "INSERT INTO projekt (projektnummer,projektnamn,beredare,status,ib_nummer,skapad,uppdaterad) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (ib, namn, beredare or 'Okänd', 'Planerat', ib, tid, tid))
+                pid = cur.lastrowid
+                skapade += 1
+            for falt, varde in status.items():
+                v = (str(varde).strip() if varde is not None else '')
+                if v == '':
+                    continue
+                conn.execute(
+                    "INSERT INTO projekt_status (projekt_id,falt,varde) VALUES (?,?,?) "
+                    "ON CONFLICT(projekt_id,falt) DO UPDATE SET varde=excluded.varde",
+                    (pid, falt, v))
+                statusrader += 1
+        if ersatt_kabel:
+            conn.execute("DELETE FROM kabeltrummor")
+        for k in kabel_in:
+            ib = str(k.get('ib') or '').strip()
+            projid = None
+            if ib:
+                row = conn.execute(
+                    "SELECT id FROM projekt WHERE projektnummer=? OR ib_nummer=?", (ib, ib)).fetchone()
+                projid = row['id'] if row else None
+            conn.execute(
+                "INSERT INTO kabeltrummor (projekt_id,projekt_text,kabeltyp,uttagen,kvar,notat,skapad,uppdaterad) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (projid, (k.get('projekt_text') or '').strip(), (k.get('kabeltyp') or '').strip(),
+                 float(k.get('uttagen') or 0), float(k.get('kvar') or 0),
+                 (k.get('notat') or '').strip() or None, tid, tid))
+        conn.commit()
+    return jsonify({'skapade': skapade, 'uppdaterade': uppdaterade,
+                    'statusrader': statusrader, 'kabeltrummor': len(kabel_in)})
+
+
+# ============================================================
 # START
 # ============================================================
 
