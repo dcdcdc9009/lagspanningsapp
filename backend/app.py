@@ -2313,6 +2313,46 @@ def import_projektplanering():
                     'statusrader': statusrader, 'kabeltrummor': len(kabel_in)})
 
 
+@app.post('/api/admin/sla-ihop-projekt')
+@admin_required
+def sla_ihop_projekt():
+    """Slår ihop två projektposter (dubbletter): flyttar allt från ta_bort_id
+    till behall_id och raderar ta_bort_id. behall_id behålls (IB, projektnummer)."""
+    d = request.get_json(silent=True) or {}
+    behall = d.get('behall_id')
+    tabort = d.get('ta_bort_id')
+    ny_ib  = (d.get('ib_nummer') or '').strip()
+    if not behall or not tabort or behall == tabort:
+        return fel('behall_id och ta_bort_id krävs och måste vara olika.')
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (behall,)).fetchone():
+            return fel('behall_id hittades inte.', 404)
+        if not conn.execute("SELECT id FROM projekt WHERE id=?", (tabort,)).fetchone():
+            return fel('ta_bort_id hittades inte.', 404)
+        # Flytta poster som pekar på ta_bort -> behall
+        conn.execute("UPDATE konstruktioner SET projekt_id=? WHERE projekt_id=?", (behall, tabort))
+        conn.execute("UPDATE byggprotokoll  SET projekt_id=? WHERE projekt_id=?", (behall, tabort))
+        for tbl in ('projekt_tillstand', 'projekt_aktiviteter', 'projekt_budget',
+                    'projekt_kostnad', 'projekt_intakt', 'projekt_fas_datum'):
+            try:
+                conn.execute(f"UPDATE {tbl} SET projekt_id=? WHERE projekt_id=?", (behall, tabort))
+            except Exception:
+                pass
+        # Status och checklista: fyll bara där behall saknar värde (undvik UNIQUE-krock)
+        for r in conn.execute("SELECT falt,varde FROM projekt_status WHERE projekt_id=?", (tabort,)).fetchall():
+            conn.execute("INSERT OR IGNORE INTO projekt_status (projekt_id,falt,varde) VALUES (?,?,?)",
+                         (behall, r['falt'], r['varde']))
+        for r in conn.execute("SELECT item_nr,utford,ej_relevant FROM projekt_checklistor WHERE projekt_id=?", (tabort,)).fetchall():
+            conn.execute("INSERT OR IGNORE INTO projekt_checklistor (projekt_id,item_nr,utford,ej_relevant) VALUES (?,?,?,?)",
+                         (behall, r['item_nr'], r['utford'], r['ej_relevant']))
+        if ny_ib:
+            conn.execute("UPDATE projekt SET ib_nummer=? WHERE id=?", (ny_ib, behall))
+        conn.execute("UPDATE projekt SET uppdaterad=? WHERE id=?", (nu(), behall))
+        conn.execute("DELETE FROM projekt WHERE id=?", (tabort,))
+        conn.commit()
+    return jsonify({'ok': True, 'behall_id': behall, 'borttaget': tabort})
+
+
 # ============================================================
 # START
 # ============================================================

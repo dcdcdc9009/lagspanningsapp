@@ -2868,3 +2868,23 @@ body[data-view="tidplan"] #app {
 .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 14px; }
 .status-cell .form-label { font-size: 12px; margin-bottom: 3px; }
 .status-spar { white-space: nowrap; }
+
+/* Tjällmo – Excel-lik redigerbar grid */
+.tj-grid-card { padding: 0; overflow: hidden; }
+.tj-grid-wrap { overflow: auto; max-height: calc(100vh - 215px); }
+.tj-grid { border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.tj-grid th, .tj-grid td { padding: 4px 6px; white-space: nowrap; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+.tj-grid thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-3); color: var(--text-strong); font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; }
+.tj-grid tbody tr:hover td:not(.tj-sticky) { background: var(--surface-2); }
+.tj-sticky { position: sticky; background: var(--surface); z-index: 1; }
+.tj-grid thead th.tj-sticky { z-index: 3; }
+.tj-c0 { left: 0; min-width: 80px; width: 80px; }
+.tj-c1 { left: 80px; min-width: 170px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; border-right: 2px solid var(--border-hi); font-weight: 600; }
+.tj-grid thead th.tj-c1 { border-right: 2px solid var(--border-hi); }
+.tj-ib { color: var(--cyan); font-family: 'DM Mono', monospace; cursor: pointer; font-weight: 600; }
+.tj-ib:hover { text-decoration: underline; }
+.tj-inp { width: 116px; font-size: 12px; padding: 3px 6px; border: 1px solid transparent; background: transparent; color: var(--text); border-radius: 4px; }
+.tj-inp:hover { border-color: var(--border-hi); }
+.tj-inp:focus { border-color: var(--cyan); background: var(--surface); outline: none; }
+.tj-inp.tj-date { width: 132px; }
+.tj-inp.tj-saved { border-color: var(--green); background: rgba(22,163,74,.12); }

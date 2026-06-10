@@ -4148,17 +4148,8 @@ function projektStatusPaneHtml(status) {
 }
 
 // ----------------------------------------------------------------
-// VIEW: TJÄLLMO (fält-/UE-vy – samma projekt, fältstatusar)
+// VIEW: TJÄLLMO (fält-/UE-vy – Excel-lik redigerbar grid, alla statusar)
 // ----------------------------------------------------------------
-const TJALLMO_KOLUMNER = [
-  {key:'status_fakturering', label:'Fakturering'},
-  {key:'beredning_klar', label:'Beredning'},
-  {key:'gravlag', label:'Grävlag'},
-  {key:'montage_start', label:'Montage'},
-  {key:'aterstallning', label:'Återställ.'},
-  {key:'bestallning_klar', label:'Best. klar'},
-];
-
 async function renderTjallmo(app) {
   if (!S.beredare.length) { try { S.beredare = (await api('GET', '/beredare')).beredare || []; } catch {} }
   let projekt = [], statusAlla = {};
@@ -4169,6 +4160,9 @@ async function renderTjallmo(app) {
     ]);
   } catch (e) { toast(e.message, 'error'); }
 
+  const datalists = TJALLMO_FALT.filter(f => f.alt)
+    .map(f => `<datalist id="tdl_${f.key}">${f.alt.map(o => `<option value="${escHtml(o)}">`).join('')}</datalist>`).join('');
+
   app.innerHTML = `
     <div class="page-header"><h1 class="page-title">Tjällmo – fältplanering</h1></div>
     <div class="filter-bar">
@@ -4177,14 +4171,26 @@ async function renderTjallmo(app) {
         <option value="">Alla beredare</option>
         ${S.beredare.map(b => `<option ${S.minBeredare === b.namn ? 'selected' : ''}>${escHtml(b.namn)}</option>`).join('')}
       </select>
+      <span class="text-sm text-muted" id="tjInfo"></span>
     </div>
-    <div class="card"><div class="table-wrap"><table>
+    ${datalists}
+    <div class="card tj-grid-card"><div class="tj-grid-wrap"><table class="tj-grid">
       <thead><tr>
-        <th>IB-nummer</th><th>Benämning</th><th>Beredare</th>
-        ${TJALLMO_KOLUMNER.map(k => `<th>${escHtml(k.label)}</th>`).join('')}
+        <th class="tj-sticky tj-c0">IB-nummer</th>
+        <th class="tj-sticky tj-c1">Benämning</th>
+        <th>Beredare</th>
+        ${TJALLMO_FALT.map(f => `<th>${escHtml(f.label)}</th>`).join('')}
       </tr></thead>
       <tbody id="tjBody"></tbody>
     </table></div></div>`;
+
+  function cell(pid, f, val) {
+    val = val || '';
+    if (f.typ === 'datum')
+      return `<input type="date" class="tj-inp tj-date" data-pid="${pid}" data-key="${f.key}" value="${escHtml(val)}">`;
+    const dl = f.alt ? `list="tdl_${f.key}"` : '';
+    return `<input type="text" class="tj-inp" data-pid="${pid}" data-key="${f.key}" value="${escHtml(val)}" ${dl} autocomplete="off">`;
+  }
 
   function rita() {
     const sok = document.getElementById('tjSok').value.trim().toLowerCase();
@@ -4198,19 +4204,35 @@ async function renderTjallmo(app) {
       }
       return true;
     });
-    if (!rader.length) { tbody.innerHTML = `<tr><td colspan="${3 + TJALLMO_KOLUMNER.length}" class="muted text-center">Inga ärenden</td></tr>`; return; }
+    document.getElementById('tjInfo').textContent = `${rader.length} ärenden · klick på IB-nr öppnar ärendet`;
+    if (!rader.length) { tbody.innerHTML = `<tr><td colspan="${3 + TJALLMO_FALT.length}" class="muted text-center">Inga ärenden</td></tr>`; return; }
     tbody.innerHTML = rader.map(p => {
       const st = statusAlla[String(p.id)] || {};
-      return `<tr style="cursor:pointer" data-id="${p.id}">
-        <td><span class="mono" style="color:var(--cyan)">${escHtml(p.projektnummer)}</span></td>
-        <td><strong>${escHtml(p.projektnamn)}</strong></td>
-        <td>${escHtml(p.beredare || '–')}</td>
-        ${TJALLMO_KOLUMNER.map(k => `<td class="text-sm">${escHtml(st[k.key] || '–')}</td>`).join('')}
+      return `<tr>
+        <td class="tj-sticky tj-c0"><a class="tj-ib" data-id="${p.id}">${escHtml(p.projektnummer)}</a></td>
+        <td class="tj-sticky tj-c1" title="${escHtml(p.projektnamn)}">${escHtml(p.projektnamn)}</td>
+        <td class="tj-ber">${escHtml(p.beredare || '–')}</td>
+        ${TJALLMO_FALT.map(f => `<td>${cell(p.id, f, st[f.key])}</td>`).join('')}
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('tr[data-id]').forEach(tr =>
-      tr.addEventListener('click', () => navigate('projekt-detail', { id: tr.dataset.id })));
+    tbody.querySelectorAll('a.tj-ib').forEach(a =>
+      a.addEventListener('click', () => navigate('projekt-detail', { id: a.dataset.id })));
   }
+
+  // Autospar per cell
+  document.getElementById('tjBody').addEventListener('change', async e => {
+    const inp = e.target.closest('.tj-inp');
+    if (!inp) return;
+    const pid = inp.dataset.pid, key = inp.dataset.key, val = inp.value;
+    inp.classList.remove('tj-saved');
+    try {
+      await api('PUT', `/projekt/${pid}/status`, { [key]: val });
+      (statusAlla[pid] = statusAlla[pid] || {})[key] = val;
+      inp.classList.add('tj-saved');
+      setTimeout(() => inp.classList.remove('tj-saved'), 900);
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
   document.getElementById('tjSok').addEventListener('input', rita);
   document.getElementById('tjBer').addEventListener('change', rita);
   rita();
