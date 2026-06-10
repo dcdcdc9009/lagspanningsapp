@@ -4168,7 +4168,7 @@ async function renderTjallmo(app) {
   app.innerHTML = `
     <div class="page-header"><h1 class="page-title">Tjällmo – fältplanering</h1></div>
     <div class="filter-bar">
-      <input type="search" class="form-control" id="tjSok" placeholder="🔍 Sök IB-nummer, benämning, beredare…">
+      <input type="search" class="form-control" id="tjSok" placeholder="🔍 Sök ärendenummer, benämning, beredare…">
       <select class="form-control" id="tjBer" style="max-width:200px">
         <option value="">Alla beredare</option>
         ${S.beredare.map(b => `<option ${S.minBeredare === b.namn ? 'selected' : ''}>${escHtml(b.namn)}</option>`).join('')}
@@ -4178,7 +4178,7 @@ async function renderTjallmo(app) {
     ${datalists}
     <div class="card tj-grid-card"><div class="tj-grid-wrap"><table class="tj-grid">
       <thead><tr>
-        <th class="tj-sticky tj-c0">IB-nummer</th>
+        <th class="tj-sticky tj-c0">Ärendenummer</th>
         <th class="tj-sticky tj-c1">Benämning</th>
         <th>Beredare</th>
         ${TJALLMO_FALT.map(f => `<th>${escHtml(f.label)}</th>`).join('')}
@@ -4206,7 +4206,7 @@ async function renderTjallmo(app) {
       }
       return true;
     });
-    document.getElementById('tjInfo').textContent = `${rader.length} ärenden · klick på IB-nr öppnar ärendet`;
+    document.getElementById('tjInfo').textContent = `${rader.length} ärenden · klick på ärendenr öppnar ärendet`;
     if (!rader.length) { tbody.innerHTML = `<tr><td colspan="${3 + TJALLMO_FALT.length}" class="muted text-center">Inga ärenden</td></tr>`; return; }
     tbody.innerHTML = rader.map(p => {
       const st = statusAlla[String(p.id)] || {};

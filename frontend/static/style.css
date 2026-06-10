@@ -2878,8 +2878,8 @@ body[data-view="tidplan"] #app {
 .tj-grid tbody tr:hover td:not(.tj-sticky) { background: var(--surface-2); }
 .tj-sticky { position: sticky; background: var(--surface); z-index: 1; }
 .tj-grid thead th.tj-sticky { z-index: 3; }
-.tj-c0 { left: 0; min-width: 80px; width: 80px; }
-.tj-c1 { left: 80px; min-width: 170px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; border-right: 2px solid var(--border-hi); font-weight: 600; }
+.tj-c0 { left: 0; min-width: 104px; width: 104px; }
+.tj-c1 { left: 104px; min-width: 170px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; border-right: 2px solid var(--border-hi); font-weight: 600; }
 .tj-grid thead th.tj-c1 { border-right: 2px solid var(--border-hi); }
 .tj-ib { color: var(--cyan); font-family: 'DM Mono', monospace; cursor: pointer; font-weight: 600; }
 .tj-ib:hover { text-decoration: underline; }
