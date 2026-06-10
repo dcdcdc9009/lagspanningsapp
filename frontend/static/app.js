@@ -105,7 +105,7 @@ function render(view, params = {}) {
   document.body.dataset.view = view;
   switch (view) {
     case 'projekt':         renderProjekt(app); break;
-    case 'projekt-detail':  renderProjektDetail(app, params.id); break;
+    case 'projekt-detail':  renderProjektDetail(app, params.id, params.vy); break;
     case 'artiklar':        renderArtiklar(app); break;
     case 'konstruktioner':  renderKonstruktioner(app); break;
     case 'admin':           renderAdmin(app); break;
@@ -742,7 +742,8 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
 // ----------------------------------------------------------------
 // VIEW: PROJEKT DETAIL
 // ----------------------------------------------------------------
-async function renderProjektDetail(app, id) {
+async function renderProjektDetail(app, id, vy = 'beredning') {
+  const tjVy = vy === 'tjallmo';
   app.innerHTML = `<div class="text-muted" style="padding:32px;text-align:center">Laddar…</div>`;
   let p, fasData, tillstandLista, aktiviteter, checklista, statusVarden;
   try {
@@ -818,6 +819,7 @@ async function renderProjektDetail(app, id) {
         <button class="btn btn-outline btn-sm" id="btnBack">← Tillbaka</button>
         <h1 class="page-title">${escHtml(p.projektnummer)} – ${escHtml(p.projektnamn)}</h1>
         ${badgeFas(aktuellFas)}
+        ${tjVy ? '<span class="badge" style="background:rgba(124,58,237,.14);color:var(--cyan);border:1px solid var(--cyan-border)">Tjällmo-vy</span>' : ''}
       </div>
       <button class="btn btn-outline btn-sm" id="btnEditProjekt">Redigera</button>
     </div>
@@ -831,10 +833,10 @@ async function renderProjektDetail(app, id) {
     </div>
 
     <div class="tabs">
-      <button class="tab-btn active" data-tab="oversikt">Översikt</button>
-      <button class="tab-btn" data-tab="planering">Planeringsstatus</button>
+      <button class="tab-btn ${tjVy ? '' : 'active'}" data-tab="oversikt">Översikt</button>
+      <button class="tab-btn ${tjVy ? 'active' : ''}" data-tab="planering">${tjVy ? 'Tjällmostatus' : 'Planeringsstatus'}</button>
     </div>
-    <div class="tab-pane active" id="pdTabOversikt">
+    <div class="tab-pane ${tjVy ? '' : 'active'}" id="pdTabOversikt">
     <div class="detail-layout">
       <div>
         <div class="card mb-2">
@@ -872,8 +874,8 @@ async function renderProjektDetail(app, id) {
       </div>
     </div>
     </div>
-    <div class="tab-pane" id="pdTabPlanering">
-      ${projektStatusPaneHtml(statusVarden || {})}
+    <div class="tab-pane ${tjVy ? 'active' : ''}" id="pdTabPlanering">
+      ${projektStatusPaneHtml(statusVarden || {}, vy)}
     </div>
     `;
 
@@ -939,7 +941,7 @@ async function renderProjektDetail(app, id) {
   }
   renderCk();
 
-  document.getElementById('btnBack').addEventListener('click', () => navigate('projekt'));
+  document.getElementById('btnBack').addEventListener('click', () => navigate(tjVy ? 'tjallmo' : 'projekt'));
   document.getElementById('btnEditProjekt').addEventListener('click', () => modalRedigeraProjekt(p));
 
   document.getElementById('fasTidslinje').querySelectorAll('.fas-steg').forEach(el => {
@@ -949,13 +951,13 @@ async function renderProjektDetail(app, id) {
       try {
         await api('POST', `/projekt/${id}/fas`, { fas: nyFas });
         toast(`Fas: ${nyFas}`, 'success');
-        renderProjektDetail(app, id);
+        renderProjektDetail(app, id, vy);
       } catch (e) { toast(e.message, 'error'); }
     });
   });
 
   document.getElementById('btnNyttTillstand').addEventListener('click', () =>
-    modalTillstandForm(id, null, () => renderProjektDetail(app, id)));
+    modalTillstandForm(id, null, () => renderProjektDetail(app, id, vy)));
 
   document.getElementById('tillstandKontainer').addEventListener('click', async e => {
     const btn = e.target.closest('button[data-action]');
@@ -963,20 +965,20 @@ async function renderProjektDetail(app, id) {
     const tid = btn.dataset.tid;
     if (btn.dataset.action === 'edit-till') {
       const t = tillstandLista.find(x => x.id == tid);
-      modalTillstandForm(id, t, () => renderProjektDetail(app, id));
+      modalTillstandForm(id, t, () => renderProjektDetail(app, id, vy));
     } else if (btn.dataset.action === 'del-till') {
       const ok = await confirm('Ta bort tillstånd', 'Ta bort detta tillstånd?');
       if (!ok) return;
       try {
         await api('DELETE', `/projekt/${id}/tillstand/${tid}`);
         toast('Borttaget', 'success');
-        renderProjektDetail(app, id);
+        renderProjektDetail(app, id, vy);
       } catch (e) { toast(e.message, 'error'); }
     }
   });
 
   document.getElementById('btnNyAktivitet').addEventListener('click', () =>
-    modalNyAktivitet(id, () => renderProjektDetail(app, id)));
+    modalNyAktivitet(id, () => renderProjektDetail(app, id, vy)));
 
   document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -4139,12 +4141,12 @@ function bindStatusAutospar(rootEl, pid) {
   rootEl.addEventListener('change', e => { if (!e.target.classList.contains('status-inp')) return; if (t) clearTimeout(t); save(); });
 }
 
-// Bygg HTML för status-fliken i projektdetaljen (Beredning + Tjällmo, utan dubbletter)
-function projektStatusPaneHtml(status) {
-  const beredKeys = new Set(BEREDNING_FALT.map(f => f.key));
-  const tjallmoEgna = TJALLMO_FALT.filter(f => !beredKeys.has(f.key));
-  return statusFormHtml(BEREDNING_FALT, status, 'Beredningsstatus') +
-         statusFormHtml(tjallmoEgna, status, 'Tjällmo / fältstatus');
+// Bygg HTML för status-fliken i projektdetaljen.
+// vy='tjallmo' -> Tjällmo-statusar (som Excelens Tjällmo-flik), annars Beredning-statusar.
+function projektStatusPaneHtml(status, vy) {
+  if (vy === 'tjallmo')
+    return statusFormHtml(TJALLMO_FALT, status, 'Tjällmostatus (fältplanering)');
+  return statusFormHtml(BEREDNING_FALT, status, 'Beredningsstatus');
 }
 
 // ----------------------------------------------------------------
@@ -4216,7 +4218,7 @@ async function renderTjallmo(app) {
       </tr>`;
     }).join('');
     tbody.querySelectorAll('a.tj-ib').forEach(a =>
-      a.addEventListener('click', () => navigate('projekt-detail', { id: a.dataset.id })));
+      a.addEventListener('click', () => navigate('projekt-detail', { id: a.dataset.id, vy: 'tjallmo' })));
   }
 
   // Autospar per cell
