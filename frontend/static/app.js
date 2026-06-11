@@ -1601,6 +1601,9 @@ async function renderKonstruktioner(app) {
         </select>
         <button class="btn btn-navy btn-sm" id="btnNyttProjektKonstr" style="white-space:nowrap;">+ Nytt projekt</button>
         <button class="btn btn-danger btn-sm" id="btnRaderaProjektKonstr" style="white-space:nowrap;display:none;">🗑 Ta bort projekt</button>
+        <label class="form-label" style="margin:0;white-space:nowrap;display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;">
+          <input type="checkbox" id="visaUtforda"> Visa utförda
+        </label>
       </div>
     </div>
     <div id="konstrInnehall"></div>`;
@@ -1617,10 +1620,12 @@ async function renderKonstruktioner(app) {
   function byggProjektOptions(valjId) {
     const sel = document.getElementById('projektValjare');
     const ber = document.getElementById('filtKonstrBeredare')?.value || '';
+    const visaUtf = document.getElementById('visaUtforda')?.checked;
     // Behåll bara default-option, rensa resten
     while (sel.options.length > 1) sel.remove(1);
     allaProjekt
       .filter(p => !ber || p.beredare === ber)
+      .filter(p => visaUtf || p.fas !== 'Utförda')
       .forEach(p => {
         const opt = document.createElement('option');
         opt.value = p.id;
@@ -1644,6 +1649,13 @@ async function renderKonstruktioner(app) {
 
   berSel.addEventListener('change', () => {
     byggProjektOptions();
+    S.valtProjektKonstr = sel.value || null;
+    uppdateraRaderaKnapp();
+    renderKonstrKontainer(sel.value);
+  });
+
+  document.getElementById('visaUtforda').addEventListener('change', () => {
+    byggProjektOptions(S.valtProjektKonstr);
     S.valtProjektKonstr = sel.value || null;
     uppdateraRaderaKnapp();
     renderKonstrKontainer(sel.value);
