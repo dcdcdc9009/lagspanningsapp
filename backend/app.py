@@ -58,6 +58,16 @@ def admin_required(f):
     return inner
 
 
+def artikel_required(f):
+    """Tillåter admin ELLER användare med behörighet att hantera artiklar."""
+    @wraps(f)
+    def inner(*a, **kw):
+        if not (session.get('admin') or session.get('far_artiklar')):
+            return fel('Behörighet att hantera artiklar krävs.', 401)
+        return f(*a, **kw)
+    return inner
+
+
 # Rutter som är tillgängliga utan app-inloggning
 _OPEN_ROUTES = {'/api/auth/login', '/api/auth/status', '/api/auth/logout',
                 '/api/admin/login', '/api/debug'}
@@ -158,6 +168,7 @@ def auth_status():
         'roll':         session.get('roll'),
         'beredare':     session.get('beredare'),
         'admin':        bool(session.get('admin')),
+        'far_artiklar': bool(session.get('far_artiklar')),
     })
 
 
@@ -185,6 +196,10 @@ def auth_login():
             session['roll']         = u['roll']
             session['beredare']     = u['beredare']
             session['admin']        = (u['roll'] == 'admin')
+            try:
+                session['far_artiklar'] = bool(u['far_hantera_artiklar'])
+            except (KeyError, IndexError):
+                session['far_artiklar'] = False
             return jsonify({'ok': True, 'namn': u['namn'], 'roll': u['roll'],
                             'beredare': u['beredare'], 'admin': u['roll'] == 'admin'})
         return fel('Fel användarnamn eller lösenord.', 401)
@@ -1270,7 +1285,7 @@ def materiallista_excel(pid):
 # ============================================================
 
 @app.post('/api/admin/artiklar')
-@admin_required
+@artikel_required
 def admin_skapa_artikel():
     d = request.get_json(silent=True) or {}
     namn   = (d.get('artikelnamn') or '').strip()
@@ -1288,7 +1303,7 @@ def admin_skapa_artikel():
 
 
 @app.put('/api/admin/artiklar/<int:aid>')
-@admin_required
+@artikel_required
 def admin_uppdatera_artikel(aid):
     with get_db() as conn:
         bef = conn.execute("SELECT * FROM artiklar WHERE id=?", (aid,)).fetchone()
@@ -1306,7 +1321,7 @@ def admin_uppdatera_artikel(aid):
 
 
 @app.delete('/api/admin/artiklar/<int:aid>')
-@admin_required
+@artikel_required
 def admin_ta_bort_artikel(aid):
     with get_db() as conn:
         rad = conn.execute("SELECT artikelnamn FROM artiklar WHERE id=?", (aid,)).fetchone()
@@ -1327,7 +1342,7 @@ def admin_ta_bort_artikel(aid):
 # ============================================================
 
 @app.get('/api/admin/artiklar/<int:aid>/priser')
-@admin_required
+@artikel_required
 def admin_lista_priser(aid):
     with get_db() as conn:
         priser = rows_to_list(conn.execute("""
@@ -1341,7 +1356,7 @@ def admin_lista_priser(aid):
 
 
 @app.post('/api/admin/artiklar/<int:aid>/priser')
-@admin_required
+@artikel_required
 def admin_lagg_till_pris(aid):
     d = request.get_json(silent=True) or {}
     lev_id = d.get('leverantor_id')
@@ -1368,7 +1383,7 @@ def admin_lagg_till_pris(aid):
 
 
 @app.delete('/api/admin/artiklar/<int:aid>/priser/<int:pris_id>')
-@admin_required
+@artikel_required
 def admin_ta_bort_pris(aid, pris_id):
     with get_db() as conn:
         conn.execute("DELETE FROM artikel_leverantor WHERE id=? AND artikel_id=?", (pris_id, aid))
@@ -1523,7 +1538,7 @@ GILTIGA_ROLLER = ('admin', 'beredare', 'ue')
 def admin_lista_anvandare():
     with get_db() as conn:
         rader = rows_to_list(conn.execute(
-            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, skapad "
+            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, far_hantera_artiklar, skapad "
             "FROM anvandare ORDER BY roll, anvandarnamn").fetchall())
     return jsonify({'anvandare': rader})
 
@@ -1537,6 +1552,7 @@ def admin_skapa_anvandare():
     losenord     = (d.get('losenord') or '').strip()
     roll         = (d.get('roll') or 'beredare').strip()
     beredare     = (d.get('beredare') or '').strip() or None
+    far_art      = 1 if d.get('far_hantera_artiklar') else 0
     if not anvandarnamn: return fel('Användarnamn är obligatoriskt.')
     if not losenord:     return fel('Lösenord är obligatoriskt.')
     if roll not in GILTIGA_ROLLER:
@@ -1544,12 +1560,12 @@ def admin_skapa_anvandare():
     with get_db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO anvandare (anvandarnamn,namn,losenord_hash,roll,beredare,aktiv,skapad) "
-                "VALUES (?,?,?,?,?,1,?)",
-                (anvandarnamn, namn, hash_pw(losenord), roll, beredare, nu()))
+                "INSERT INTO anvandare (anvandarnamn,namn,losenord_hash,roll,beredare,aktiv,far_hantera_artiklar,skapad) "
+                "VALUES (?,?,?,?,?,1,?,?)",
+                (anvandarnamn, namn, hash_pw(losenord), roll, beredare, far_art, nu()))
             conn.commit()
             rad = row_to_dict(conn.execute(
-                "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, skapad "
+                "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, far_hantera_artiklar, skapad "
                 "FROM anvandare WHERE id=?", (cur.lastrowid,)).fetchone())
             return jsonify({'anvandare': rad}), 201
         except Exception as e:
@@ -1569,16 +1585,17 @@ def admin_uppdatera_anvandare(uid):
         namn     = (d.get('namn', bef['namn']) or '').strip()
         beredare = (d.get('beredare', bef['beredare']) or '').strip() or None
         aktiv    = int(d.get('aktiv', bef['aktiv']))
+        far_art  = 1 if d.get('far_hantera_artiklar', bef['far_hantera_artiklar']) else 0
         losenord = (d.get('losenord') or '').strip()
         if losenord:
             conn.execute("UPDATE anvandare SET losenord_hash=? WHERE id=?",
                          (hash_pw(losenord), uid))
         conn.execute(
-            "UPDATE anvandare SET namn=?, roll=?, beredare=?, aktiv=? WHERE id=?",
-            (namn, roll, beredare, aktiv, uid))
+            "UPDATE anvandare SET namn=?, roll=?, beredare=?, aktiv=?, far_hantera_artiklar=? WHERE id=?",
+            (namn, roll, beredare, aktiv, far_art, uid))
         conn.commit()
         rad = row_to_dict(conn.execute(
-            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, skapad "
+            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, far_hantera_artiklar, skapad "
             "FROM anvandare WHERE id=?", (uid,)).fetchone())
     return jsonify({'anvandare': rad})
 

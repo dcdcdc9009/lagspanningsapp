@@ -2273,6 +2273,15 @@ async function modalVisaKonstruktion(kid, onDone) {
 // VIEW: ARTIKLAR (katalog)
 // ----------------------------------------------------------------
 async function renderArtiklar(app) {
+  // Behöriga (admin eller "får hantera artiklar") får full artikelhantering i Artiklar-fliken
+  if (S.admin || (S.user && S.user.far_artiklar)) {
+    app.innerHTML = `
+      <div class="page-header"><h1 class="page-title">Artiklar</h1>
+        <span class="text-sm text-muted">Lägg till, redigera och ta bort artiklar, E-nummer och leverantörspriser</span>
+      </div>
+      <div id="artMgmt"></div>`;
+    return adminArtiklar(document.getElementById('artMgmt'));
+  }
   app.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Artikelkatalog</h1>
@@ -2879,13 +2888,14 @@ async function adminAnvandare(cont) {
     </div>
     <div class="card table-wrap">
       <table>
-        <thead><tr><th>Användarnamn</th><th>Namn</th><th>Roll</th><th>Beredare</th><th>Aktiv</th><th>Åtgärder</th></tr></thead>
+        <thead><tr><th>Användarnamn</th><th>Namn</th><th>Roll</th><th>Beredare</th><th>Artiklar</th><th>Aktiv</th><th>Åtgärder</th></tr></thead>
         <tbody>${anv.map(u => `
           <tr>
             <td class="mono">${escHtml(u.anvandarnamn)}</td>
             <td>${escHtml(u.namn || '–')}</td>
             <td>${escHtml(ROLL_NAMN[u.roll] || u.roll)}</td>
             <td>${escHtml(u.beredare || '–')}</td>
+            <td title="Får hantera artiklar">${u.far_hantera_artiklar ? '✔' : '–'}</td>
             <td>${u.aktiv ? '✔' : '–'}</td>
             <td class="flex gap-1">
               <button class="btn btn-sm btn-outline" data-id="${u.id}" data-action="edit">Redigera</button>
@@ -2925,6 +2935,10 @@ async function adminAnvandare(cont) {
           <input type="checkbox" name="aktiv" id="anvAktiv" ${(!u||u.aktiv)?'checked':''}>
           <label for="anvAktiv">Aktiv</label>
         </div>
+        <div class="form-check">
+          <input type="checkbox" name="far_hantera_artiklar" id="anvArtiklar" ${u && u.far_hantera_artiklar ? 'checked' : ''}>
+          <label for="anvArtiklar">Får hantera artiklar (lägga till/redigera material)</label>
+        </div>
       </form>`,
       `<button class="btn btn-navy" id="sparaAnv">Spara</button>
        <button class="btn btn-secondary" id="avbrytAnv">Avbryt</button>`
@@ -2935,6 +2949,7 @@ async function adminAnvandare(cont) {
       if (!f.reportValidity()) return;
       const body = Object.fromEntries(new FormData(f).entries());
       body.aktiv = document.getElementById('anvAktiv').checked ? 1 : 0;
+      body.far_hantera_artiklar = document.getElementById('anvArtiklar').checked ? 1 : 0;
       if (u && !body.losenord) delete body.losenord;  // behåll befintligt lösenord
       try {
         if (u) await api('PUT', `/admin/anvandare/${u.id}`, body);
@@ -4361,6 +4376,7 @@ async function boot() {
     namn:         status.namn,
     roll:         status.roll,
     beredare:     status.beredare,
+    far_artiklar: !!status.far_artiklar,
   } : null;
   S.minBeredare = status.beredare || null;
 

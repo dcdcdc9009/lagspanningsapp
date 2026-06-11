@@ -1229,6 +1229,15 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','35')")
         conn.commit()
 
+    if v < 36:
+        # v36: Behörighet per användare att hantera artiklar (utan att vara admin).
+        try:
+            conn.execute("ALTER TABLE anvandare ADD COLUMN far_hantera_artiklar INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','36')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -1508,6 +1517,7 @@ def _create_tables(conn):
             roll          TEXT NOT NULL DEFAULT 'beredare',
             beredare      TEXT,
             aktiv         INTEGER NOT NULL DEFAULT 1,
+            far_hantera_artiklar INTEGER NOT NULL DEFAULT 0,
             skapad        DATETIME
         );
 
