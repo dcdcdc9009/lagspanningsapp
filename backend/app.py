@@ -7,7 +7,7 @@ from database import get_db, init_db, DB_PATH
 from models import rows_to_list, row_to_dict, nu, nasta_projektnummer
 from ruttimport import gissa_mappning, validera_rader, rubrik_signatur, IMPORT_FALT
 from ruttrestid import bygg_matris
-from ruttopt import optimera as kor_optimering
+from ruttopt import optimera as kor_optimering, berakna_rutt
 from mall_berakning import berakna
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend')
@@ -2982,6 +2982,91 @@ def rutt_optimera(pid):
                           'orsak': e['orsak']} for e in res['ej_placerade']],
         'arenden': arend,
     })
+
+
+@app.post('/api/rutt/planeringar/<int:pid>/tilldelning')
+def rutt_tilldelning(pid):
+    """Manuell omfördelning (dra-och-släpp): räkna om tider utan full omoptimering."""
+    uid = _rutt_uid()
+    d = request.get_json(silent=True) or {}
+    tilldelning = d.get('tilldelning') or {}
+    ej_in = d.get('ej_placerade') or []
+    with get_db() as conn:
+        p = conn.execute("SELECT * FROM rutt_planering WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return fel('Planeringen hittades inte.', 404)
+        if p['agare'] != uid:
+            return fel('Du har inte åtkomst till den här planeringen.', 403)
+
+        ar_rader = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_arende WHERE planering_id=?", (pid,)).fetchall())
+        ar_map = {a['id']: a for a in ar_rader}
+        tek_ids = [int(t) for t in tilldelning.keys()]
+        tek_rader = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_tekniker WHERE id IN (%s)" % (','.join('?' * len(tek_ids)) or 'NULL'),
+            tek_ids).fetchall()) if tek_ids else []
+        tmap = {t['id']: t for t in tek_rader}
+
+        # punktindex
+        punkter, index = [], {}
+
+        def _pt(lat, lon):
+            key = (round(lat, 5), round(lon, 5))
+            if key not in index:
+                index[key] = len(punkter)
+                punkter.append((lat, lon))
+            return index[key]
+
+        for t in tek_rader:
+            t['_ds'] = _pt(t['start_lat'], t['start_lon'])
+            sl_lat = t['slut_lat'] if t['slut_lat'] is not None else t['start_lat']
+            sl_lon = t['slut_lon'] if t['slut_lon'] is not None else t['start_lon']
+            t['_de'] = _pt(sl_lat, sl_lon)
+        for a in ar_rader:
+            if a['lat'] is not None and a['lon'] is not None:
+                a['_pt'] = _pt(a['lat'], a['lon'])
+
+        dur, _dist, _k = bygg_matris(conn, punkter, bara_cache=True)
+
+        sena, over = [], []
+        for tid_str, aidlist in tilldelning.items():
+            tid = int(tid_str)
+            t = tmap.get(tid)
+            if not t:
+                continue
+            tek = {'dep_start': t['_ds'], 'dep_end': t['_de'],
+                   'start_min': _hhmm_min(t['arbetstid_start']) or 420,
+                   'end_min': _hhmm_min(t['arbetstid_slut']) or 960}
+            seq = [{'id': aid, 'pt': ar_map[aid]['_pt'],
+                    'service': ar_map[aid]['servicetid_min'] or 30,
+                    'wf': _hhmm_min(ar_map[aid]['fonster_fran']),
+                    'wt': _hhmm_min(ar_map[aid]['fonster_till'])}
+                   for aid in aidlist if aid in ar_map and ar_map[aid].get('_pt') is not None]
+            r = berakna_rutt(seq, tek, dur)
+            for i, item in enumerate(seq):
+                conn.execute(
+                    "UPDATE rutt_arende SET tilldelad_tekniker=?, ordning=?, ankomst=?, ej_placerad_orsak=NULL WHERE id=?",
+                    (tid, i, _min_hhmm(r['arrivals'][i]), item['id']))
+            sena.extend(r['sena'])
+            if r['over_arbetstid']:
+                over.append(tid)
+
+        for aid in ej_in:
+            if aid in ar_map:
+                conn.execute(
+                    "UPDATE rutt_arende SET tilldelad_tekniker=NULL, ordning=NULL, ankomst=NULL, ej_placerad_orsak=? WHERE id=?",
+                    ('Ej tilldelad', aid))
+
+        conn.execute("UPDATE rutt_planering SET uppdaterad=? WHERE id=?", (nu(), pid))
+        conn.commit()
+
+        arenden = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_arende WHERE planering_id=? "
+            "ORDER BY COALESCE(tilldelad_tekniker,999999), COALESCE(ordning,999999), id",
+            (pid,)).fetchall())
+        sammanfattning = _rutt_sammanfattning(conn, [dict(a) for a in arenden])
+    return jsonify({'arenden': arenden, 'sammanfattning': sammanfattning,
+                    'varningar': {'sena': sena, 'over_arbetstid': over}})
 
 
 # ============================================================

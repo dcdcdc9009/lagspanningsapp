@@ -4823,63 +4823,196 @@ async function ruttPlaneringVy(app) {
   ruttResultatHtml(c, arenden, tekById, p.sammanfattning || []);
 }
 
+function ruttFarg(tek) { return (tek && tek.farg) || '#7c3aed'; }
+
 function ruttResultatHtml(c, arenden, tekById, sammanfattning) {
+  const arById = {}; arenden.forEach(a => arById[a.id] = a);
   const grupper = {};
   arenden.filter(a => a.tilldelad_tekniker != null).forEach(a => {
     (grupper[a.tilldelad_tekniker] = grupper[a.tilldelad_tekniker] || []).push(a);
   });
   Object.values(grupper).forEach(g => g.sort((x, y) => (x.ordning ?? 0) - (y.ordning ?? 0)));
-  const ejPlac = arenden.filter(a => a.tilldelad_tekniker == null && a.ej_placerad_orsak);
+  const ejPlac = arenden.filter(a => a.tilldelad_tekniker == null);
   const sammSession = {};
   (sammanfattning || []).forEach(s => sammSession[s.tekniker_id] = s);
 
-  let html = '';
+  // Modell för dra-och-släpp
+  RuttState.tilldelning = {};
+  Object.keys(grupper).forEach(tid => { RuttState.tilldelning[tid] = grupper[tid].map(a => a.id); });
+  RuttState.ejPlacerade = ejPlac.map(a => a.id);
+
+  const radHtml = (a, nr, farg) => `
+    <tr class="rutt-drag" draggable="true" data-aid="${a.id}" style="border-top:1px solid var(--border)">
+      <td style="padding:9px 12px;width:30px">${nr ? `<span class="rutt-stopp-nr" style="background:${escHtml(farg)}">${nr}</span>` : '<span class="rutt-grip">⋮⋮</span>'}</td>
+      <td style="padding:9px 12px;font-weight:600">${escHtml(a.etikett)}<div class="rutt-rad-sub">${escHtml(a.arendetyp || '')}${(a.fonster_fran || a.fonster_till) ? ` · ${a.fonster_fran || '…'}–${a.fonster_till || '…'}` : ''}</div></td>
+      <td style="padding:9px 12px;white-space:nowrap">${a.ankomst ? `ank. <b>${a.ankomst}</b>` : ''}<div class="rutt-rad-sub">${a.servicetid_min || '–'} min</div></td>
+    </tr>`;
+
+  let listaHtml = '';
   Object.keys(grupper).forEach(tid => {
     const g = grupper[tid];
-    const tek = tekById[tid] || { namn: 'Tekniker ' + tid, farg: '#7c3aed' };
-    const farg = tek.farg || '#7c3aed';
-    const sista = g[g.length - 1];
-    const service = g.reduce((s, a) => s + (a.servicetid_min || 0), 0);
-    const klar = sista.ankomst ? _hhmm(_mm(sista.ankomst) + (sista.servicetid_min || 0)) : '–';
+    const tek = tekById[tid] || { namn: 'Tekniker ' + tid };
+    const farg = ruttFarg(tek);
     const ss = sammSession[tid];
-    html += `
-      <div class="card rutt-rutt" style="margin-bottom:14px">
+    const service = g.reduce((s, a) => s + (a.servicetid_min || 0), 0);
+    listaHtml += `
+      <div class="card rutt-rutt rutt-drop" data-tek="${tid}" style="margin-bottom:12px">
         <div class="rutt-rutt-head" style="border-left:5px solid ${escHtml(farg)}">
           <span class="rutt-rutt-namn"><span class="rutt-farg-prick" style="background:${escHtml(farg)}"></span> ${escHtml(tek.namn)}</span>
-          <span class="rutt-rutt-stats">
-            <b>${g.length}</b> stopp${ss ? ` · <b>${ss.kortid_min}</b> min körtid` : ''} · <b>${service}</b> min service · klar <b>${ss ? ss.sluttid : klar}</b>
-          </span>
+          <span class="rutt-rutt-stats"><b>${g.length}</b> stopp${ss ? ` · <b>${ss.kortid_min}</b> min · klar <b>${ss.sluttid || '–'}</b>` : ` · <b>${service}</b> min service`}</span>
         </div>
-        <div class="card-body" style="padding:0">
-          <table class="rutt-tabell" style="width:100%;border-collapse:collapse"><tbody>
-            ${g.map((a, i) => `<tr style="border-top:1px solid var(--border)">
-              <td style="padding:9px 14px;width:34px"><span class="rutt-stopp-nr" style="background:${escHtml(farg)}">${i + 1}</span></td>
-              <td style="padding:9px 14px;font-weight:600">${escHtml(a.etikett)}</td>
-              <td style="padding:9px 14px">${escHtml(a.arendetyp || '–')}</td>
-              <td style="padding:9px 14px">ank. <b>${a.ankomst || '–'}</b></td>
-              <td style="padding:9px 14px">${a.servicetid_min || '–'} min</td>
-              <td style="padding:9px 14px">${(a.fonster_fran || a.fonster_till) ? `fönster ${a.fonster_fran || '…'}–${a.fonster_till || '…'}` : ''}</td>
-              <td style="padding:9px 14px;color:var(--text-muted)">${escHtml(a.anteckning || '')}</td>
-            </tr>`).join('')}
-          </tbody></table>
-        </div>
+        <div class="card-body" style="padding:0"><table class="rutt-tabell" style="width:100%;border-collapse:collapse"><tbody>
+          ${g.map((a, i) => radHtml(a, i + 1, farg)).join('')}
+        </tbody></table></div>
       </div>`;
   });
-  if (ejPlac.length) {
-    html += `
-      <div class="card rutt-ejplac"><div class="rutt-rutt-head" style="border-left:5px solid var(--red)">
-        <span class="rutt-rutt-namn">⚠ Ej placerade (${ejPlac.length})</span>
-      </div><div class="card-body" style="padding:0">
-        <table class="rutt-tabell" style="width:100%;border-collapse:collapse"><tbody>
-          ${ejPlac.map(a => `<tr style="border-top:1px solid var(--border)">
-            <td style="padding:9px 14px;font-weight:600">${escHtml(a.etikett)}</td>
-            <td style="padding:9px 14px">${escHtml(a.arendetyp || '–')}</td>
-            <td style="padding:9px 14px;color:var(--red)">${escHtml(a.ej_placerad_orsak || '')}</td>
-          </tr>`).join('')}
-        </tbody></table>
-      </div></div>`;
+  listaHtml += `
+    <div class="card rutt-ejplac rutt-drop" data-tek="ej">
+      <div class="rutt-rutt-head" style="border-left:5px solid var(--text-muted)">
+        <span class="rutt-rutt-namn">Ej placerade (${ejPlac.length})</span>
+      </div>
+      <div class="card-body" style="padding:0"><table class="rutt-tabell" style="width:100%;border-collapse:collapse"><tbody>
+        ${ejPlac.map(a => `<tr class="rutt-drag" draggable="true" data-aid="${a.id}" style="border-top:1px solid var(--border)">
+          <td style="padding:9px 12px;width:30px"><span class="rutt-grip">⋮⋮</span></td>
+          <td style="padding:9px 12px;font-weight:600">${escHtml(a.etikett)}<div class="rutt-rad-sub">${escHtml(a.arendetyp || '')}</div></td>
+          <td style="padding:9px 12px;color:var(--red);font-size:12px">${escHtml(a.ej_placerad_orsak || '')}</td>
+        </tr>`).join('') || `<tr><td style="padding:14px;color:var(--text-muted);font-size:13px">Dra hit ärenden för att ta bort dem från en rutt.</td></tr>`}
+      </tbody></table></div>
+    </div>`;
+
+  c.innerHTML = `
+    <p class="text-muted text-sm" style="margin:0 0 10px">Dra ärenden mellan tekniker eller ändra ordning – tiderna räknas om direkt. Klicka på ett ärende för att visa det på kartan.</p>
+    <div class="rutt-split">
+      <div class="rutt-lista">${listaHtml}</div>
+      <div class="rutt-karta-wrap"><div id="ruttKarta"></div></div>
+    </div>`;
+
+  ruttRitaKarta(arenden, tekById);
+  ruttKopplaDnD();
+}
+
+function ruttRitaKarta(arenden, tekById) {
+  if (RuttState.karta) { try { RuttState.karta.remove(); } catch (e) {} RuttState.karta = null; }
+  const el = document.getElementById('ruttKarta');
+  if (!el || typeof L === 'undefined') return;
+  const map = L.map(el, { scrollWheelZoom: true });
+  RuttState.karta = map;
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(map);
+  RuttState.markorer = {};
+  const bounds = [];
+
+  const grupper = {};
+  arenden.filter(a => a.tilldelad_tekniker != null && a.lat != null).forEach(a =>
+    (grupper[a.tilldelad_tekniker] = grupper[a.tilldelad_tekniker] || []).push(a));
+  Object.values(grupper).forEach(g => g.sort((x, y) => (x.ordning ?? 0) - (y.ordning ?? 0)));
+
+  Object.keys(grupper).forEach(tid => {
+    const tek = tekById[tid] || {};
+    const farg = ruttFarg(tek);
+    const linje = [];
+    if (tek.start_lat != null) {
+      const dp = [tek.start_lat, tek.start_lon];
+      linje.push(dp); bounds.push(dp);
+      L.marker(dp, { icon: ruttDepaIkon(farg), zIndexOffset: -100 })
+        .bindPopup(`Depå – ${escHtml(tek.namn || '')}`).addTo(map);
+    }
+    grupper[tid].forEach((a, i) => {
+      const pt = [a.lat, a.lon];
+      linje.push(pt); bounds.push(pt);
+      const m = L.marker(pt, { icon: ruttStoppIkon(i + 1, farg) }).addTo(map);
+      m.bindPopup(`<b>${escHtml(a.etikett)}</b><br>${escHtml(tek.namn || '')}<br>Stopp ${i + 1}${a.ankomst ? ' · ank. ' + a.ankomst : ''}`);
+      m.on('click', () => ruttFokusRad(a.id));
+      RuttState.markorer[a.id] = m;
+    });
+    if (tek.slut_lat != null) { const sp = [tek.slut_lat, tek.slut_lon]; linje.push(sp); bounds.push(sp); }
+    else if (tek.start_lat != null) linje.push([tek.start_lat, tek.start_lon]);
+    if (linje.length > 1) L.polyline(linje, { color: farg, weight: 3, opacity: 0.65 }).addTo(map);
+  });
+
+  arenden.filter(a => a.tilldelad_tekniker == null && a.lat != null).forEach(a => {
+    const pt = [a.lat, a.lon]; bounds.push(pt);
+    const m = L.marker(pt, { icon: ruttStoppIkon('', '#9b91b5') }).addTo(map);
+    m.bindPopup(`<b>${escHtml(a.etikett)}</b><br>Ej placerad`);
+    m.on('click', () => ruttFokusRad(a.id));
+    RuttState.markorer[a.id] = m;
+  });
+
+  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+  else map.setView([58.41, 15.62], 8);
+  setTimeout(() => map.invalidateSize(), 120);
+}
+
+function ruttStoppIkon(nr, farg) {
+  return L.divIcon({ className: '', iconSize: [28, 28], iconAnchor: [14, 14],
+    html: `<div class="rutt-mark" style="background:${farg}">${nr}</div>` });
+}
+function ruttDepaIkon(farg) {
+  return L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12],
+    html: `<div class="rutt-depa" style="border-color:${farg};color:${farg}">⌂</div>` });
+}
+
+function ruttFokusRad(aid) {
+  const row = document.querySelector(`tr.rutt-drag[data-aid="${aid}"]`);
+  if (row) {
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    row.classList.add('rutt-blink');
+    setTimeout(() => row.classList.remove('rutt-blink'), 1300);
   }
-  c.innerHTML = html;
+}
+
+let _ruttDrag = null;
+function ruttKopplaDnD() {
+  document.querySelectorAll('tr.rutt-drag').forEach(row => {
+    const aid = Number(row.dataset.aid);
+    row.addEventListener('dragstart', e => { _ruttDrag = aid; row.classList.add('rutt-dragging'); e.dataTransfer.effectAllowed = 'move'; });
+    row.addEventListener('dragend', () => { row.classList.remove('rutt-dragging'); document.querySelectorAll('.rutt-drop').forEach(z => z.classList.remove('rutt-over')); });
+    row.addEventListener('click', () => {
+      const m = RuttState.markorer && RuttState.markorer[aid];
+      if (m && RuttState.karta) { RuttState.karta.panTo(m.getLatLng()); m.openPopup(); }
+    });
+  });
+  document.querySelectorAll('.rutt-drop').forEach(zon => {
+    zon.addEventListener('dragover', e => { e.preventDefault(); zon.classList.add('rutt-over'); });
+    zon.addEventListener('dragleave', () => zon.classList.remove('rutt-over'));
+    zon.addEventListener('drop', e => {
+      e.preventDefault(); zon.classList.remove('rutt-over');
+      if (_ruttDrag == null) return;
+      const tek = zon.dataset.tek;
+      const rader = [...zon.querySelectorAll('tr.rutt-drag')];
+      let index = rader.length;
+      for (let i = 0; i < rader.length; i++) {
+        const r = rader[i].getBoundingClientRect();
+        if (e.clientY < r.top + r.height / 2) { index = i; break; }
+      }
+      ruttFlytta(_ruttDrag, tek, index);
+      _ruttDrag = null;
+    });
+  });
+}
+
+function ruttFlytta(aid, targetTek, index) {
+  Object.keys(RuttState.tilldelning).forEach(k => {
+    RuttState.tilldelning[k] = RuttState.tilldelning[k].filter(x => x !== aid);
+  });
+  RuttState.ejPlacerade = RuttState.ejPlacerade.filter(x => x !== aid);
+  if (targetTek === 'ej') {
+    RuttState.ejPlacerade.push(aid);
+  } else {
+    (RuttState.tilldelning[targetTek] = RuttState.tilldelning[targetTek] || []).splice(index, 0, aid);
+  }
+  ruttSparaTilldelning();
+}
+
+async function ruttSparaTilldelning() {
+  try {
+    const r = await api('POST', `/rutt/planeringar/${RuttState.planeringId}/tilldelning`,
+      { tilldelning: RuttState.tilldelning, ej_placerade: RuttState.ejPlacerade });
+    const v = r.varningar || {};
+    if ((v.sena && v.sena.length) || (v.over_arbetstid && v.over_arbetstid.length))
+      toast('Omräknat – men någon rutt bryter mot tidsfönster eller arbetstid.', 'info');
+    ruttGaTill('planering', RuttState.planeringId);
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function ruttKorOptimering() {

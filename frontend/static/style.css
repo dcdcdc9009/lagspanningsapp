@@ -3124,3 +3124,39 @@ body[data-view="tjallmo"] #app { max-width: none; padding-left: 14px; padding-ri
   color: #fff; font-weight: 800; font-size: 12px;
 }
 .rutt-ejplac .rutt-rutt-head { background: var(--red-l); }
+
+/* Planeringsvyn använder full bredd (delad lista+karta) */
+body[data-view="ruttplanering"] #app { max-width: none; padding-left: 16px; padding-right: 16px; }
+/* Delad vy: lista + karta */
+.rutt-split { display: grid; grid-template-columns: minmax(340px, 1fr) 1.2fr; gap: 16px; align-items: start; }
+.rutt-lista { min-width: 0; }
+.rutt-karta-wrap { position: sticky; top: 14px; }
+#ruttKarta {
+  height: calc(100vh - 150px); min-height: 460px;
+  border-radius: 14px; border: 1px solid var(--border); overflow: hidden; z-index: 0;
+}
+.rutt-rad-sub { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top: 1px; }
+.rutt-drag { cursor: grab; }
+.rutt-drag:hover { background: var(--surface-2); }
+.rutt-dragging { opacity: .45; }
+.rutt-grip { color: var(--gray-400); cursor: grab; letter-spacing: -2px; }
+.rutt-drop.rutt-over { outline: 2px dashed var(--cyan); outline-offset: -2px; }
+.rutt-blink { animation: ruttBlink 1.3s ease; }
+@keyframes ruttBlink { 0%, 100% { background: transparent; } 30% { background: var(--cyan-glow); } }
+/* Kartmarkörer */
+.rutt-mark {
+  width: 28px; height: 28px; border-radius: 50%;
+  color: #fff; font-weight: 800; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35);
+}
+.rutt-depa {
+  width: 24px; height: 24px; border-radius: 6px;
+  background: #fff; border: 2px solid; font-weight: 800; font-size: 14px;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+@media (max-width: 900px) {
+  .rutt-split { grid-template-columns: 1fr; }
+  .rutt-karta-wrap { position: static; }
+  #ruttKarta { height: 420px; }
+}

@@ -119,6 +119,32 @@ def _forbattra(rutter, tmap, matris, tidsbudget=2.0):
                 break
 
 
+def berakna_rutt(seq, tek, matris):
+    """Mjuk timing för en (manuellt satt) rutt – failar aldrig, flaggar problem.
+
+    Returnerar {arrivals, drive, slut, sena:[ärende-id], over_arbetstid:bool}."""
+    t = tek['start_min']
+    prev = tek['dep_start']
+    drive = 0.0
+    arrivals = []
+    sena = []
+    for a in seq:
+        dr = _tt_min(matris, prev, a['pt'])
+        drive += dr
+        ank = t + dr
+        start = ank if a['wf'] is None else max(ank, a['wf'])
+        if a['wt'] is not None and start > a['wt'] + 1e-6:
+            sena.append(a['id'])
+        arrivals.append(start)
+        t = start + a['service']
+        prev = a['pt']
+    back = _tt_min(matris, prev, tek['dep_end'])
+    drive += back
+    slut = t + back
+    return {'arrivals': arrivals, 'drive': drive, 'slut': slut,
+            'sena': sena, 'over_arbetstid': slut > tek['end_min'] + 1e-6}
+
+
 def optimera(tekniker, arenden, matris, tidsbudget=2.0):
     """Tilldela ärenden till tekniker + körordning.
 
