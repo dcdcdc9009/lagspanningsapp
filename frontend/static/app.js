@@ -115,7 +115,6 @@ function render(view, params = {}) {
     case 'kontakter':       renderKontakter(app); break;
     case 'karta':           renderKarta(app); break;
     case 'tidplan':         renderTidplan(app); break;
-    case 'rapport':         renderRapport(app); break;
     case 'hjalp':           renderHjalp(app); break;
     default:
       app.dataset.view = 'projekt';
@@ -4632,8 +4631,6 @@ const HJALP_FLIKAR = [
     text: 'Här hanterar du konstruktioner (t.ex. kabelskåp, kabelförläggning, nätstation) som hör till ett projekt. Välj projekt i listan och öppna en konstruktion för att fylla i materialrader och egenkontroll. Allt sparas automatiskt medan du skriver.' },
   { ikon: '📦', namn: 'Artiklar', taggar: ['Alla'],
     text: 'Materialkatalogen med artiklar, E-nummer och enheter. Alla kan söka och läsa. Den som har fått behörighet (eller är admin) kan dessutom lägga till och redigera artiklar och priser direkt härifrån.' },
-  { ikon: '⚙️', namn: 'Admin', taggar: ['Admin'],
-    text: 'Administrationsdelen – kräver admin-inloggning. Här hanterar du användarkonton, beredare, kategorier, leverantörer, artiklar och systeminställningar. Det är också här du ger en användare behörighet att hantera artiklar eller byter någons lösenord.' },
   { ikon: '📈', namn: 'Analys', taggar: ['Beredare', 'Admin'],
     text: 'Analys av anslutningsärenden i tre vyer: <strong>Översikt</strong> (fasfördelning, riskärenden, mönster), <strong>Ärenden</strong> (sökbar lista med detaljpanel) och <strong>Analys</strong> (nyckeltal, blockeringar, ledtider och en montagekalender). Ärendena importeras från Excel.' },
   { ikon: '🛠️', namn: 'Tjällmo', taggar: ['Beredare', 'UE'],
@@ -4646,8 +4643,8 @@ const HJALP_FLIKAR = [
     text: 'En karta som visar alla projekt som har koordinater. Filtrera på beredare och område och klicka på en nål för att se projektinfo och öppna ärendet. Koordinaterna sätts inne i projektet – se guiden ”Sätta koordinater på ett projekt”.' },
   { ikon: '📅', namn: 'Tidplan', taggar: ['Beredare', 'Admin'],
     text: 'En Gantt-liknande tidsöversikt där projekten visas som staplar över tid (beredning, montage, drifttagning). Zooma på period och filtrera på beredare eller på om ärendet är klart.' },
-  { ikon: '📄', namn: 'Rapporter', taggar: ['Beredare', 'Admin'],
-    text: 'Färdiga rapporter att skriva ut eller exportera till Excel: <strong>Statusrapport</strong> (alla ärenden), <strong>Deadline-rapport</strong> (sorterad på beställningsdatum) och <strong>Beredare-rapport</strong> (per beredare). Klicka på en kolumnrubrik för att sortera.' },
+  { ikon: '⚙️', namn: 'Admin', taggar: ['Admin'],
+    text: 'Administrationsdelen – kräver admin-inloggning. Här hanterar du användarkonton, beredare, kategorier, leverantörer, artiklar och systeminställningar. Det är också här du ger en användare behörighet att hantera artiklar eller byter någons lösenord.' },
   { ikon: '❓', namn: 'Hjälp', taggar: ['Alla'],
     text: 'Den här sidan – förklaringar av flikarna, steg-för-steg-guider för vanliga moment och svar på vanliga frågor. Använd sökrutan högst upp för att hitta snabbt.' },
 ];
