@@ -115,11 +115,12 @@ function render(view, params = {}) {
     case 'kontakter':       renderKontakter(app); break;
     case 'karta':           renderKarta(app); break;
     case 'tidplan':         renderTidplan(app); break;
-    case 'kontrollrum':     renderKontrollrum(app); break;
     case 'rapport':         renderRapport(app); break;
-    case 'statistik':       renderStatistik(app); break;
     case 'hjalp':           renderHjalp(app); break;
-    default:                renderProjekt(app);
+    default:
+      app.dataset.view = 'projekt';
+      document.body.dataset.view = 'projekt';
+      renderProjekt(app);
   }
 }
 
@@ -4645,12 +4646,8 @@ const HJALP_FLIKAR = [
     text: 'En karta som visar alla projekt som har koordinater. Filtrera på beredare och område och klicka på en nål för att se projektinfo och öppna ärendet. Koordinaterna sätts inne i projektet – se guiden ”Sätta koordinater på ett projekt”.' },
   { ikon: '📅', namn: 'Tidplan', taggar: ['Beredare', 'Admin'],
     text: 'En Gantt-liknande tidsöversikt där projekten visas som staplar över tid (beredning, montage, drifttagning). Zooma på period och filtrera på beredare eller på om ärendet är klart.' },
-  { ikon: '📊', namn: 'Dashboard', taggar: ['Beredare', 'Admin'],
-    text: 'Ett kontrollrum med realtidsnyckeltal för anslutningsärenden: KPI-kort, riskzon, kommande montage och drifttagning, samt diagram över fasfördelning och arbetsbelastning per beredare.' },
   { ikon: '📄', namn: 'Rapporter', taggar: ['Beredare', 'Admin'],
     text: 'Färdiga rapporter att skriva ut eller exportera till Excel: <strong>Statusrapport</strong> (alla ärenden), <strong>Deadline-rapport</strong> (sorterad på beställningsdatum) och <strong>Beredare-rapport</strong> (per beredare). Klicka på en kolumnrubrik för att sortera.' },
-  { ikon: '💰', namn: 'Statistik', taggar: ['Admin'],
-    text: 'Faktureringsstatistik per månad. Importera faktureringsrapport från Excel och se fakturerat, utestående, budget och utfall per ärende och per projektledare, med trenddiagram.' },
   { ikon: '❓', namn: 'Hjälp', taggar: ['Alla'],
     text: 'Den här sidan – förklaringar av flikarna, steg-för-steg-guider för vanliga moment och svar på vanliga frågor. Använd sökrutan högst upp för att hitta snabbt.' },
 ];
