@@ -111,19 +111,37 @@ body::before {
 }
 
 .nav-brand-dot {
+  position: relative;
   display: inline-block;
   width: 8px;
   height: 8px;
   background: var(--cyan);
   border-radius: 50%;
   flex-shrink: 0;
+  /* Statisk grundglöd (animeras EJ – animerad box-shadow får muspekaren att
+     flimra/försvinna i Chromium/Edge på Windows). Pulsen ligger på ::after. */
   box-shadow: 0 0 8px var(--cyan), 0 0 18px rgba(124,58,237,.4);
+}
+
+.nav-brand-dot::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(124,58,237,.5) 0%, rgba(124,58,237,0) 70%);
+  pointer-events: none;
+  /* Endast opacity/transform animeras → komponeras av GPU, inga ommålningar */
   animation: pulse-dot 3s ease-in-out infinite;
 }
 
 @keyframes pulse-dot {
-  0%,100% { box-shadow: 0 0 8px var(--cyan), 0 0 18px rgba(124,58,237,.4); }
-  50%      { box-shadow: 0 0 14px var(--cyan), 0 0 32px rgba(124,58,237,.7); }
+  0%,100% { opacity: .45; transform: scale(.85); }
+  50%      { opacity: 1;   transform: scale(1.35); }
+}
+
+/* Respektera "reducera rörelse" i operativsystemet */
+@media (prefers-reduced-motion: reduce) {
+  .nav-brand-dot::after, .tp-today-bar { animation: none; }
 }
 
 .nav-links {
