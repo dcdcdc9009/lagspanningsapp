@@ -104,6 +104,12 @@ body::before {
   gap: 8px;
 }
 
+.nav-brand-txt {
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+
 .nav-brand-dot {
   display: inline-block;
   width: 8px;
@@ -2883,8 +2889,25 @@ body[data-view="tidplan"] #app {
 .tj-grid thead th.tj-c1 { border-right: 2px solid var(--border-hi); }
 .tj-ib { color: var(--cyan); font-family: 'DM Mono', monospace; cursor: pointer; font-weight: 600; }
 .tj-ib:hover { text-decoration: underline; }
-.tj-inp { width: 116px; font-size: 12px; padding: 3px 6px; border: 1px solid transparent; background: transparent; color: var(--text); border-radius: 4px; }
+.tj-inp { width: 100%; min-width: 0; font-size: 12px; padding: 3px 6px; border: 1px solid transparent; background: transparent; color: var(--text); border-radius: 4px; }
 .tj-inp:hover { border-color: var(--border-hi); }
 .tj-inp:focus { border-color: var(--cyan); background: var(--surface); outline: none; }
-.tj-inp.tj-date { width: 132px; }
 .tj-inp.tj-saved { border-color: var(--green); background: rgba(22,163,74,.12); }
+
+/* Sorterbar rubrik + resize-handtag */
+.tj-hlbl { cursor: pointer; user-select: none; display: inline-block; }
+.tj-hlbl:hover { color: var(--cyan); }
+.tj-sortind { font-size: 10px; color: var(--cyan); }
+.tj-resize { position: absolute; top: 0; right: -3px; width: 8px; height: 100%; cursor: col-resize; z-index: 4; }
+.tj-resize:hover { background: var(--cyan-border); }
+
+/* UE-kolumner (vad UE ska fylla i) – lätt amber */
+.tj-grid th.tj-ue { background: #f3e6c2; }
+.tj-grid td.tj-ue { background: #fff7e2; }
+.tj-grid tbody tr:hover td.tj-ue { background: #fdeec6; }
+
+/* Grönmarkering när Beredning klar = Klar */
+.tj-grid td.tj-klar { background: #d3f4dd !important; }
+
+/* Tjällmo-vyn i full bredd */
+body[data-view="tjallmo"] #app { max-width: none; padding-left: 14px; padding-right: 14px; }

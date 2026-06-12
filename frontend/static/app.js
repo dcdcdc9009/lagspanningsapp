@@ -3093,7 +3093,7 @@ function visaLoginSkarm() {
         <div class="login-logo">
           <div class="login-logo-dot"></div>
         </div>
-        <h1 class="login-title">Beredning-Projektledning</h1>
+        <h1 class="login-title">BPV – Beredning och Projektlednings Verktyget</h1>
         <p class="login-sub">Logga in för att fortsätta</p>
         <form id="loginForm" class="login-form">
           <div class="form-group">
@@ -4136,9 +4136,10 @@ const BEREDNING_FALT = [
   {key:'bestallning_klar', label:'Beställning klar', typ:'dropdown', alt:['Påbörjad','Klar']},
 ];
 const TJALLMO_FALT = [
-  {key:'planerad_schakt', label:'Planerad schakt', typ:'datum'},
+  {key:'planerad_schakt', label:'Planerad schakt', typ:'datum', ue:true},
   {key:'status_fakturering', label:'Status fakturering', typ:'dropdown', alt:['Påbörjad','Godkänd slutbesiktning','Fakturerad 90%','Slutfakturerad']},
   {key:'prio', label:'Prio', typ:'text'},
+  {key:'bestallning_klar_datum', label:'Beställning klar datum', typ:'datum'},
   {key:'kraver_montor', label:'Kräver montör', typ:'dropdown', alt:['Ja','Nej']},
   {key:'beredning_klar', label:'Beredning klar', typ:'dropdown', alt:['Påbörjad','Klar']},
   {key:'trafikverket', label:'Trafikverket', typ:'text', alt:['Ej aktuellt','Behövs']},
@@ -4147,11 +4148,11 @@ const TJALLMO_FALT = [
   {key:'kabelbestallning', label:'Kabelbeställning', typ:'dropdown', alt:['Tas med av Tjällmo','Beställt på plats','Hämtas OneCo']},
   {key:'ta_plan', label:'TA-plan framtagen', typ:'dropdown', alt:['Ej aktuellt','Extern','Påbörjad','Ja']},
   {key:'materialbestallning', label:'Materialbeställning', typ:'dropdown', alt:['Hämtas OneCo','Beställt på plats','Beställt Tjällmo']},
-  {key:'ledningskoll_utsattning', label:'Ledningskoll Utsättning', typ:'text'},
-  {key:'gravlag', label:'Grävlag', typ:'dropdown', alt:['Linus Jarmyr','Johanna Kambrink','Rasmus Eklöf','Julia Svensson','Peder Eneman']},
-  {key:'inmatning', label:'Inmätning', typ:'dropdown', alt:['Påbörjad','Klar']},
-  {key:'dagbok', label:'Dagbok', typ:'dropdown', alt:['Påbörjad','Klar']},
-  {key:'aterstallning', label:'Återställning', typ:'dropdown', alt:['Påbörjad','Klar']},
+  {key:'ledningskoll_utsattning', label:'Ledningskoll Utsättning', typ:'text', ue:true},
+  {key:'gravlag', label:'Grävlag', typ:'dropdown', alt:['Linus Jarmyr','Johanna Kambrink','Rasmus Eklöf','Julia Svensson','Peder Eneman'], ue:true},
+  {key:'inmatning', label:'Inmätning', typ:'dropdown', alt:['Påbörjad','Klar'], ue:true},
+  {key:'dagbok', label:'Dagbok', typ:'dropdown', alt:['Påbörjad','Klar'], ue:true},
+  {key:'aterstallning', label:'Återställning', typ:'dropdown', alt:['Påbörjad','Klar'], ue:true},
   {key:'montage_start', label:'Montage start', typ:'text'},
   {key:'uppskattat_tid_falt', label:'Uppskattat tid i fält', typ:'text'},
   {key:'avbrott', label:'Avbrott', typ:'dropdown', alt:['Nej','Ja']},
@@ -4231,6 +4232,16 @@ async function renderTjallmo(app) {
   const datalists = TJALLMO_FALT.filter(f => f.alt)
     .map(f => `<datalist id="tdl_${f.key}">${f.alt.map(o => `<option value="${escHtml(o)}">`).join('')}</datalist>`).join('');
 
+  // Kolumner: fasta projektfält + alla Tjällmo-statusfält
+  const KOL = [
+    { key: 'projektnummer', label: 'Ärendenummer', sticky: 'tj-c0', proj: true },
+    { key: 'projektnamn',   label: 'Benämning',     sticky: 'tj-c1', proj: true },
+    { key: 'beredare',      label: 'Beredare',      proj: true },
+    ...TJALLMO_FALT.map(f => ({ ...f, status: true })),
+  ];
+  const defW = k => k.sticky === 'tj-c0' ? 104 : k.sticky === 'tj-c1' ? 190 : k.proj ? 130 : (k.typ === 'datum' ? 140 : 124);
+  let sortKey = null, sortDir = 1;
+
   app.innerHTML = `
     <div class="page-header"><h1 class="page-title">Tjällmo – fältplanering</h1></div>
     <div class="filter-bar">
@@ -4245,28 +4256,35 @@ async function renderTjallmo(app) {
     </div>
     ${datalists}
     <div class="card tj-grid-card"><div class="tj-grid-wrap"><table class="tj-grid">
+      <colgroup>${KOL.map(k => `<col style="width:${defW(k)}px">`).join('')}</colgroup>
       <thead><tr>
-        <th class="tj-sticky tj-c0">Ärendenummer</th>
-        <th class="tj-sticky tj-c1">Benämning</th>
-        <th>Beredare</th>
-        ${TJALLMO_FALT.map(f => `<th>${escHtml(f.label)}</th>`).join('')}
+        ${KOL.map((k, i) => `<th class="${k.sticky || ''}${k.ue ? ' tj-ue' : ''}" data-sort="${k.key}" data-col="${i}">
+          <span class="tj-hlbl" title="Klicka för att sortera">${escHtml(k.label)}<span class="tj-sortind"></span></span>${k.sticky ? '' : '<span class="tj-resize" title="Dra för att ändra bredd"></span>'}
+        </th>`).join('')}
       </tr></thead>
       <tbody id="tjBody"></tbody>
     </table></div></div>`;
 
-  function cell(pid, f, val) {
-    val = val || '';
-    if (f.typ === 'datum')
-      return `<input type="date" class="tj-inp tj-date" data-pid="${pid}" data-key="${f.key}" value="${escHtml(val)}">`;
-    const dl = f.alt ? `list="tdl_${f.key}"` : '';
-    return `<input type="text" class="tj-inp" data-pid="${pid}" data-key="${f.key}" value="${escHtml(val)}" ${dl} autocomplete="off">`;
+  function cellInner(p, st, k) {
+    if (k.proj) {
+      if (k.key === 'projektnummer') return `<a class="tj-ib" data-id="${p.id}">${escHtml(p.projektnummer)}</a>`;
+      return escHtml(p[k.key] || (k.key === 'beredare' ? '–' : ''));
+    }
+    const val = st[k.key] || '';
+    if (k.typ === 'datum')
+      return `<input type="date" class="tj-inp tj-date" data-pid="${p.id}" data-key="${k.key}" value="${escHtml(val)}">`;
+    const dl = k.alt ? `list="tdl_${k.key}"` : '';
+    return `<input type="text" class="tj-inp" data-pid="${p.id}" data-key="${k.key}" value="${escHtml(val)}" ${dl} autocomplete="off">`;
+  }
+  function sortVal(p, k) {
+    return k.proj ? (p[k.key] || '') : ((statusAlla[String(p.id)] || {})[k.key] || '');
   }
 
   function rita() {
     const sok = document.getElementById('tjSok').value.trim().toLowerCase();
     const valda = new Set([...document.querySelectorAll('.tj-ber-cb:checked')].map(c => c.value));
     const tbody = document.getElementById('tjBody');
-    const rader = projekt.filter(p => {
+    let rader = projekt.filter(p => {
       if (valda.size && !valda.has(p.beredare)) return false;
       if (sok) {
         const hay = `${p.projektnummer} ${p.projektnamn} ${p.beredare}`.toLowerCase();
@@ -4274,20 +4292,64 @@ async function renderTjallmo(app) {
       }
       return true;
     });
+    if (sortKey) {
+      const kol = KOL.find(k => k.key === sortKey);
+      rader = rader.slice().sort((a, b) => {
+        const va = sortVal(a, kol), vb = sortVal(b, kol);
+        if (!va && !vb) return 0;
+        if (!va) return 1;
+        if (!vb) return -1;
+        return sortDir * String(va).localeCompare(String(vb), 'sv', { numeric: true });
+      });
+    }
+    // sorteringsindikatorer
+    document.querySelectorAll('.tj-grid .tj-sortind').forEach(s => s.textContent = '');
+    if (sortKey) {
+      const ind = document.querySelector(`.tj-grid th[data-sort="${sortKey}"] .tj-sortind`);
+      if (ind) ind.textContent = sortDir === 1 ? ' ▲' : ' ▼';
+    }
     document.getElementById('tjInfo').textContent = `${rader.length} ärenden · klick på ärendenr öppnar ärendet`;
-    if (!rader.length) { tbody.innerHTML = `<tr><td colspan="${3 + TJALLMO_FALT.length}" class="muted text-center">Inga ärenden</td></tr>`; return; }
+    if (!rader.length) { tbody.innerHTML = `<tr><td colspan="${KOL.length}" class="muted text-center">Inga ärenden</td></tr>`; return; }
     tbody.innerHTML = rader.map(p => {
       const st = statusAlla[String(p.id)] || {};
-      return `<tr>
-        <td class="tj-sticky tj-c0"><a class="tj-ib" data-id="${p.id}">${escHtml(p.projektnummer)}</a></td>
-        <td class="tj-sticky tj-c1" title="${escHtml(p.projektnamn)}">${escHtml(p.projektnamn)}</td>
-        <td class="tj-ber">${escHtml(p.beredare || '–')}</td>
-        ${TJALLMO_FALT.map(f => `<td>${cell(p.id, f, st[f.key])}</td>`).join('')}
-      </tr>`;
+      const klar = (st['beredning_klar'] || '') === 'Klar';
+      return '<tr>' + KOL.map(k => {
+        let cls = k.sticky || '';
+        if (k.ue) cls += ' tj-ue';
+        if (klar && (k.key === 'projektnummer' || k.key === 'projektnamn')) cls += ' tj-klar';
+        const title = k.key === 'projektnamn' ? ` title="${escHtml(p.projektnamn)}"` : '';
+        return `<td class="${cls.trim()}"${title}>${cellInner(p, st, k)}</td>`;
+      }).join('') + '</tr>';
     }).join('');
     tbody.querySelectorAll('a.tj-ib').forEach(a =>
       a.addEventListener('click', () => navigate('projekt-detail', { id: a.dataset.id, vy: 'tjallmo' })));
   }
+
+  // Sortering: klick på rubriktexten
+  document.querySelectorAll('.tj-grid th[data-sort] .tj-hlbl').forEach(lbl => {
+    lbl.addEventListener('click', () => {
+      const key = lbl.closest('th').dataset.sort;
+      if (sortKey === key) sortDir = -sortDir; else { sortKey = key; sortDir = 1; }
+      rita();
+    });
+  });
+
+  // Kolumn-resize: dra i handtaget
+  const cols = document.querySelectorAll('.tj-grid colgroup col');
+  let resizing = null;
+  document.querySelectorAll('.tj-grid .tj-resize').forEach(h => {
+    h.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const th = h.closest('th');
+      resizing = { col: cols[parseInt(th.dataset.col)], startX: e.clientX, startW: th.offsetWidth };
+      document.body.style.userSelect = 'none';
+    });
+  });
+  document.addEventListener('mousemove', e => {
+    if (!resizing) return;
+    resizing.col.style.width = Math.max(60, resizing.startW + (e.clientX - resizing.startX)) + 'px';
+  });
+  document.addEventListener('mouseup', () => { if (resizing) { resizing = null; document.body.style.userSelect = ''; } });
 
   // Autospar per cell
   document.getElementById('tjBody').addEventListener('change', async e => {
