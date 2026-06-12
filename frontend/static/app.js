@@ -112,6 +112,7 @@ function render(view, params = {}) {
     case 'anslutning':      renderAnslutning(app); break;
     case 'tjallmo':         renderTjallmo(app); break;
     case 'kabeltrummor':    renderKabeltrummor(app); break;
+    case 'karta':           renderKarta(app); break;
     case 'tidplan':         renderTidplan(app); break;
     case 'kontrollrum':     renderKontrollrum(app); break;
     case 'rapport':         renderRapport(app); break;
@@ -714,11 +715,49 @@ async function modalProjektForm(existing, data = {}, onSuccess = null) {
         <label class="form-label">Anteckningar</label>
         <textarea name="anteckningar" class="form-control">${escHtml(data.anteckningar || '')}</textarea>
       </div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Latitud</label>
+          <input name="lat" class="form-control" value="${data.lat != null ? data.lat : ''}" placeholder="t.ex. 58.4109" inputmode="decimal">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Longitud</label>
+          <input name="lng" class="form-control" value="${data.lng != null ? data.lng : ''}" placeholder="t.ex. 15.6216" inputmode="decimal">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Plats på karta <span class="text-sm text-muted">– klicka för att placera nålen (eller skriv koordinater ovan)</span></label>
+        <div id="projMap" style="height:240px;border-radius:8px;border:1px solid var(--border)"></div>
+      </div>
     </form>`,
     `<button class="btn btn-navy" id="sparaProjekt">${existing ? 'Spara' : 'Skapa'}</button>
      <button class="btn btn-secondary" id="avbrytProjekt">Avbryt</button>`,
     { noBackdropClose: !!onSuccess }
   );
+
+  // Karta för att sätta koordinater (klicka eller dra nålen)
+  if (typeof L !== 'undefined') {
+    const latInp = document.querySelector('#projektForm [name="lat"]');
+    const lngInp = document.querySelector('#projektForm [name="lng"]');
+    const sLat = parseFloat(latInp.value), sLng = parseFloat(lngInp.value);
+    const harKoord = !isNaN(sLat) && !isNaN(sLng);
+    const pmap = L.map('projMap').setView(harKoord ? [sLat, sLng] : [58.41, 15.62], harKoord ? 13 : 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(pmap);
+    let nal = null;
+    function setNal(la, lo) {
+      if (nal) nal.setLatLng([la, lo]);
+      else {
+        nal = L.marker([la, lo], { draggable: true }).addTo(pmap);
+        nal.on('dragend', () => { const p = nal.getLatLng(); latInp.value = p.lat.toFixed(6); lngInp.value = p.lng.toFixed(6); });
+      }
+    }
+    if (harKoord) setNal(sLat, sLng);
+    pmap.on('click', e => { setNal(e.latlng.lat, e.latlng.lng); latInp.value = e.latlng.lat.toFixed(6); lngInp.value = e.latlng.lng.toFixed(6); });
+    const fromFalt = () => { const la = parseFloat(latInp.value), lo = parseFloat(lngInp.value); if (!isNaN(la) && !isNaN(lo)) { setNal(la, lo); pmap.setView([la, lo], 13); } };
+    latInp.addEventListener('change', fromFalt);
+    lngInp.addEventListener('change', fromFalt);
+    setTimeout(() => pmap.invalidateSize(), 250);
+  }
 
   document.getElementById('avbrytProjekt').addEventListener('click', Modal.close);
   document.getElementById('sparaProjekt').addEventListener('click', async () => {
@@ -4196,10 +4235,12 @@ async function renderTjallmo(app) {
     <div class="page-header"><h1 class="page-title">Tjällmo – fältplanering</h1></div>
     <div class="filter-bar">
       <input type="search" class="form-control" id="tjSok" placeholder="🔍 Sök ärendenummer, benämning, beredare…">
-      <select class="form-control" id="tjBer" style="max-width:200px">
-        <option value="">Alla beredare</option>
-        ${S.beredare.map(b => `<option ${S.minBeredare === b.namn ? 'selected' : ''}>${escHtml(b.namn)}</option>`).join('')}
-      </select>
+      <div style="position:relative">
+        <button type="button" class="form-control" id="tjBerBtn" style="text-align:left;cursor:pointer;min-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Alla beredare ▾</button>
+        <div id="tjBerPanel" style="display:none;position:absolute;z-index:40;background:var(--surface);border:1px solid var(--border-hi);border-radius:8px;box-shadow:var(--shadow);padding:6px;max-height:300px;overflow:auto;min-width:200px">
+          ${S.beredare.map(b => `<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;border-radius:5px"><input type="checkbox" class="tj-ber-cb" value="${escHtml(b.namn)}"> ${escHtml(b.namn)}</label>`).join('')}
+        </div>
+      </div>
       <span class="text-sm text-muted" id="tjInfo"></span>
     </div>
     ${datalists}
@@ -4223,10 +4264,10 @@ async function renderTjallmo(app) {
 
   function rita() {
     const sok = document.getElementById('tjSok').value.trim().toLowerCase();
-    const ber = document.getElementById('tjBer').value;
+    const valda = new Set([...document.querySelectorAll('.tj-ber-cb:checked')].map(c => c.value));
     const tbody = document.getElementById('tjBody');
     const rader = projekt.filter(p => {
-      if (ber && p.beredare !== ber) return false;
+      if (valda.size && !valda.has(p.beredare)) return false;
       if (sok) {
         const hay = `${p.projektnummer} ${p.projektnamn} ${p.beredare}`.toLowerCase();
         if (!hay.includes(sok)) return false;
@@ -4263,7 +4304,23 @@ async function renderTjallmo(app) {
   });
 
   document.getElementById('tjSok').addEventListener('input', rita);
-  document.getElementById('tjBer').addEventListener('change', rita);
+
+  // Flerval av beredare (kryssrutor)
+  const berBtn = document.getElementById('tjBerBtn');
+  const berPanel = document.getElementById('tjBerPanel');
+  berBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    berPanel.style.display = berPanel.style.display === 'none' ? 'block' : 'none';
+  });
+  document.addEventListener('click', e => {
+    if (berPanel && !berPanel.contains(e.target) && e.target !== berBtn) berPanel.style.display = 'none';
+  });
+  document.querySelectorAll('.tj-ber-cb').forEach(cb => cb.addEventListener('change', () => {
+    const v = [...document.querySelectorAll('.tj-ber-cb:checked')].map(c => c.value);
+    berBtn.textContent = (v.length === 0 ? 'Alla beredare' : v.length === 1 ? v[0] : `${v.length} beredare valda`) + ' ▾';
+    rita();
+  }));
+
   rita();
 }
 
@@ -4349,6 +4406,67 @@ async function renderKabeltrummor(app) {
 
   document.getElementById('btnNyKt').addEventListener('click', () => modalKt(null));
   rita();
+}
+
+// ----------------------------------------------------------------
+// VIEW: KARTA (Leaflet + OpenStreetMap – gratis)
+// ----------------------------------------------------------------
+async function renderKarta(app) {
+  if (!S.beredare.length) { try { S.beredare = (await api('GET', '/beredare')).beredare || []; } catch {} }
+  let projekt = [];
+  try { projekt = (await api('GET', '/projekt')).projekt || []; } catch (e) { toast(e.message, 'error'); }
+
+  app.innerHTML = `
+    <div class="page-header"><h1 class="page-title">Karta</h1>
+      <span class="text-sm text-muted" id="kartaInfo"></span>
+    </div>
+    <div class="filter-bar">
+      <select class="form-control" id="kartaBer" style="max-width:220px">
+        <option value="">Alla beredare</option>
+        ${S.beredare.map(b => `<option ${S.minBeredare === b.namn ? 'selected' : ''}>${escHtml(b.namn)}</option>`).join('')}
+      </select>
+      <select class="form-control" id="kartaOmr" style="max-width:150px">
+        <option value="">Alla områden</option>
+        ${C_OMRADEN.map(o => `<option>${o}</option>`).join('')}
+      </select>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div id="kartaMap" style="height:calc(100vh - 235px);min-height:380px;width:100%"></div>
+    </div>`;
+
+  if (typeof L === 'undefined') {
+    document.getElementById('kartaMap').innerHTML = '<p class="text-muted" style="padding:20px">Kartbiblioteket kunde inte laddas (kontrollera internetanslutning).</p>';
+    return;
+  }
+
+  const map = L.map('kartaMap').setView([58.41, 15.62], 8);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  let markers = [];
+
+  function rita() {
+    markers.forEach(m => map.removeLayer(m)); markers = [];
+    const ber = document.getElementById('kartaBer').value;
+    const omr = document.getElementById('kartaOmr').value;
+    const synl = p => (!ber || p.beredare === ber) && (!omr || (p.omrade || '') === omr);
+    const med  = projekt.filter(p => p.lat != null && p.lng != null && synl(p));
+    const utan = projekt.filter(p => (p.lat == null || p.lng == null) && synl(p)).length;
+    document.getElementById('kartaInfo').textContent =
+      `${med.length} projekt på kartan${utan ? ` · ${utan} saknar koordinater` : ''}`;
+    const bounds = [];
+    med.forEach(p => {
+      const m = L.marker([p.lat, p.lng]).addTo(map);
+      m.bindPopup(`<strong>${escHtml(p.projektnummer)}</strong> – ${escHtml(p.projektnamn)}<br>`
+        + `${escHtml(p.beredare || '')}${p.fas ? ' · ' + escHtml(p.fas) : ''}${p.omrade ? ' · ' + escHtml(p.omrade) : ''}<br>`
+        + `<a href="#" onclick="event.preventDefault();navigate('projekt-detail',{id:${p.id}})">Öppna ärendet</a>`);
+      markers.push(m); bounds.push([p.lat, p.lng]);
+    });
+    if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 13 });
+  }
+  document.getElementById('kartaBer').addEventListener('change', rita);
+  document.getElementById('kartaOmr').addEventListener('change', rita);
+  rita();
+  setTimeout(() => map.invalidateSize(), 200);
 }
 
 async function boot() {

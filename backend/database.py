@@ -1238,6 +1238,17 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','36')")
         conn.commit()
 
+    if v < 37:
+        # v37: Koordinater (karta) per projekt.
+        for kol in ("ALTER TABLE projekt ADD COLUMN lat REAL",
+                    "ALTER TABLE projekt ADD COLUMN lng REAL"):
+            try:
+                conn.execute(kol)
+            except Exception:
+                pass
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','37')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -1305,6 +1316,8 @@ def _create_tables(conn):
             bekraftade_bestallningar TEXT,
             beredning_start      DATE,
             beredning_slut       DATE,
+            lat              REAL,
+            lng              REAL,
             skapad           DATETIME NOT NULL,
             uppdaterad       DATETIME NOT NULL
         );

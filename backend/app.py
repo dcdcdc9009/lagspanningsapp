@@ -45,6 +45,14 @@ def fel(msg, kod=400):
     return jsonify({'fel': msg}), kod
 
 
+def _num(v):
+    """Tolka till float, annars None (för koordinater)."""
+    try:
+        return float(v) if v not in (None, '') else None
+    except (TypeError, ValueError):
+        return None
+
+
 def hash_pw(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
@@ -375,9 +383,9 @@ def skapa_projekt():
                 "kund,anslutningspunkt,fas,"
                 "ib_nummer,kategori,tilldelat_till,omrade,"
                 "inkommande_bestallningar,bekraftade_bestallningar,"
-                "beredning_start,beredning_slut,"
+                "beredning_start,beredning_slut,lat,lng,"
                 "skapad,uppdaterad)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (pnr, namn, beredare, d.get('status', 'Planerat'),
                  d.get('startdatum') or None,
                  (d.get('anteckningar') or '').strip() or None,
@@ -392,6 +400,7 @@ def skapa_projekt():
                  (d.get('bekraftade_bestallningar') or '').strip() or None,
                  d.get('beredning_start') or None,
                  d.get('beredning_slut') or None,
+                 _num(d.get('lat')), _num(d.get('lng')),
                  tidpunkt, tidpunkt))
             pid = cur.lastrowid
             if fas:
@@ -423,7 +432,7 @@ def uppdatera_projekt(pid):
             "kund=?,anslutningspunkt=?,"
             "ib_nummer=?,kategori=?,tilldelat_till=?,omrade=?,"
             "inkommande_bestallningar=?,bekraftade_bestallningar=?,"
-            "beredning_start=?,beredning_slut=?,"
+            "beredning_start=?,beredning_slut=?,lat=?,lng=?,"
             "uppdaterad=? WHERE id=?",
             (namn, d.get('beredare', bef['beredare']), status,
              d.get('startdatum', bef['startdatum']) or None,
@@ -438,6 +447,7 @@ def uppdatera_projekt(pid):
              (d.get('bekraftade_bestallningar', bef['bekraftade_bestallningar']) or '').strip() or None,
              d.get('beredning_start', bef['beredning_start']) or None,
              d.get('beredning_slut', bef['beredning_slut']) or None,
+             _num(d.get('lat', bef['lat'])), _num(d.get('lng', bef['lng'])),
              tidpunkt, pid))
         conn.commit()
         return jsonify({'projekt': row_to_dict(conn.execute("SELECT * FROM projekt WHERE id=?", (pid,)).fetchone())})
