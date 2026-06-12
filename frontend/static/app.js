@@ -4778,6 +4778,7 @@ async function ruttPlaneringVy(app) {
       ${ruttStatusBadge(p.status)}
       <span style="flex:1"></span>
       ${optimerad ? `<button class="btn btn-outline" id="ruttSkrivUt">🖨 Skriv ut körlistor</button>` : ''}
+      <button class="btn btn-outline" id="ruttNyttArende">+ Nytt ärende</button>
       ${arenden.length ? `<button class="btn btn-navy" id="ruttOptimera">⚡ Optimera</button>` : ''}
       <button class="btn btn-secondary" id="ruttImportera">${arenden.length ? '↻ Importera om' : '📥 Importera ärenden'}</button>
     </div>
@@ -4794,8 +4795,15 @@ async function ruttPlaneringVy(app) {
   if (optBtn) optBtn.addEventListener('click', () => ruttKorOptimering());
   const utBtn = document.getElementById('ruttSkrivUt');
   if (utBtn) utBtn.addEventListener('click', () => ruttSkrivUt(p, arenden, tekById, p.sammanfattning || []));
+  document.getElementById('ruttNyttArende').addEventListener('click', () => ruttArendeForm(null, RuttState.planeringId));
 
   const c = document.getElementById('ruttPlanInnehall');
+  c.addEventListener('click', e => {
+    const red = e.target.closest('[data-ar-red]');
+    const bort = e.target.closest('[data-ar-bort]');
+    if (red) { e.stopPropagation(); ruttArendeForm(arenden.find(x => x.id == red.dataset.arRed), RuttState.planeringId); }
+    else if (bort) { e.stopPropagation(); ruttTaBortArende(arenden.find(x => x.id == bort.dataset.arBort)); }
+  });
   if (!arenden.length) {
     c.innerHTML = `<div class="card"><div class="card-body" style="padding:46px;text-align:center;color:var(--text-muted)">
       <div style="font-size:34px;margin-bottom:10px">📥</div>
@@ -4810,14 +4818,18 @@ async function ruttPlaneringVy(app) {
           <table class="rutt-tabell" style="width:100%;border-collapse:collapse"><thead><tr>
             <th style="text-align:left;padding:10px 14px">Ärende</th><th style="text-align:left;padding:10px 14px">Typ</th>
             <th style="text-align:left;padding:10px 14px">Koordinat</th><th style="text-align:left;padding:10px 14px">Servicetid</th>
-            <th style="text-align:left;padding:10px 14px">Tidsfönster</th><th style="text-align:left;padding:10px 14px">Anteckning</th>
+            <th style="text-align:left;padding:10px 14px">Tidsfönster</th><th style="text-align:left;padding:10px 14px">Anteckning</th><th></th>
           </tr></thead><tbody>${arenden.map(a => `<tr style="border-top:1px solid var(--border)">
             <td style="padding:10px 14px;font-weight:600">${escHtml(a.etikett)}</td>
             <td style="padding:10px 14px">${escHtml(a.arendetyp || '–')}</td>
             <td style="padding:10px 14px">${a.lat != null ? `${Number(a.lat).toFixed(5)}, ${Number(a.lon).toFixed(5)}` : '–'}</td>
             <td style="padding:10px 14px">${a.servicetid_min != null ? a.servicetid_min + ' min' : '–'}</td>
             <td style="padding:10px 14px">${fonster(a)}</td>
-            <td style="padding:10px 14px">${escHtml(a.anteckning || '')}</td></tr>`).join('')}</tbody></table>
+            <td style="padding:10px 14px">${escHtml(a.anteckning || '')}</td>
+            <td style="padding:6px 14px;text-align:right;white-space:nowrap">
+              <button class="rutt-ikonbtn" data-ar-red="${a.id}" title="Redigera">✎</button>
+              <button class="rutt-ikonbtn rutt-ikonbtn-bort" data-ar-bort="${a.id}" title="Ta bort">✕</button>
+            </td></tr>`).join('')}</tbody></table>
         </div></div>
       <p class="text-muted text-sm" style="margin-top:10px">Klicka <strong>⚡ Optimera</strong> för att fördela ärendena på teknikerna och få körordningar.</p>`;
     return;
@@ -4849,6 +4861,10 @@ function ruttResultatHtml(c, arenden, tekById, sammanfattning) {
       <td style="padding:9px 12px;width:30px">${nr ? `<span class="rutt-stopp-nr" style="background:${escHtml(farg)}">${nr}</span>` : '<span class="rutt-grip">⋮⋮</span>'}</td>
       <td style="padding:9px 12px;font-weight:600">${escHtml(a.etikett)}<div class="rutt-rad-sub">${escHtml(a.arendetyp || '')}${(a.fonster_fran || a.fonster_till) ? ` · ${a.fonster_fran || '…'}–${a.fonster_till || '…'}` : ''}</div></td>
       <td style="padding:9px 12px;white-space:nowrap">${a.ankomst ? `ank. <b>${a.ankomst}</b>` : ''}<div class="rutt-rad-sub">${a.servicetid_min || '–'} min</div></td>
+      <td style="padding:6px 10px;text-align:right;white-space:nowrap">
+        <button class="rutt-ikonbtn" draggable="false" data-ar-red="${a.id}" title="Redigera">✎</button>
+        <button class="rutt-ikonbtn rutt-ikonbtn-bort" draggable="false" data-ar-bort="${a.id}" title="Ta bort">✕</button>
+      </td>
     </tr>`;
 
   let listaHtml = '';
@@ -4879,7 +4895,11 @@ function ruttResultatHtml(c, arenden, tekById, sammanfattning) {
           <td style="padding:9px 12px;width:30px"><span class="rutt-grip">⋮⋮</span></td>
           <td style="padding:9px 12px;font-weight:600">${escHtml(a.etikett)}<div class="rutt-rad-sub">${escHtml(a.arendetyp || '')}</div></td>
           <td style="padding:9px 12px;color:var(--red);font-size:12px">${escHtml(a.ej_placerad_orsak || '')}</td>
-        </tr>`).join('') || `<tr><td style="padding:14px;color:var(--text-muted);font-size:13px">Dra hit ärenden för att ta bort dem från en rutt.</td></tr>`}
+          <td style="padding:6px 10px;text-align:right;white-space:nowrap">
+            <button class="rutt-ikonbtn" draggable="false" data-ar-red="${a.id}" title="Redigera">✎</button>
+            <button class="rutt-ikonbtn rutt-ikonbtn-bort" draggable="false" data-ar-bort="${a.id}" title="Ta bort">✕</button>
+          </td>
+        </tr>`).join('') || `<tr><td colspan="4" style="padding:14px;color:var(--text-muted);font-size:13px">Dra hit ärenden för att ta bort dem från en rutt.</td></tr>`}
       </tbody></table></div>
     </div>`;
 
@@ -4970,7 +4990,8 @@ function ruttKopplaDnD() {
     const aid = Number(row.dataset.aid);
     row.addEventListener('dragstart', e => { _ruttDrag = aid; row.classList.add('rutt-dragging'); e.dataTransfer.effectAllowed = 'move'; });
     row.addEventListener('dragend', () => { row.classList.remove('rutt-dragging'); document.querySelectorAll('.rutt-drop').forEach(z => z.classList.remove('rutt-over')); });
-    row.addEventListener('click', () => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('[data-ar-red],[data-ar-bort]')) return;
       const m = RuttState.markorer && RuttState.markorer[aid];
       if (m && RuttState.karta) { RuttState.karta.panTo(m.getLatLng()); m.openPopup(); }
     });
@@ -5078,6 +5099,101 @@ function ruttSkrivUt(p, arenden, tekById, sammanfattning) {
   if (!host) { host = document.createElement('div'); host.id = 'ruttPrintHost'; host.className = 'rutt-print'; document.body.appendChild(host); }
   host.innerHTML = sidor.join('');
   window.print();
+}
+
+// ---- Manuell ärendehantering ----
+async function ruttTaBortArende(a) {
+  if (!a) return;
+  if (!await confirm('Ta bort ärende', `Ta bort ärendet "${a.etikett}"?`)) return;
+  try {
+    await api('DELETE', `/rutt/arenden/${a.id}`);
+    toast('Ärende borttaget', 'success');
+    ruttGaTill('planering', RuttState.planeringId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function ruttArendeForm(a, planeringId) {
+  const typer = RuttState.arendetyper || [];
+  const typMap = {}; typer.forEach(t => typMap[t.namn] = t.servicetid_min);
+  Modal.open(a ? `Redigera ${escHtml(a.etikett)}` : 'Nytt ärende', `
+    <form id="ruttArForm">
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Ärendenummer / etikett <span class="req">*</span></label>
+          <input name="etikett" class="form-control" value="${escHtml(a?.etikett || '')}" required></div>
+        <div class="form-group"><label class="form-label">Ärendetyp</label>
+          <select name="arendetyp" id="ruttArTyp" class="form-control"><option value="">–</option>
+            ${typer.map(t => `<option ${a && a.arendetyp === t.namn ? 'selected' : ''}>${escHtml(t.namn)}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Servicetid (min)</label>
+          <input name="servicetid_min" id="ruttArSt" type="number" min="0" class="form-control" value="${a?.servicetid_min ?? ''}" placeholder="från ärendetyp"></div>
+        <div class="form-group"><label class="form-label">Kompetenskrav</label>
+          <input name="kompetenskrav" class="form-control" value="${escHtml(a?.kompetenskrav || '')}" placeholder="t.ex. mätarbyte"></div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Tidsfönster från</label>
+          <input name="fonster_fran" type="time" class="form-control" value="${escHtml(a?.fonster_fran || '')}"></div>
+        <div class="form-group"><label class="form-label">Tidsfönster till</label>
+          <input name="fonster_till" type="time" class="form-control" value="${escHtml(a?.fonster_till || '')}"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Anteckning</label>
+        <input name="anteckning" class="form-control" value="${escHtml(a?.anteckning || '')}"></div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Latitud <span class="req">*</span></label>
+          <input name="lat" id="ruttArLat" class="form-control" value="${a?.lat ?? ''}"></div>
+        <div class="form-group"><label class="form-label">Longitud <span class="req">*</span></label>
+          <input name="lon" id="ruttArLon" class="form-control" value="${a?.lon ?? ''}"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Klicka på kartan för att sätta position (eller skriv koordinater)</label>
+        <div id="ruttArMap" style="height:300px;border-radius:10px;overflow:hidden;border:1px solid var(--border)"></div></div>
+    </form>`,
+    `<button class="btn btn-navy" id="ruttArSpara">Spara</button>
+     <button class="btn btn-secondary" id="ruttArAvbryt">Avbryt</button>`);
+
+  document.getElementById('ruttArTyp').addEventListener('change', e => {
+    const st = document.getElementById('ruttArSt');
+    const v = typMap[e.target.value];
+    if (v != null) st.placeholder = v + ' min (default)';
+    if (!st.value && v != null) st.value = v;
+  });
+
+  // Karta med klick-att-placera
+  setTimeout(() => {
+    if (typeof L === 'undefined' || !document.getElementById('ruttArMap')) return;
+    if (RuttState.arMap) { try { RuttState.arMap.remove(); } catch (e) {} }
+    let lat0 = parseFloat(a?.lat), lon0 = parseFloat(a?.lon);
+    const ar0 = (RuttState.planering && RuttState.planering.arenden || []).find(x => x.lat != null);
+    if (isNaN(lat0) && ar0) { lat0 = ar0.lat; lon0 = ar0.lon; }
+    const harPos = !isNaN(parseFloat(a?.lat));
+    const map = L.map('ruttArMap').setView([isNaN(lat0) ? 58.41 : lat0, isNaN(lon0) ? 15.62 : lon0], harPos ? 13 : (ar0 ? 10 : 5));
+    RuttState.arMap = map;
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(map);
+    let mark = harPos ? L.marker([lat0, lon0], { draggable: true }).addTo(map) : null;
+    const satt = (la, lo) => { document.getElementById('ruttArLat').value = la.toFixed(6); document.getElementById('ruttArLon').value = lo.toFixed(6); };
+    if (mark) mark.on('dragend', () => { const ll = mark.getLatLng(); satt(ll.lat, ll.lng); });
+    map.on('click', e => {
+      if (!mark) { mark = L.marker(e.latlng, { draggable: true }).addTo(map); mark.on('dragend', () => { const ll = mark.getLatLng(); satt(ll.lat, ll.lng); }); }
+      else mark.setLatLng(e.latlng);
+      satt(e.latlng.lat, e.latlng.lng);
+    });
+    setTimeout(() => map.invalidateSize(), 200);
+  }, 160);
+
+  const stang = () => { if (RuttState.arMap) { try { RuttState.arMap.remove(); } catch (e) {} RuttState.arMap = null; } Modal.close(); };
+  document.getElementById('ruttArAvbryt').addEventListener('click', stang);
+  document.getElementById('ruttArSpara').addEventListener('click', async () => {
+    const f = document.getElementById('ruttArForm');
+    if (!f.reportValidity()) return;
+    const body = Object.fromEntries(new FormData(f).entries());
+    if (!body.lat || !body.lon) { toast('Sätt en position på kartan (eller fyll i latitud/longitud).', 'error'); return; }
+    try {
+      if (a) await api('PUT', `/rutt/arenden/${a.id}`, body);
+      else   await api('POST', `/rutt/planeringar/${planeringId}/arenden`, body);
+      stang();
+      toast(a ? 'Ärende uppdaterat' : 'Ärende tillagt', 'success');
+      ruttGaTill('planering', planeringId);
+    } catch (e) { toast(e.message, 'error'); }
+  });
 }
 
 async function ruttKorOptimering() {

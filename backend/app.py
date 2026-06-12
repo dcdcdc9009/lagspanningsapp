@@ -7,6 +7,7 @@ from database import get_db, init_db, DB_PATH
 from models import rows_to_list, row_to_dict, nu, nasta_projektnummer
 from ruttimport import gissa_mappning, validera_rader, rubrik_signatur, IMPORT_FALT
 from ruttrestid import bygg_matris
+from ruttgeo import normalisera_koordinat
 from ruttopt import optimera as kor_optimering, berakna_rutt
 from mall_berakning import berakna
 
@@ -2735,6 +2736,105 @@ def rutt_ta_bort_planering(pid):
         conn.execute("DELETE FROM rutt_planering WHERE id=?", (pid,))
         conn.commit()
     return jsonify({'meddelande': 'Planering borttagen.'})
+
+
+# ---- Enskilda ärenden (manuell hantering) ----
+def _rutt_servicetid(conn, arendetyp, given):
+    if given not in (None, ''):
+        try:
+            return int(given)
+        except (TypeError, ValueError):
+            pass
+    if arendetyp:
+        r = conn.execute("SELECT servicetid_min FROM rutt_arendetyp WHERE namn=?", (arendetyp,)).fetchone()
+        if r:
+            return r['servicetid_min']
+    return 30
+
+
+def _rutt_arende_med_agare(conn, aid):
+    return conn.execute(
+        "SELECT a.*, p.agare AS _agare FROM rutt_arende a "
+        "JOIN rutt_planering p ON p.id=a.planering_id WHERE a.id=?", (aid,)).fetchone()
+
+
+@app.post('/api/rutt/planeringar/<int:pid>/arenden')
+def rutt_skapa_arende(pid):
+    uid = _rutt_uid()
+    d = request.get_json(silent=True) or {}
+    with get_db() as conn:
+        p = conn.execute("SELECT * FROM rutt_planering WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return fel('Planeringen hittades inte.', 404)
+        if p['agare'] != uid:
+            return fel('Du har inte åtkomst till den här planeringen.', 403)
+        etikett = (d.get('etikett') or '').strip()
+        if not etikett:
+            return fel('Ärendenummer/etikett är obligatoriskt.')
+        lat, lon, kalla = normalisera_koordinat(d.get('lat'), d.get('lon'))
+        if lat is None:
+            return fel('Ogiltig eller saknad koordinat.')
+        arendetyp = (d.get('arendetyp') or '').strip() or None
+        st = _rutt_servicetid(conn, arendetyp, d.get('servicetid_min'))
+        cur = conn.execute(
+            "INSERT INTO rutt_arende (planering_id,etikett,lat,lon,arendetyp,servicetid_min,"
+            "fonster_fran,fonster_till,kompetenskrav,anteckning,skapad) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (pid, etikett, lat, lon, arendetyp, st,
+             (d.get('fonster_fran') or None), (d.get('fonster_till') or None),
+             (d.get('kompetenskrav') or '').strip() or None,
+             (d.get('anteckning') or '').strip() or None, nu()))
+        conn.execute("UPDATE rutt_planering SET uppdaterad=? WHERE id=?", (nu(), pid))
+        conn.commit()
+        rad = row_to_dict(conn.execute("SELECT * FROM rutt_arende WHERE id=?", (cur.lastrowid,)).fetchone())
+    return jsonify({'arende': rad}), 201
+
+
+@app.put('/api/rutt/arenden/<int:aid>')
+def rutt_uppdatera_arende(aid):
+    uid = _rutt_uid()
+    d = request.get_json(silent=True) or {}
+    with get_db() as conn:
+        bef = _rutt_arende_med_agare(conn, aid)
+        if not bef:
+            return fel('Ärendet hittades inte.', 404)
+        if bef['_agare'] != uid:
+            return fel('Du har inte åtkomst till det här ärendet.', 403)
+        etikett = (d.get('etikett', bef['etikett']) or '').strip() or bef['etikett']
+        if 'lat' in d or 'lon' in d:
+            lat, lon, _k = normalisera_koordinat(d.get('lat', bef['lat']), d.get('lon', bef['lon']))
+            if lat is None:
+                return fel('Ogiltig koordinat.')
+        else:
+            lat, lon = bef['lat'], bef['lon']
+        arendetyp = (d.get('arendetyp', bef['arendetyp']) or '').strip() or None
+        st = _rutt_servicetid(conn, arendetyp, d.get('servicetid_min', bef['servicetid_min']))
+        conn.execute(
+            "UPDATE rutt_arende SET etikett=?, lat=?, lon=?, arendetyp=?, servicetid_min=?, "
+            "fonster_fran=?, fonster_till=?, kompetenskrav=?, anteckning=? WHERE id=?",
+            (etikett, lat, lon, arendetyp, st,
+             (d.get('fonster_fran', bef['fonster_fran']) or None),
+             (d.get('fonster_till', bef['fonster_till']) or None),
+             (d.get('kompetenskrav', bef['kompetenskrav']) or None) or None,
+             (d.get('anteckning', bef['anteckning']) or None) or None, aid))
+        conn.execute("UPDATE rutt_planering SET uppdaterad=? WHERE id=?", (nu(), bef['planering_id']))
+        conn.commit()
+        rad = row_to_dict(conn.execute("SELECT * FROM rutt_arende WHERE id=?", (aid,)).fetchone())
+    return jsonify({'arende': rad})
+
+
+@app.delete('/api/rutt/arenden/<int:aid>')
+def rutt_ta_bort_arende(aid):
+    uid = _rutt_uid()
+    with get_db() as conn:
+        bef = _rutt_arende_med_agare(conn, aid)
+        if not bef:
+            return fel('Ärendet hittades inte.', 404)
+        if bef['_agare'] != uid:
+            return fel('Du har inte åtkomst till det här ärendet.', 403)
+        conn.execute("DELETE FROM rutt_arende WHERE id=?", (aid,))
+        conn.execute("UPDATE rutt_planering SET uppdaterad=? WHERE id=?", (nu(), bef['planering_id']))
+        conn.commit()
+    return jsonify({'meddelande': 'Ärende borttaget.'})
 
 
 # ---- Import: förhandsvisning, validering, bekräftelse ----

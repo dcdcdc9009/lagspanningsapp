@@ -3124,6 +3124,13 @@ body[data-view="tjallmo"] #app { max-width: none; padding-left: 14px; padding-ri
   color: #fff; font-weight: 800; font-size: 12px;
 }
 .rutt-ejplac .rutt-rutt-head { background: var(--red-l); }
+.rutt-ikonbtn {
+  background: none; border: 1px solid var(--border); border-radius: 6px;
+  width: 26px; height: 26px; cursor: pointer; color: var(--text-muted);
+  font-size: 13px; line-height: 1; margin-left: 2px;
+}
+.rutt-ikonbtn:hover { background: var(--surface-2); color: var(--cyan); border-color: var(--border-hi); }
+.rutt-ikonbtn-bort:hover { color: var(--red); }
 
 /* Planeringsvyn använder full bredd (delad lista+karta) */
 body[data-view="ruttplanering"] #app { max-width: none; padding-left: 16px; padding-right: 16px; }
