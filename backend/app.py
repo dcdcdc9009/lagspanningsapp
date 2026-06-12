@@ -6,6 +6,8 @@ from flask import Flask, jsonify, request, session, send_from_directory, Respons
 from database import get_db, init_db, DB_PATH
 from models import rows_to_list, row_to_dict, nu, nasta_projektnummer
 from ruttimport import gissa_mappning, validera_rader, rubrik_signatur, IMPORT_FALT
+from ruttrestid import bygg_matris
+from ruttopt import optimera as kor_optimering
 from mall_berakning import berakna
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend')
@@ -2624,6 +2626,61 @@ def rutt_skapa_planering():
     return jsonify({'planering': rad}), 201
 
 
+def _rutt_sammanfattning(conn, arenden):
+    """Per tekniker: stopp, körtid, servicetid, sluttid – ur cachad restidsmatris."""
+    tilldelade = [a for a in arenden if a.get('tilldelad_tekniker') is not None]
+    if not tilldelade:
+        return []
+    tek_ids = sorted({a['tilldelad_tekniker'] for a in tilldelade})
+    tek_rader = rows_to_list(conn.execute(
+        "SELECT * FROM rutt_tekniker WHERE id IN (%s)" % ','.join('?' * len(tek_ids)),
+        tek_ids).fetchall())
+    tmap = {t['id']: t for t in tek_rader}
+
+    punkter, index = [], {}
+
+    def _pt(lat, lon):
+        key = (round(lat, 5), round(lon, 5))
+        if key not in index:
+            index[key] = len(punkter)
+            punkter.append((lat, lon))
+        return index[key]
+
+    for t in tek_rader:
+        t['_ds'] = _pt(t['start_lat'], t['start_lon'])
+        sl_lat = t['slut_lat'] if t['slut_lat'] is not None else t['start_lat']
+        sl_lon = t['slut_lon'] if t['slut_lon'] is not None else t['start_lon']
+        t['_de'] = _pt(sl_lat, sl_lon)
+    for a in tilldelade:
+        a['_pt'] = _pt(a['lat'], a['lon'])
+
+    dur, _dist, _k = bygg_matris(conn, punkter, bara_cache=True)
+
+    samm = []
+    for tid in tek_ids:
+        t = tmap.get(tid)
+        if not t:
+            continue
+        seq = sorted([a for a in tilldelade if a['tilldelad_tekniker'] == tid],
+                     key=lambda a: (a['ordning'] if a['ordning'] is not None else 0))
+        drive = 0.0
+        prev = t['_ds']
+        for a in seq:
+            drive += dur[prev][a['_pt']] / 60.0
+            prev = a['_pt']
+        drive += dur[prev][t['_de']] / 60.0
+        service = sum(a['servicetid_min'] or 0 for a in seq)
+        sista = seq[-1]
+        slut = None
+        if sista.get('ankomst'):
+            slut = _min_hhmm(_hhmm_min(sista['ankomst']) + (sista['servicetid_min'] or 0)
+                             + dur[sista['_pt']][t['_de']] / 60.0)
+        samm.append({'tekniker_id': tid, 'namn': t['namn'], 'farg': t['farg'],
+                     'stopp': len(seq), 'kortid_min': int(round(drive)),
+                     'servicetid_min': service, 'sluttid': slut})
+    return samm
+
+
 @app.get('/api/rutt/planeringar/<int:pid>')
 def rutt_hamta_planering(pid):
     uid = _rutt_uid()
@@ -2637,8 +2694,10 @@ def rutt_hamta_planering(pid):
             "SELECT * FROM rutt_arende WHERE planering_id=? "
             "ORDER BY COALESCE(tilldelad_tekniker,999999), COALESCE(ordning,999999), id",
             (pid,)).fetchall())
+        sammanfattning = _rutt_sammanfattning(conn, [dict(a) for a in arenden])
     res = row_to_dict(p)
     res['arenden'] = arenden
+    res['sammanfattning'] = sammanfattning
     return jsonify({'planering': res})
 
 
@@ -2794,6 +2853,135 @@ def rutt_import_bekrafta(pid):
         arend = rows_to_list(conn.execute(
             "SELECT * FROM rutt_arende WHERE planering_id=? ORDER BY id", (pid,)).fetchall())
     return jsonify({'infogade': infogade, 'hoppade': hoppade, 'arenden': arend})
+
+
+# ---- Optimering ----
+def _hhmm_min(s):
+    try:
+        h, m = str(s).split(':')
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _min_hhmm(m):
+    if m is None:
+        return None
+    m = int(round(m))
+    return f'{(m // 60) % 24:02d}:{m % 60:02d}'
+
+
+def _komp_set(s):
+    return set(k.strip().lower() for k in (s or '').replace(';', ',').split(',') if k.strip())
+
+
+@app.post('/api/rutt/planeringar/<int:pid>/optimera')
+def rutt_optimera(pid):
+    uid = _rutt_uid()
+    with get_db() as conn:
+        p = conn.execute("SELECT * FROM rutt_planering WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return fel('Planeringen hittades inte.', 404)
+        if p['agare'] != uid:
+            return fel('Du har inte åtkomst till den här planeringen.', 403)
+
+        ar_rader = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_arende WHERE planering_id=? AND lat IS NOT NULL AND lon IS NOT NULL",
+            (pid,)).fetchall())
+        if not ar_rader:
+            return fel('Planeringen saknar ärenden med giltiga koordinater.')
+        tek_rader = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_tekniker WHERE aktiv=1 AND start_lat IS NOT NULL AND start_lon IS NOT NULL").fetchall())
+        if not tek_rader:
+            return fel('Inga aktiva tekniker med depå-koordinater. Lägg till tekniker under Inställningar.')
+
+        # Punktindex (avrundade koordinater delas mellan depåer och ärenden)
+        punkter, index = [], {}
+
+        def _pt(lat, lon):
+            key = (round(lat, 5), round(lon, 5))
+            if key not in index:
+                index[key] = len(punkter)
+                punkter.append((lat, lon))
+            return index[key]
+
+        for t in tek_rader:
+            t['_dep_start'] = _pt(t['start_lat'], t['start_lon'])
+            sl_lat = t['slut_lat'] if t['slut_lat'] is not None else t['start_lat']
+            sl_lon = t['slut_lon'] if t['slut_lon'] is not None else t['start_lon']
+            t['_dep_end'] = _pt(sl_lat, sl_lon)
+        for a in ar_rader:
+            a['_pt'] = _pt(a['lat'], a['lon'])
+
+        dur, dist, kalla = bygg_matris(conn, punkter)
+
+        tekniker = [{
+            'id': t['id'], 'namn': t['namn'], 'skills': _komp_set(t['kompetenser']),
+            'start_min': _hhmm_min(t['arbetstid_start']) or 420,
+            'end_min': _hhmm_min(t['arbetstid_slut']) or 960,
+            'dep_start': t['_dep_start'], 'dep_end': t['_dep_end'],
+        } for t in tek_rader]
+        arenden = [{
+            'id': a['id'], 'pt': a['_pt'],
+            'service': int(a['servicetid_min']) if a['servicetid_min'] is not None else 30,
+            'wf': _hhmm_min(a['fonster_fran']), 'wt': _hhmm_min(a['fonster_till']),
+            'krav': _komp_set(a['kompetenskrav']),
+        } for a in ar_rader]
+
+        res = kor_optimering(tekniker, arenden, dur)
+
+        # Spara tilldelning
+        ank = res['ankomster']
+        ej_map = {e['id']: e['orsak'] for e in res['ej_placerade']}
+        for tid, idlist in res['rutter'].items():
+            for ordning, aid in enumerate(idlist):
+                conn.execute(
+                    "UPDATE rutt_arende SET tilldelad_tekniker=?, ordning=?, ankomst=?, ej_placerad_orsak=NULL WHERE id=?",
+                    (tid, ordning, _min_hhmm(ank.get(aid)), aid))
+        for aid, orsak in ej_map.items():
+            conn.execute(
+                "UPDATE rutt_arende SET tilldelad_tekniker=NULL, ordning=NULL, ankomst=NULL, ej_placerad_orsak=? WHERE id=?",
+                (orsak, aid))
+        conn.execute("UPDATE rutt_planering SET status='optimerad', uppdaterad=? WHERE id=?", (nu(), pid))
+        conn.commit()
+
+        # Sammanfattning per tekniker
+        tek_by_id = {t['id']: t for t in tekniker}
+        ar_by_id = {a['id']: a for a in arenden}
+        sammanfattning = []
+        for t in tek_rader:
+            idlist = res['rutter'].get(t['id'], [])
+            if not idlist:
+                continue
+            tk = tek_by_id[t['id']]
+            drive = 0.0
+            prev = tk['dep_start']
+            for aid in idlist:
+                drive += dur[prev][ar_by_id[aid]['pt']] / 60.0
+                prev = ar_by_id[aid]['pt']
+            drive += dur[prev][tk['dep_end']] / 60.0
+            service = sum(ar_by_id[aid]['service'] for aid in idlist)
+            sista = idlist[-1]
+            slut = (ank.get(sista, 0) + ar_by_id[sista]['service']
+                    + dur[ar_by_id[sista]['pt']][tk['dep_end']] / 60.0)
+            sammanfattning.append({
+                'tekniker_id': t['id'], 'namn': t['namn'], 'farg': t['farg'],
+                'stopp': len(idlist), 'kortid_min': int(round(drive)),
+                'servicetid_min': service, 'sluttid': _min_hhmm(slut),
+            })
+
+        arend = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_arende WHERE planering_id=? "
+            "ORDER BY COALESCE(tilldelad_tekniker,999999), COALESCE(ordning,999999), id",
+            (pid,)).fetchall())
+
+    return jsonify({
+        'kalla': kalla,
+        'sammanfattning': sammanfattning,
+        'ej_placerade': [{'etikett': next((a['etikett'] for a in arend if a['id'] == e['id']), '?'),
+                          'orsak': e['orsak']} for e in res['ej_placerade']],
+        'arenden': arend,
+    })
 
 
 # ============================================================

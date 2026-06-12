@@ -4756,14 +4756,20 @@ async function ruttNyPlanering() {
   });
 }
 
-// ---- Öppnad planering: visar importerade ärenden + import-knapp ----
+// ---- Öppnad planering: import, optimering, resultat ----
+const _mm = s => { if (!s) return null; const [h, m] = s.split(':'); return +h * 60 + +m; };
+const _hhmm = m => m == null ? '–' : `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
 async function ruttPlaneringVy(app) {
   let p;
   try { p = (await api('GET', `/rutt/planeringar/${RuttState.planeringId}`)).planering; }
   catch (e) { toast(e.message, 'error'); return ruttGaTill('hem'); }
   RuttState.planering = p;
   const arenden = p.arenden || [];
+  const tekById = {}; RuttState.tekniker.forEach(t => tekById[t.id] = t);
+  const optimerad = arenden.some(a => a.tilldelad_tekniker != null) || p.status === 'optimerad';
   const fonster = a => (a.fonster_fran || a.fonster_till) ? `${a.fonster_fran || '…'}–${a.fonster_till || '…'}` : '–';
+
   app.innerHTML = `
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="ruttTillbaka">← Mina planeringar</button>
@@ -4771,48 +4777,125 @@ async function ruttPlaneringVy(app) {
       <span class="text-muted">${escHtml(p.datum || '')}</span>
       ${ruttStatusBadge(p.status)}
       <span style="flex:1"></span>
-      <button class="btn ${arenden.length ? 'btn-secondary' : 'btn-navy'}" id="ruttImportera">
-        ${arenden.length ? '↻ Importera om' : '📥 Importera ärenden'}</button>
+      ${arenden.length ? `<button class="btn btn-navy" id="ruttOptimera">⚡ Optimera</button>` : ''}
+      <button class="btn btn-secondary" id="ruttImportera">${arenden.length ? '↻ Importera om' : '📥 Importera ärenden'}</button>
     </div>
-    ${arenden.length ? `
-      <div class="card" style="margin-top:14px">
-        <div class="card-header"><span class="card-title">${arenden.length} ärenden</span></div>
-        <div class="card-body" style="padding:0;overflow-x:auto">
-          <table class="rutt-tabell" style="width:100%;border-collapse:collapse">
-            <thead><tr>
-              <th style="text-align:left;padding:10px 14px">Ärende</th>
-              <th style="text-align:left;padding:10px 14px">Typ</th>
-              <th style="text-align:left;padding:10px 14px">Koordinat</th>
-              <th style="text-align:left;padding:10px 14px">Servicetid</th>
-              <th style="text-align:left;padding:10px 14px">Tidsfönster</th>
-              <th style="text-align:left;padding:10px 14px">Anteckning</th>
-            </tr></thead>
-            <tbody>${arenden.map(a => `
-              <tr style="border-top:1px solid var(--border)">
-                <td style="padding:10px 14px;font-weight:600">${escHtml(a.etikett)}</td>
-                <td style="padding:10px 14px">${escHtml(a.arendetyp || '–')}</td>
-                <td style="padding:10px 14px">${a.lat != null ? `${Number(a.lat).toFixed(5)}, ${Number(a.lon).toFixed(5)}` : '–'}</td>
-                <td style="padding:10px 14px">${a.servicetid_min != null ? a.servicetid_min + ' min' : '–'}</td>
-                <td style="padding:10px 14px">${fonster(a)}</td>
-                <td style="padding:10px 14px">${escHtml(a.anteckning || '')}</td>
-              </tr>`).join('')}</tbody>
-          </table>
-        </div>
-      </div>
-      <p class="text-muted text-sm" style="margin-top:10px">Nästa steg: restider och optimering av körordningar per tekniker.</p>
-    ` : `
-      <div class="card" style="margin-top:14px">
-        <div class="card-body" style="padding:46px;text-align:center;color:var(--text-muted)">
-          <div style="font-size:34px;margin-bottom:10px">📥</div>
-          <div style="font-size:16px;color:var(--text);font-weight:600;margin-bottom:6px">Inga ärenden ännu</div>
-          Importera dagens ärenden från en Excel- eller CSV-fil för att komma igång.
-        </div>
-      </div>`}`;
-  document.getElementById('ruttTillbaka').addEventListener('click', () => ruttGaTill('hem'));
+    ${RuttState.optKalla && RuttState.optKalla !== 'osrm' && RuttState.optKalla !== 'cache' ? `
+      <p class="rutt-notis">ⓘ Kunde inte hämta exakta körtider från vägnätet – använder uppskattade avstånd (fågelväg).</p>` : ''}
+    <div id="ruttPlanInnehall" style="margin-top:14px"></div>`;
+
+  document.getElementById('ruttTillbaka').addEventListener('click', () => { RuttState.optKalla = null; ruttGaTill('hem'); });
   document.getElementById('ruttImportera').addEventListener('click', () => {
     RuttState.import = { steg: 1, headers: [], rader: [], mappning: {}, falt: [], validering: null, profilnamn: '', harArenden: arenden.length };
     ruttGaTill('import', RuttState.planeringId);
   });
+  const optBtn = document.getElementById('ruttOptimera');
+  if (optBtn) optBtn.addEventListener('click', () => ruttKorOptimering());
+
+  const c = document.getElementById('ruttPlanInnehall');
+  if (!arenden.length) {
+    c.innerHTML = `<div class="card"><div class="card-body" style="padding:46px;text-align:center;color:var(--text-muted)">
+      <div style="font-size:34px;margin-bottom:10px">📥</div>
+      <div style="font-size:16px;color:var(--text);font-weight:600;margin-bottom:6px">Inga ärenden ännu</div>
+      Importera dagens ärenden från en Excel- eller CSV-fil för att komma igång.</div></div>`;
+    return;
+  }
+  if (!optimerad) {
+    c.innerHTML = `
+      <div class="card"><div class="card-header"><span class="card-title">${arenden.length} ärenden – redo att optimera</span></div>
+        <div class="card-body" style="padding:0;overflow-x:auto">
+          <table class="rutt-tabell" style="width:100%;border-collapse:collapse"><thead><tr>
+            <th style="text-align:left;padding:10px 14px">Ärende</th><th style="text-align:left;padding:10px 14px">Typ</th>
+            <th style="text-align:left;padding:10px 14px">Koordinat</th><th style="text-align:left;padding:10px 14px">Servicetid</th>
+            <th style="text-align:left;padding:10px 14px">Tidsfönster</th><th style="text-align:left;padding:10px 14px">Anteckning</th>
+          </tr></thead><tbody>${arenden.map(a => `<tr style="border-top:1px solid var(--border)">
+            <td style="padding:10px 14px;font-weight:600">${escHtml(a.etikett)}</td>
+            <td style="padding:10px 14px">${escHtml(a.arendetyp || '–')}</td>
+            <td style="padding:10px 14px">${a.lat != null ? `${Number(a.lat).toFixed(5)}, ${Number(a.lon).toFixed(5)}` : '–'}</td>
+            <td style="padding:10px 14px">${a.servicetid_min != null ? a.servicetid_min + ' min' : '–'}</td>
+            <td style="padding:10px 14px">${fonster(a)}</td>
+            <td style="padding:10px 14px">${escHtml(a.anteckning || '')}</td></tr>`).join('')}</tbody></table>
+        </div></div>
+      <p class="text-muted text-sm" style="margin-top:10px">Klicka <strong>⚡ Optimera</strong> för att fördela ärendena på teknikerna och få körordningar.</p>`;
+    return;
+  }
+  // Optimerad vy
+  ruttResultatHtml(c, arenden, tekById, p.sammanfattning || []);
+}
+
+function ruttResultatHtml(c, arenden, tekById, sammanfattning) {
+  const grupper = {};
+  arenden.filter(a => a.tilldelad_tekniker != null).forEach(a => {
+    (grupper[a.tilldelad_tekniker] = grupper[a.tilldelad_tekniker] || []).push(a);
+  });
+  Object.values(grupper).forEach(g => g.sort((x, y) => (x.ordning ?? 0) - (y.ordning ?? 0)));
+  const ejPlac = arenden.filter(a => a.tilldelad_tekniker == null && a.ej_placerad_orsak);
+  const sammSession = {};
+  (sammanfattning || []).forEach(s => sammSession[s.tekniker_id] = s);
+
+  let html = '';
+  Object.keys(grupper).forEach(tid => {
+    const g = grupper[tid];
+    const tek = tekById[tid] || { namn: 'Tekniker ' + tid, farg: '#7c3aed' };
+    const farg = tek.farg || '#7c3aed';
+    const sista = g[g.length - 1];
+    const service = g.reduce((s, a) => s + (a.servicetid_min || 0), 0);
+    const klar = sista.ankomst ? _hhmm(_mm(sista.ankomst) + (sista.servicetid_min || 0)) : '–';
+    const ss = sammSession[tid];
+    html += `
+      <div class="card rutt-rutt" style="margin-bottom:14px">
+        <div class="rutt-rutt-head" style="border-left:5px solid ${escHtml(farg)}">
+          <span class="rutt-rutt-namn"><span class="rutt-farg-prick" style="background:${escHtml(farg)}"></span> ${escHtml(tek.namn)}</span>
+          <span class="rutt-rutt-stats">
+            <b>${g.length}</b> stopp${ss ? ` · <b>${ss.kortid_min}</b> min körtid` : ''} · <b>${service}</b> min service · klar <b>${ss ? ss.sluttid : klar}</b>
+          </span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="rutt-tabell" style="width:100%;border-collapse:collapse"><tbody>
+            ${g.map((a, i) => `<tr style="border-top:1px solid var(--border)">
+              <td style="padding:9px 14px;width:34px"><span class="rutt-stopp-nr" style="background:${escHtml(farg)}">${i + 1}</span></td>
+              <td style="padding:9px 14px;font-weight:600">${escHtml(a.etikett)}</td>
+              <td style="padding:9px 14px">${escHtml(a.arendetyp || '–')}</td>
+              <td style="padding:9px 14px">ank. <b>${a.ankomst || '–'}</b></td>
+              <td style="padding:9px 14px">${a.servicetid_min || '–'} min</td>
+              <td style="padding:9px 14px">${(a.fonster_fran || a.fonster_till) ? `fönster ${a.fonster_fran || '…'}–${a.fonster_till || '…'}` : ''}</td>
+              <td style="padding:9px 14px;color:var(--text-muted)">${escHtml(a.anteckning || '')}</td>
+            </tr>`).join('')}
+          </tbody></table>
+        </div>
+      </div>`;
+  });
+  if (ejPlac.length) {
+    html += `
+      <div class="card rutt-ejplac"><div class="rutt-rutt-head" style="border-left:5px solid var(--red)">
+        <span class="rutt-rutt-namn">⚠ Ej placerade (${ejPlac.length})</span>
+      </div><div class="card-body" style="padding:0">
+        <table class="rutt-tabell" style="width:100%;border-collapse:collapse"><tbody>
+          ${ejPlac.map(a => `<tr style="border-top:1px solid var(--border)">
+            <td style="padding:9px 14px;font-weight:600">${escHtml(a.etikett)}</td>
+            <td style="padding:9px 14px">${escHtml(a.arendetyp || '–')}</td>
+            <td style="padding:9px 14px;color:var(--red)">${escHtml(a.ej_placerad_orsak || '')}</td>
+          </tr>`).join('')}
+        </tbody></table>
+      </div></div>`;
+  }
+  c.innerHTML = html;
+}
+
+async function ruttKorOptimering() {
+  const btn = document.getElementById('ruttOptimera');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Optimerar…'; }
+  try {
+    const r = await api('POST', `/rutt/planeringar/${RuttState.planeringId}/optimera`);
+    RuttState.optResultat = r;
+    RuttState.optKalla = r.kalla;
+    const ej = r.ej_placerade ? r.ej_placerade.length : 0;
+    toast(`Optimering klar${ej ? ` – ${ej} ej placerade` : ''}`, ej ? 'info' : 'success');
+    ruttGaTill('planering', RuttState.planeringId);
+  } catch (e) {
+    toast(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Optimera'; }
+  }
 }
 
 // ---- Importwizard: fil → mappning → validering → bekräfta ----
