@@ -3160,3 +3160,23 @@ body[data-view="ruttplanering"] #app { max-width: none; padding-left: 16px; padd
   .rutt-karta-wrap { position: static; }
   #ruttKarta { height: 420px; }
 }
+
+/* Utskrift – körlistor */
+.rutt-print { display: none; }
+.rutt-print-sida { padding: 8px 4px; }
+.rutt-print-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-bottom: 2px solid #222; padding-bottom: 8px; margin-bottom: 12px; }
+.rutt-print-titel { font-size: 20px; font-weight: 800; }
+.rutt-print-sub { font-size: 13px; color: #555; margin-top: 2px; }
+.rutt-print-sum { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.rutt-print-tab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rutt-print-tab th { text-align: left; border-bottom: 1px solid #999; padding: 6px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+.rutt-print-tab td { border-bottom: 1px solid #ddd; padding: 7px 8px; vertical-align: top; }
+
+@media print {
+  body * { visibility: hidden; }
+  #ruttPrintHost, #ruttPrintHost * { visibility: visible; }
+  #ruttPrintHost { display: block; position: absolute; left: 0; top: 0; width: 100%; }
+  .rutt-print-sida { page-break-after: always; }
+  .rutt-print-sida:last-child { page-break-after: auto; }
+  @page { margin: 16mm; }
+}

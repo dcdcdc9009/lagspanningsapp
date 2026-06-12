@@ -4777,6 +4777,7 @@ async function ruttPlaneringVy(app) {
       <span class="text-muted">${escHtml(p.datum || '')}</span>
       ${ruttStatusBadge(p.status)}
       <span style="flex:1"></span>
+      ${optimerad ? `<button class="btn btn-outline" id="ruttSkrivUt">🖨 Skriv ut körlistor</button>` : ''}
       ${arenden.length ? `<button class="btn btn-navy" id="ruttOptimera">⚡ Optimera</button>` : ''}
       <button class="btn btn-secondary" id="ruttImportera">${arenden.length ? '↻ Importera om' : '📥 Importera ärenden'}</button>
     </div>
@@ -4791,6 +4792,8 @@ async function ruttPlaneringVy(app) {
   });
   const optBtn = document.getElementById('ruttOptimera');
   if (optBtn) optBtn.addEventListener('click', () => ruttKorOptimering());
+  const utBtn = document.getElementById('ruttSkrivUt');
+  if (utBtn) utBtn.addEventListener('click', () => ruttSkrivUt(p, arenden, tekById, p.sammanfattning || []));
 
   const c = document.getElementById('ruttPlanInnehall');
   if (!arenden.length) {
@@ -5013,6 +5016,68 @@ async function ruttSparaTilldelning() {
       toast('Omräknat – men någon rutt bryter mot tidsfönster eller arbetstid.', 'info');
     ruttGaTill('planering', RuttState.planeringId);
   } catch (e) { toast(e.message, 'error'); }
+}
+
+// ---- Utskrift: en körlista per tekniker ----
+function ruttSkrivUt(p, arenden, tekById, sammanfattning) {
+  const samm = {}; (sammanfattning || []).forEach(s => samm[s.tekniker_id] = s);
+  const grupper = {};
+  arenden.filter(a => a.tilldelad_tekniker != null).forEach(a =>
+    (grupper[a.tilldelad_tekniker] = grupper[a.tilldelad_tekniker] || []).push(a));
+  Object.values(grupper).forEach(g => g.sort((x, y) => (x.ordning ?? 0) - (y.ordning ?? 0)));
+  const ejPlac = arenden.filter(a => a.tilldelad_tekniker == null);
+
+  const sidor = Object.keys(grupper).map(tid => {
+    const tek = tekById[tid] || { namn: 'Tekniker ' + tid };
+    const g = grupper[tid];
+    const ss = samm[tid];
+    const service = g.reduce((s, a) => s + (a.servicetid_min || 0), 0);
+    return `
+      <div class="rutt-print-sida">
+        <div class="rutt-print-head">
+          <div>
+            <div class="rutt-print-titel">Körlista – ${escHtml(tek.namn)}</div>
+            <div class="rutt-print-sub">${escHtml(p.namn)}${p.datum ? ' · ' + escHtml(p.datum) : ''}</div>
+          </div>
+          <div class="rutt-print-sum">
+            ${g.length} stopp${ss ? ` · ${ss.kortid_min} min körtid` : ''} · ${service} min service${ss && ss.sluttid ? ` · klar ${ss.sluttid}` : ''}
+          </div>
+        </div>
+        <table class="rutt-print-tab">
+          <thead><tr>
+            <th style="width:28px">#</th><th>Ärendenummer</th><th>Typ</th>
+            <th>Ankomst</th><th>Servicetid</th><th>Tidsfönster</th><th>Anteckning</th>
+          </tr></thead>
+          <tbody>
+            ${g.map((a, i) => `<tr>
+              <td>${i + 1}</td>
+              <td><b>${escHtml(a.etikett)}</b></td>
+              <td>${escHtml(a.arendetyp || '')}</td>
+              <td>${a.ankomst || '–'}</td>
+              <td>${a.servicetid_min != null ? a.servicetid_min + ' min' : '–'}</td>
+              <td>${(a.fonster_fran || a.fonster_till) ? `${a.fonster_fran || '…'}–${a.fonster_till || '…'}` : ''}</td>
+              <td>${escHtml(a.anteckning || '')}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  });
+
+  if (ejPlac.length) {
+    sidor.push(`
+      <div class="rutt-print-sida">
+        <div class="rutt-print-head"><div><div class="rutt-print-titel">Ej placerade ärenden</div>
+          <div class="rutt-print-sub">${escHtml(p.namn)}${p.datum ? ' · ' + escHtml(p.datum) : ''}</div></div></div>
+        <table class="rutt-print-tab"><thead><tr><th>Ärendenummer</th><th>Typ</th><th>Orsak</th></tr></thead>
+          <tbody>${ejPlac.map(a => `<tr><td><b>${escHtml(a.etikett)}</b></td><td>${escHtml(a.arendetyp || '')}</td><td>${escHtml(a.ej_placerad_orsak || '')}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>`);
+  }
+
+  let host = document.getElementById('ruttPrintHost');
+  if (!host) { host = document.createElement('div'); host.id = 'ruttPrintHost'; host.className = 'rutt-print'; document.body.appendChild(host); }
+  host.innerHTML = sidor.join('');
+  window.print();
 }
 
 async function ruttKorOptimering() {
