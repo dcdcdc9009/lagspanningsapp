@@ -2911,3 +2911,97 @@ body[data-view="tidplan"] #app {
 
 /* Tjällmo-vyn i full bredd */
 body[data-view="tjallmo"] #app { max-width: none; padding-left: 14px; padding-right: 14px; }
+
+/* ================================================================
+   HJÄLP-FLIKEN
+   ================================================================ */
+.hjalp-intro {
+  color: var(--text-muted);
+  max-width: 760px;
+  line-height: 1.6;
+  margin: 0 0 6px;
+  font-size: 14.5px;
+}
+.hjalp-sok {
+  max-width: 400px;
+  margin: 16px 0 4px;
+}
+.hjalp-sektion { margin-top: 30px; }
+.hjalp-sektion-titel {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-weight: 800;
+  color: var(--cyan);
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hjalp-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  background: var(--surface);
+  overflow: hidden;
+  transition: box-shadow .16s ease, border-color .16s ease;
+}
+.hjalp-item.open {
+  border-color: var(--border-hi);
+  box-shadow: 0 6px 22px rgba(124,58,237,.09);
+}
+.hjalp-q {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 15px 18px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-family: inherit;
+}
+.hjalp-q:hover { background: var(--surface-2); }
+.hjalp-ikon { font-size: 20px; line-height: 1; flex-shrink: 0; width: 24px; text-align: center; }
+.hjalp-q-txt { flex: 1; min-width: 0; }
+.hjalp-taggar { display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
+.hjalp-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--cyan-d);
+  white-space: nowrap;
+}
+.hjalp-tag.alla  { background: var(--green-l);  color: var(--green); }
+.hjalp-tag.admin { background: var(--red-l);    color: var(--red); }
+.hjalp-tag.ue    { background: var(--amber-l);  color: var(--amber); }
+.hjalp-chev { color: var(--gray-400); transition: transform .2s ease; flex-shrink: 0; }
+.hjalp-item.open .hjalp-chev { transform: rotate(90deg); color: var(--cyan); }
+.hjalp-a {
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 18px 0 55px;
+  color: var(--text-700, #564d6e);
+  line-height: 1.65;
+  font-size: 14px;
+  transition: max-height .25s ease, padding .25s ease;
+}
+.hjalp-item.open .hjalp-a { max-height: 800px; padding-bottom: 17px; }
+.hjalp-a p { margin: 0; }
+.hjalp-a strong { color: var(--text-strong); font-weight: 700; }
+.hjalp-steg { margin: 0; padding-left: 20px; }
+.hjalp-steg li { margin: 6px 0; padding-left: 4px; }
+.hjalp-steg li::marker { color: var(--cyan); font-weight: 700; }
+.hjalp-tom { padding: 36px; text-align: center; color: var(--text-muted); }
+.nav-link-hjalp { opacity: .92; }
+@media (max-width: 600px) {
+  .hjalp-taggar { display: none; }
+  .hjalp-a { padding-left: 18px; }
+}

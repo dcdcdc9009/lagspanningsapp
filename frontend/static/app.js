@@ -118,6 +118,7 @@ function render(view, params = {}) {
     case 'kontrollrum':     renderKontrollrum(app); break;
     case 'rapport':         renderRapport(app); break;
     case 'statistik':       renderStatistik(app); break;
+    case 'hjalp':           renderHjalp(app); break;
     default:                renderProjekt(app);
   }
 }
@@ -4618,6 +4619,168 @@ async function renderKontakter(app) {
   sokEl.addEventListener('input', rita);
   rollEl.addEventListener('change', rita);
   rita();
+}
+
+// ----------------------------------------------------------------
+// VIEW: HJÄLP (statisk guide – sökbar dragspelslayout)
+// ----------------------------------------------------------------
+const HJALP_FLIKAR = [
+  { ikon: '📋', namn: 'Projekt', taggar: ['Alla'],
+    text: 'Startsidan och projektöversikten. Här ser du alla ärenden som kort eller lista, med hur långt checklistan kommit för varje projekt. Överst visas nyckeltal (antal per fas och kommande montagestart inom 30 dagar). Du kan söka, filtrera på fas, beredare och område, samt skapa ett nytt ärende med <strong>+ Nytt projekt</strong>. Klicka på ett projekt för att öppna det.' },
+  { ikon: '🏗️', namn: 'Byggprotokoll/materiallista', taggar: ['Beredare'],
+    text: 'Här hanterar du konstruktioner (t.ex. kabelskåp, kabelförläggning, nätstation) som hör till ett projekt. Välj projekt i listan och öppna en konstruktion för att fylla i materialrader och egenkontroll. Allt sparas automatiskt medan du skriver.' },
+  { ikon: '📦', namn: 'Artiklar', taggar: ['Alla'],
+    text: 'Materialkatalogen med artiklar, E-nummer och enheter. Alla kan söka och läsa. Den som har fått behörighet (eller är admin) kan dessutom lägga till och redigera artiklar och priser direkt härifrån.' },
+  { ikon: '⚙️', namn: 'Admin', taggar: ['Admin'],
+    text: 'Administrationsdelen – kräver admin-inloggning. Här hanterar du användarkonton, beredare, kategorier, leverantörer, artiklar och systeminställningar. Det är också här du ger en användare behörighet att hantera artiklar eller byter någons lösenord.' },
+  { ikon: '📈', namn: 'Analys', taggar: ['Beredare', 'Admin'],
+    text: 'Analys av anslutningsärenden i tre vyer: <strong>Översikt</strong> (fasfördelning, riskärenden, mönster), <strong>Ärenden</strong> (sökbar lista med detaljpanel) och <strong>Analys</strong> (nyckeltal, blockeringar, ledtider och en montagekalender). Ärendena importeras från Excel.' },
+  { ikon: '🛠️', namn: 'Tjällmo', taggar: ['Beredare', 'UE'],
+    text: 'Fältplaneringen för Tjällmo – en Excel-liknande tabell direkt i appen. Varje ärende är en rad och du fyller i statusfälten direkt i cellerna; de sparas automatiskt. De <strong>gulmarkerade</strong> kolumnerna är de som UE fyller i. Klicka på en kolumnrubrik för att sortera, dra i kanten på en rubrik för att ändra bredd, och sök eller filtrera på beredare. När beredningen är klar blir ärendenummer och benämning grönmarkerade. Klicka på ärendenumret för att öppna hela ärendet.' },
+  { ikon: '🧵', namn: 'Kabeltrummor', taggar: ['Beredare', 'UE'],
+    text: 'En enkel lista över kabeltrummor: kabeltyp, uttagen mängd, vad som är kvar på trumman och en notatruta. Lägg till, redigera eller ta bort rader.' },
+  { ikon: '📇', namn: 'Kontaktuppgifter', taggar: ['Alla'],
+    text: 'Telefonbok för alla i systemet. Sök på namn, telefon eller e-post och filtrera på roll. Klicka på ett telefonnummer för att ringa, eller på en e-postadress för att skicka mejl direkt.' },
+  { ikon: '🗺️', namn: 'Karta', taggar: ['Alla'],
+    text: 'En karta som visar alla projekt som har koordinater. Filtrera på beredare och område och klicka på en nål för att se projektinfo och öppna ärendet. Koordinaterna sätts inne i projektet – se guiden ”Sätta koordinater på ett projekt”.' },
+  { ikon: '📅', namn: 'Tidplan', taggar: ['Beredare', 'Admin'],
+    text: 'En Gantt-liknande tidsöversikt där projekten visas som staplar över tid (beredning, montage, drifttagning). Zooma på period och filtrera på beredare eller på om ärendet är klart.' },
+  { ikon: '📊', namn: 'Dashboard', taggar: ['Beredare', 'Admin'],
+    text: 'Ett kontrollrum med realtidsnyckeltal för anslutningsärenden: KPI-kort, riskzon, kommande montage och drifttagning, samt diagram över fasfördelning och arbetsbelastning per beredare.' },
+  { ikon: '📄', namn: 'Rapporter', taggar: ['Beredare', 'Admin'],
+    text: 'Färdiga rapporter att skriva ut eller exportera till Excel: <strong>Statusrapport</strong> (alla ärenden), <strong>Deadline-rapport</strong> (sorterad på beställningsdatum) och <strong>Beredare-rapport</strong> (per beredare). Klicka på en kolumnrubrik för att sortera.' },
+  { ikon: '💰', namn: 'Statistik', taggar: ['Admin'],
+    text: 'Faktureringsstatistik per månad. Importera faktureringsrapport från Excel och se fakturerat, utestående, budget och utfall per ärende och per projektledare, med trenddiagram.' },
+  { ikon: '❓', namn: 'Hjälp', taggar: ['Alla'],
+    text: 'Den här sidan – förklaringar av flikarna, steg-för-steg-guider för vanliga moment och svar på vanliga frågor. Använd sökrutan högst upp för att hitta snabbt.' },
+];
+
+const HJALP_MOMENT = [
+  { ikon: '🔑', titel: 'Byta ditt lösenord (och uppdatera telefon/e-post)', steg: [
+    'Klicka på ditt namn (👤) längst upp till höger.',
+    'I rutan <strong>Min profil</strong> skriver du ett nytt lösenord två gånger (minst 4 tecken) och/eller uppdaterar telefon och e-post.',
+    'Klicka <strong>Spara</strong>. Lämna lösenordsfälten tomma om du bara vill ändra dina kontaktuppgifter.' ] },
+  { ikon: '📋', titel: 'Skapa ett nytt projekt', steg: [
+    'Gå till fliken <strong>Projekt</strong>.',
+    'Klicka på <strong>+ Nytt projekt</strong>.',
+    'Fyll i uppgifterna och spara. Projektet dyker upp i översikten.' ] },
+  { ikon: '🗺️', titel: 'Sätta koordinater på ett projekt (så det syns på Kartan)', steg: [
+    'Öppna projektet via Projekt-fliken och klicka på <strong>Redigera</strong>.',
+    'Klicka på platsen i den lilla kartan i formuläret – latitud och longitud fylls i automatiskt. Du kan också skriva värdena för hand eller dra nålen för att finjustera.',
+    'Spara. Projektet visas nu på <strong>Karta</strong>-fliken. Observera: koordinater sätts här i projektet, inte på själva Karta-fliken.' ] },
+  { ikon: '🛠️', titel: 'Fylla i status i Tjällmo', steg: [
+    'Gå till fliken <strong>Tjällmo</strong>.',
+    'Klicka i cellen du vill fylla i och skriv eller välj värde – det sparas automatiskt direkt, ingen spara-knapp behövs (cellen blinkar till när den sparats).',
+    'De <strong>gulmarkerade</strong> kolumnerna är de som UE fyller i: Planerad schakt, Ledningskoll/utsättning, Grävlag, Inmätning, Dagbok och Återställning.',
+    'Klicka på en kolumnrubrik för att sortera, eller dra i kanten av rubriken för att ändra kolumnbredd.',
+    'Klicka på ärendenumret om du vill öppna hela ärendet.' ] },
+  { ikon: '✅', titel: 'Fylla i beredningsstatus och checklista på ett ärende', steg: [
+    'Öppna projektet och gå till fliken <strong>Planeringsstatus</strong> (beredning) eller <strong>Tjällmostatus</strong>.',
+    'Fyll i fälten – de sparas automatiskt.',
+    'Under <strong>Översikt</strong> kan du bocka av checklistpunkter och byta fas genom att klicka på tidslinjen.' ] },
+  { ikon: '📦', titel: 'Lägga till eller ändra material/artiklar', steg: [
+    'Har du behörighet ser du samma redigeringsvy som admin direkt i <strong>Artiklar</strong>-fliken – lägg till eller redigera artiklar och priser där.',
+    'Saknar du behörighet? Be en administratör att kryssa i <strong>Får hantera artiklar</strong> för ditt konto under Admin → Användare.' ] },
+  { ikon: '📇', titel: 'Hitta en kollegas kontaktuppgifter', steg: [
+    'Gå till fliken <strong>Kontaktuppgifter</strong>.',
+    'Sök på namn eller filtrera på roll.',
+    'Klicka på telefonnumret för att ringa, eller på e-postadressen för att skicka mejl.' ] },
+  { ikon: '⚙️', titel: 'Admin: skapa konto, byta lösenord eller ge behörighet', steg: [
+    'Gå till <strong>Admin → Användare</strong>.',
+    'Nytt konto: klicka <strong>Ny användare</strong>, fyll i uppgifter och välj roll (admin, beredare eller UE).',
+    'Byta någons lösenord: öppna användaren och skriv ett nytt lösenord (lämna tomt för att behålla det gamla).',
+    'Kryssa i <strong>Får hantera artiklar</strong> om personen ska kunna redigera material.' ] },
+];
+
+const HJALP_FAQ = [
+  { fraga: 'Hur ser jag bara mina egna jobb?', svar: 'Ditt eget namn är förvalt i beredare-filtret på t.ex. Projekt och Karta, så du ser dina jobb direkt. Vill du se allas väljer du <strong>Alla beredare</strong> i filtret.' },
+  { fraga: 'Jag har glömt mitt lösenord – vad gör jag?', svar: 'Be en administratör att sätta ett nytt lösenord åt dig under Admin → Användare. Logga sedan in och byt till ett eget via <strong>Min profil</strong> (klicka på ditt namn uppe till höger).' },
+  { fraga: 'Min ändring eller status sparades inte?', svar: 'De flesta fält sparar automatiskt när du lämnar cellen eller fältet. Kontrollera att du har internetuppkoppling och försök igen. I Tjällmo blinkar cellen till när den har sparats.' },
+  { fraga: 'Vad är skillnaden mellan Beredning och Tjällmo?', svar: 'Det är samma ärenden men två olika vyer med olika statusfält. Beredningsvyn visar beredningens statusar, medan Tjällmo-vyn visar fältplaneringens statusar (schakt, grävlag, inmätning och så vidare).' },
+  { fraga: 'Varför är vissa kolumner gulmarkerade i Tjällmo?', svar: 'De gulmarkerade kolumnerna är de som underentreprenören (UE) fyller i: Planerad schakt, Ledningskoll/utsättning, Grävlag, Inmätning, Dagbok och Återställning.' },
+  { fraga: 'Vad betyder ett grönt ärendenummer i Tjällmo?', svar: 'Att beredningen för det ärendet är klar (Beredning klar = Klar).' },
+  { fraga: 'Kan jag använda appen i mobilen?', svar: 'Ja, appen fungerar i mobilens webbläsare. Stora tabeller, som Tjällmo, är dock lättast att arbeta i på dator eller surfplatta.' },
+  { fraga: 'Jag är UE – vad ska jag använda?', svar: 'Främst <strong>Tjällmo</strong> (fyll i de gulmarkerade kolumnerna) och <strong>Kabeltrummor</strong>. Du byter ditt eget lösenord via <strong>Min profil</strong> och hittar kontaktuppgifter under <strong>Kontaktuppgifter</strong>.' },
+  { fraga: 'Vem kan ändra min roll eller mina behörigheter?', svar: 'En administratör, under Admin → Användare.' },
+];
+
+function renderHjalp(app) {
+  const CHEV = '<svg class="hjalp-chev" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const plain = s => String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  const tagKlass = t => t === 'Alla' ? 'alla' : t === 'Admin' ? 'admin' : t === 'UE' ? 'ue' : '';
+
+  const flikItem = f => `
+    <div class="hjalp-item" data-text="${escHtml(plain(f.namn + ' ' + f.text + ' ' + f.taggar.join(' ')))}">
+      <button class="hjalp-q" type="button">
+        <span class="hjalp-ikon">${f.ikon}</span>
+        <span class="hjalp-q-txt">${escHtml(f.namn)}</span>
+        <span class="hjalp-taggar">${f.taggar.map(t => `<span class="hjalp-tag ${tagKlass(t)}">${escHtml(t)}</span>`).join('')}</span>
+        ${CHEV}
+      </button>
+      <div class="hjalp-a"><p>${f.text}</p></div>
+    </div>`;
+
+  const momentItem = m => `
+    <div class="hjalp-item" data-text="${escHtml(plain(m.titel + ' ' + m.steg.join(' ')))}">
+      <button class="hjalp-q" type="button">
+        <span class="hjalp-ikon">${m.ikon}</span>
+        <span class="hjalp-q-txt">${escHtml(m.titel)}</span>
+        ${CHEV}
+      </button>
+      <div class="hjalp-a"><ol class="hjalp-steg">${m.steg.map(s => `<li>${s}</li>`).join('')}</ol></div>
+    </div>`;
+
+  const faqItem = q => `
+    <div class="hjalp-item" data-text="${escHtml(plain(q.fraga + ' ' + q.svar))}">
+      <button class="hjalp-q" type="button">
+        <span class="hjalp-ikon">💬</span>
+        <span class="hjalp-q-txt">${escHtml(q.fraga)}</span>
+        ${CHEV}
+      </button>
+      <div class="hjalp-a"><p>${q.svar}</p></div>
+    </div>`;
+
+  app.innerHTML = `
+    <div class="page-header"><h1 class="page-title">Hjälp &amp; guide</h1></div>
+    <p class="hjalp-intro">Korta förklaringar av flikarna, steg-för-steg-guider för vanliga moment och svar på vanliga frågor. Taggarna visar vem fliken främst är till för – alla flikar är synliga för alla (Admin-fliken kräver admin-inloggning).</p>
+    <input id="hjalpSok" class="form-control hjalp-sok" placeholder="🔍 Sök i hjälpen…">
+    <div id="hjalpInnehall">
+      <section class="hjalp-sektion" data-sektion>
+        <h2 class="hjalp-sektion-titel">📂 Flikarna förklarade</h2>
+        ${HJALP_FLIKAR.map(flikItem).join('')}
+      </section>
+      <section class="hjalp-sektion" data-sektion>
+        <h2 class="hjalp-sektion-titel">🧭 Så här gör du</h2>
+        ${HJALP_MOMENT.map(momentItem).join('')}
+      </section>
+      <section class="hjalp-sektion" data-sektion>
+        <h2 class="hjalp-sektion-titel">❓ Frågor &amp; svar</h2>
+        ${HJALP_FAQ.map(faqItem).join('')}
+      </section>
+    </div>
+    <div id="hjalpTom" class="hjalp-tom hidden">Inga träffar – prova ett annat sökord.</div>`;
+
+  app.querySelectorAll('.hjalp-q').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('.hjalp-item').classList.toggle('open'));
+  });
+
+  const sok = app.querySelector('#hjalpSok');
+  sok.addEventListener('input', () => {
+    const q = sok.value.toLowerCase().trim();
+    let total = 0;
+    app.querySelectorAll('[data-sektion]').forEach(sek => {
+      let synliga = 0;
+      sek.querySelectorAll('.hjalp-item').forEach(it => {
+        const match = !q || it.dataset.text.includes(q);
+        it.classList.toggle('hidden', !match);
+        it.classList.toggle('open', match && !!q);
+        if (match) synliga++;
+      });
+      sek.classList.toggle('hidden', synliga === 0);
+      total += synliga;
+    });
+    app.querySelector('#hjalpTom').classList.toggle('hidden', total > 0);
+  });
 }
 
 async function modalProfil() {
