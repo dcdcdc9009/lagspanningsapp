@@ -5623,6 +5623,26 @@ const HJALP_MOMENT = [
     'Nytt konto: klicka <strong>Ny användare</strong>, fyll i uppgifter och välj roll (admin, beredare eller UE).',
     'Byta någons lösenord: öppna användaren och skriv ett nytt lösenord (lämna tomt för att behålla det gamla).',
     'Kryssa i <strong>Får hantera artiklar</strong> om personen ska kunna redigera material.' ] },
+  { ikon: '🧭', titel: 'Ruttplanering: lägg till tekniker och ärendetyper', steg: [
+    'Öppna fliken <strong>Ruttplanering</strong> och klicka på <strong>⚙ Inställningar</strong>.',
+    'Under <strong>Tekniker</strong>: klicka <strong>+ Ny tekniker</strong> och fyll i namn, kompetenser, arbetstider och depå (start-/slutpunkt). Depån anges som latitud/longitud – det är där teknikern börjar och slutar dagen.',
+    'Välj en <strong>färg</strong> – den används för teknikerns rutt och nålar på kartan.',
+    'Under <strong>Ärendetyper</strong>: lägg till typer (t.ex. Mätarbyte) med en standard-servicetid i minuter. Tekniker och ärendetyper delas av alla planerare.' ] },
+  { ikon: '🗺️', titel: 'Ruttplanering: planera en dag (importera → optimera → justera)', steg: [
+    'I <strong>Ruttplanering</strong>: klicka <strong>+ Ny planering</strong>, ge den namn och datum och öppna den.',
+    'Klicka <strong>📥 Importera ärenden</strong> och välj din Excel- eller CSV-fil. Kontrollera den gissade kolumnmappningen, granska valideringen och importera.',
+    'Klicka <strong>⚡ Optimera</strong> – varje tekniker får en körordning med ankomsttider, och rutterna ritas ut på kartan.',
+    'Justera vid behov: <strong>dra</strong> ett ärende till en annan tekniker eller ändra ordningen – tiderna räknas om direkt. Klicka på ett ärende för att visa det på kartan.',
+    'Ärenden som inte fick plats hamnar i <strong>Ej placerade</strong> med orsak.' ] },
+  { ikon: '➕', titel: 'Ruttplanering: lägg till ett ärende för hand (utan Excel)', steg: [
+    'Öppna en planering och klicka <strong>+ Nytt ärende</strong>.',
+    'Fyll i ärendenummer och ärendetyp (servicetiden fylls i automatiskt), samt eventuellt tidsfönster och kompetenskrav.',
+    'Sätt positionen genom att <strong>klicka på kartan</strong> i formuläret, eller skriv latitud/longitud.',
+    'Spara. Du kan redigera (✎) eller ta bort (✕) ett ärende direkt i listan. Kör <strong>⚡ Optimera</strong> igen för att placera in nya ärenden.' ] },
+  { ikon: '🖨️', titel: 'Ruttplanering: skriv ut körlistor till teknikerna', steg: [
+    'Optimera planeringen först.',
+    'Klicka <strong>🖨 Skriv ut körlistor</strong> – du får en utskriftsvänlig sida per tekniker med datum, numrerad stopplista, ankomsttider, servicetid och anteckningar.',
+    'Skriv ut eller spara som PDF och ge till montören.' ] },
 ];
 
 const HJALP_FAQ = [
