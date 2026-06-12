@@ -3067,3 +3067,39 @@ body[data-view="tjallmo"] #app { max-width: none; padding-left: 14px; padding-ri
 @media (max-width: 700px) {
   .rutt-steg-pil { display: none; }
 }
+
+/* Import-wizard */
+.rutt-imp-steg { display: flex; gap: 8px; margin: 4px 0 16px; flex-wrap: wrap; }
+.rutt-imp-flik {
+  font-size: 13px; font-weight: 600;
+  padding: 7px 14px; border-radius: 999px;
+  background: var(--surface-3); color: var(--text-muted);
+}
+.rutt-imp-flik.aktiv { background: var(--cyan); color: #fff; }
+.rutt-imp-flik.klar { background: var(--green-l); color: var(--green); }
+.rutt-drop {
+  display: block; text-align: center;
+  border: 2px dashed var(--border-hi); border-radius: 14px;
+  padding: 40px 20px; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.rutt-drop:hover, .rutt-drop.drag { border-color: var(--cyan); background: var(--surface-2); }
+.rutt-mapp { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.rutt-mapp-rad { display: flex; flex-direction: column; gap: 4px; }
+.rutt-mapp-lbl { font-size: 13px; font-weight: 600; color: var(--text-strong); }
+.rutt-sum { display: flex; gap: 10px; flex-wrap: wrap; }
+.rutt-sum-kort {
+  flex: 1 1 120px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px; text-align: center;
+}
+.rutt-sum-kort.ok   { border-color: var(--green); }
+.rutt-sum-kort.fel  { border-color: var(--red); }
+.rutt-sum-kort.varn { border-color: var(--amber); }
+.rutt-sum-tal { font-size: 26px; font-weight: 800; color: var(--text-strong); }
+.rutt-sum-txt { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.rutt-cell {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px 6px; font-size: 13px; font-family: inherit; background: var(--surface);
+}
+.rutt-cell:focus { outline: none; border-color: var(--cyan); }
+.badge-danger { background: var(--red-l); color: var(--red); }

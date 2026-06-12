@@ -4650,6 +4650,7 @@ async function renderRuttplanering(app) {
     return;
   }
   if (RuttState.vy === 'installningar') return ruttInstallningarVy(app);
+  if (RuttState.vy === 'import' && RuttState.planeringId) return ruttImportVy(app);
   if (RuttState.vy === 'planering' && RuttState.planeringId) return ruttPlaneringVy(app);
   ruttHemVy(app);
 }
@@ -4755,30 +4756,249 @@ async function ruttNyPlanering() {
   });
 }
 
-// ---- Öppnad planering (CP1: skal, import/optimering kommer i nästa steg) ----
+// ---- Öppnad planering: visar importerade ärenden + import-knapp ----
 async function ruttPlaneringVy(app) {
   let p;
   try { p = (await api('GET', `/rutt/planeringar/${RuttState.planeringId}`)).planering; }
   catch (e) { toast(e.message, 'error'); return ruttGaTill('hem'); }
   RuttState.planering = p;
   const arenden = p.arenden || [];
+  const fonster = a => (a.fonster_fran || a.fonster_till) ? `${a.fonster_fran || '…'}–${a.fonster_till || '…'}` : '–';
   app.innerHTML = `
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" id="ruttTillbaka">← Mina planeringar</button>
       <h1 class="page-title" style="margin:0">${escHtml(p.namn)}</h1>
       <span class="text-muted">${escHtml(p.datum || '')}</span>
       ${ruttStatusBadge(p.status)}
+      <span style="flex:1"></span>
+      <button class="btn ${arenden.length ? 'btn-secondary' : 'btn-navy'}" id="ruttImportera">
+        ${arenden.length ? '↻ Importera om' : '📥 Importera ärenden'}</button>
     </div>
-    <div class="card" style="margin-top:14px">
-      <div class="card-body" style="padding:40px;text-align:center;color:var(--text-muted)">
-        <div style="font-size:34px;margin-bottom:10px">📥</div>
-        <div style="font-size:16px;color:var(--text);font-weight:600;margin-bottom:6px">
-          ${arenden.length ? `${arenden.length} ärenden i planeringen` : 'Inga ärenden ännu'}
+    ${arenden.length ? `
+      <div class="card" style="margin-top:14px">
+        <div class="card-header"><span class="card-title">${arenden.length} ärenden</span></div>
+        <div class="card-body" style="padding:0;overflow-x:auto">
+          <table class="rutt-tabell" style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="text-align:left;padding:10px 14px">Ärende</th>
+              <th style="text-align:left;padding:10px 14px">Typ</th>
+              <th style="text-align:left;padding:10px 14px">Koordinat</th>
+              <th style="text-align:left;padding:10px 14px">Servicetid</th>
+              <th style="text-align:left;padding:10px 14px">Tidsfönster</th>
+              <th style="text-align:left;padding:10px 14px">Anteckning</th>
+            </tr></thead>
+            <tbody>${arenden.map(a => `
+              <tr style="border-top:1px solid var(--border)">
+                <td style="padding:10px 14px;font-weight:600">${escHtml(a.etikett)}</td>
+                <td style="padding:10px 14px">${escHtml(a.arendetyp || '–')}</td>
+                <td style="padding:10px 14px">${a.lat != null ? `${Number(a.lat).toFixed(5)}, ${Number(a.lon).toFixed(5)}` : '–'}</td>
+                <td style="padding:10px 14px">${a.servicetid_min != null ? a.servicetid_min + ' min' : '–'}</td>
+                <td style="padding:10px 14px">${fonster(a)}</td>
+                <td style="padding:10px 14px">${escHtml(a.anteckning || '')}</td>
+              </tr>`).join('')}</tbody>
+          </table>
         </div>
-        Importfunktionen (Excel/CSV → mappning → validering) byggs i nästa steg.
       </div>
-    </div>`;
+      <p class="text-muted text-sm" style="margin-top:10px">Nästa steg: restider och optimering av körordningar per tekniker.</p>
+    ` : `
+      <div class="card" style="margin-top:14px">
+        <div class="card-body" style="padding:46px;text-align:center;color:var(--text-muted)">
+          <div style="font-size:34px;margin-bottom:10px">📥</div>
+          <div style="font-size:16px;color:var(--text);font-weight:600;margin-bottom:6px">Inga ärenden ännu</div>
+          Importera dagens ärenden från en Excel- eller CSV-fil för att komma igång.
+        </div>
+      </div>`}`;
   document.getElementById('ruttTillbaka').addEventListener('click', () => ruttGaTill('hem'));
+  document.getElementById('ruttImportera').addEventListener('click', () => {
+    RuttState.import = { steg: 1, headers: [], rader: [], mappning: {}, falt: [], validering: null, profilnamn: '', harArenden: arenden.length };
+    ruttGaTill('import', RuttState.planeringId);
+  });
+}
+
+// ---- Importwizard: fil → mappning → validering → bekräfta ----
+function ruttImportVy(app) {
+  const S = RuttState.import || (RuttState.import = { steg: 1, headers: [], rader: [], mappning: {}, falt: [], validering: null, profilnamn: '', harArenden: 0 });
+  const steg = S.steg;
+  app.innerHTML = `
+    <div class="page-header" style="display:flex;align-items:center;gap:12px">
+      <button class="btn btn-outline btn-sm" id="ruttImpAvbryt">← Avbryt</button>
+      <h1 class="page-title" style="margin:0">Importera ärenden</h1>
+    </div>
+    <div class="rutt-imp-steg">
+      ${['1 Välj fil', '2 Mappa kolumner', '3 Granska & importera'].map((t, i) =>
+        `<span class="rutt-imp-flik${steg === i + 1 ? ' aktiv' : ''}${steg > i + 1 ? ' klar' : ''}">${t}</span>`).join('')}
+    </div>
+    <div id="ruttImpInnehall"></div>`;
+  document.getElementById('ruttImpAvbryt').addEventListener('click', () => ruttGaTill('planering', RuttState.planeringId));
+  const c = document.getElementById('ruttImpInnehall');
+  if (steg === 1) ruttImpSteg1(c);
+  else if (steg === 2) ruttImpSteg2(c);
+  else ruttImpSteg3(c);
+}
+
+function ruttImpSteg1(c) {
+  c.innerHTML = `
+    <div class="card"><div class="card-body">
+      <label class="rutt-drop" id="ruttDrop">
+        <div style="font-size:40px">📄</div>
+        <div style="font-weight:600;margin-top:6px">Välj eller släpp en Excel- eller CSV-fil</div>
+        <div class="text-muted text-sm" style="margin-top:4px">.xlsx eller .csv – första bladet läses in</div>
+        <input type="file" id="ruttFil" accept=".xlsx,.xls,.csv" hidden>
+      </label>
+      <div id="ruttFilFel" class="text-sm" style="color:var(--red);margin-top:10px"></div>
+    </div></div>`;
+  const inp = document.getElementById('ruttFil');
+  const drop = document.getElementById('ruttDrop');
+  drop.addEventListener('click', () => inp.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); if (e.dataTransfer.files[0]) ruttLasFil(e.dataTransfer.files[0]); });
+  inp.addEventListener('change', () => { if (inp.files[0]) ruttLasFil(inp.files[0]); });
+}
+
+async function ruttLasFil(file) {
+  const felEl = document.getElementById('ruttFilFel');
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rader = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+    if (!rader.length) { if (felEl) felEl.textContent = 'Filen verkar tom eller saknar datarader.'; return; }
+    const headerRad = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] || [];
+    const headers = headerRad.map(h => String(h).trim()).filter(Boolean);
+    RuttState.import.headers = headers;
+    RuttState.import.rader = rader;
+    const r = await api('POST', '/rutt/import/forhandsvisa', { headers, rader: rader.slice(0, 20) });
+    RuttState.import.mappning = r.mappning || {};
+    RuttState.import.falt = r.falt || [];
+    RuttState.import.profilnamn = r.profil_namn || `Profil (${headers.length} kolumner)`;
+    RuttState.import.steg = 2;
+    renderRuttplanering(document.getElementById('app'));
+  } catch (e) {
+    if (felEl) felEl.textContent = 'Kunde inte läsa filen: ' + (e.message || 'okänt fel');
+  }
+}
+
+function ruttImpSteg2(c) {
+  const S = RuttState.import;
+  const opts = (vald) => `<option value="">(ingen)</option>` +
+    S.headers.map(h => `<option value="${escHtml(h)}" ${vald === h ? 'selected' : ''}>${escHtml(h)}</option>`).join('');
+  c.innerHTML = `
+    <div class="card"><div class="card-body">
+      <p class="text-sm" style="margin-top:0;color:var(--text-muted)">Kontrollera att kolumnerna mappas rätt. Vi har gissat utifrån rubrikerna.</p>
+      <div class="rutt-mapp">
+        ${S.falt.map(f => `
+          <div class="rutt-mapp-rad">
+            <label class="rutt-mapp-lbl">${escHtml(f.etikett)}${(f.nyckel === 'lat' || f.nyckel === 'lon') ? ' <span class="req">*</span>' : ''}</label>
+            <select class="form-control rutt-mapp-sel" data-falt="${f.nyckel}">${opts(S.mappning[f.nyckel] || '')}</select>
+          </div>`).join('')}
+      </div>
+    </div></div>
+    <div class="card" style="margin-top:14px"><div class="card-header"><span class="card-title">Förhandsvisning (första 10 raderna)</span></div>
+      <div class="card-body" style="padding:0;overflow-x:auto">
+        <table class="rutt-tabell" style="width:100%;border-collapse:collapse"><thead><tr>
+          ${S.headers.map(h => `<th style="text-align:left;padding:8px 12px;white-space:nowrap">${escHtml(h)}</th>`).join('')}
+        </tr></thead><tbody>
+          ${S.rader.slice(0, 10).map(row => `<tr style="border-top:1px solid var(--border)">
+            ${S.headers.map(h => `<td style="padding:8px 12px;white-space:nowrap">${escHtml(String(row[h] ?? ''))}</td>`).join('')}
+          </tr>`).join('')}
+        </tbody></table>
+      </div></div>
+    <div style="margin-top:14px;display:flex;gap:10px">
+      <button class="btn btn-secondary" id="ruttMappTillbaka">← Byt fil</button>
+      <button class="btn btn-navy" id="ruttMappNasta">Validera →</button>
+    </div>`;
+  c.querySelectorAll('.rutt-mapp-sel').forEach(sel => sel.addEventListener('change', () => {
+    S.mappning[sel.dataset.falt] = sel.value || null;
+  }));
+  document.getElementById('ruttMappTillbaka').addEventListener('click', () => { S.steg = 1; renderRuttplanering(document.getElementById('app')); });
+  document.getElementById('ruttMappNasta').addEventListener('click', async () => {
+    if (!S.mappning.lat || !S.mappning.lon) { toast('Du måste mappa både latitud och longitud.', 'error'); return; }
+    try {
+      const r = await api('POST', '/rutt/import/validera', { mappning: S.mappning, rader: S.rader });
+      S.validering = r; S.steg = 3;
+      renderRuttplanering(document.getElementById('app'));
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+function ruttImpSteg3(c) {
+  const S = RuttState.import;
+  const v = S.validering;
+  const sm = v.sammanfattning;
+  const statusBadge = s => ({ ok: '<span class="badge badge-klart">OK</span>', varning: '<span class="badge badge-utkast">Varning</span>', fel: '<span class="badge badge-danger">Fel</span>' }[s] || s);
+  c.innerHTML = `
+    <div class="rutt-sum">
+      <div class="rutt-sum-kort"><div class="rutt-sum-tal">${sm.totalt}</div><div class="rutt-sum-txt">inlästa rader</div></div>
+      <div class="rutt-sum-kort ok"><div class="rutt-sum-tal">${sm.ok}</div><div class="rutt-sum-txt">klara</div></div>
+      <div class="rutt-sum-kort fel"><div class="rutt-sum-tal">${sm.saknar_koordinat}</div><div class="rutt-sum-txt">saknar koordinat</div></div>
+      <div class="rutt-sum-kort varn"><div class="rutt-sum-tal">${sm.tidsfonster_fel}</div><div class="rutt-sum-txt">tidsfönster-fel</div></div>
+      ${sm.sweref_antal ? `<div class="rutt-sum-kort"><div class="rutt-sum-tal">${sm.sweref_antal}</div><div class="rutt-sum-txt">SWEREF→WGS84</div></div>` : ''}
+    </div>
+    <div class="card" style="margin-top:14px"><div class="card-body" style="padding:0;overflow-x:auto">
+      <table class="rutt-tabell" style="width:100%;border-collapse:collapse"><thead><tr>
+        <th style="padding:9px 12px">Med</th>
+        <th style="text-align:left;padding:9px 12px">Ärende</th>
+        <th style="text-align:left;padding:9px 12px">Status</th>
+        <th style="text-align:left;padding:9px 12px">Lat</th>
+        <th style="text-align:left;padding:9px 12px">Lon</th>
+        <th style="text-align:left;padding:9px 12px">Typ</th>
+        <th style="text-align:left;padding:9px 12px">Min</th>
+        <th style="text-align:left;padding:9px 12px">Från</th>
+        <th style="text-align:left;padding:9px 12px">Till</th>
+        <th style="text-align:left;padding:9px 12px">Anmärkning</th>
+      </tr></thead><tbody>
+        ${v.rader.map((r, i) => `<tr class="rutt-vrad" data-i="${i}" style="border-top:1px solid var(--border)">
+          <td style="padding:6px 12px;text-align:center"><input type="checkbox" class="rutt-inkl" data-i="${i}" ${r.inkludera ? 'checked' : ''}></td>
+          <td style="padding:6px 12px;font-weight:600">${escHtml(r.etikett)}</td>
+          <td style="padding:6px 12px">${statusBadge(r.status)}</td>
+          <td style="padding:6px 12px"><input class="rutt-cell" data-i="${i}" data-f="lat" value="${r.lat ?? ''}" style="width:84px"></td>
+          <td style="padding:6px 12px"><input class="rutt-cell" data-i="${i}" data-f="lon" value="${r.lon ?? ''}" style="width:84px"></td>
+          <td style="padding:6px 12px">${escHtml(r.arendetyp || '–')}</td>
+          <td style="padding:6px 12px"><input class="rutt-cell" data-i="${i}" data-f="servicetid_min" value="${r.servicetid_min ?? ''}" style="width:52px"></td>
+          <td style="padding:6px 12px"><input class="rutt-cell" data-i="${i}" data-f="fonster_fran" value="${r.fonster_fran ?? ''}" style="width:60px" placeholder="HH:MM"></td>
+          <td style="padding:6px 12px"><input class="rutt-cell" data-i="${i}" data-f="fonster_till" value="${r.fonster_till ?? ''}" style="width:60px" placeholder="HH:MM"></td>
+          <td style="padding:6px 12px;color:var(--text-muted);font-size:12px">${escHtml((r.meddelanden || []).join('; '))}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div></div>
+    <div class="card" style="margin-top:14px"><div class="card-body" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <label class="form-label" style="margin:0">Spara mappning som profil:</label>
+      <input id="ruttProfilNamn" class="form-control" style="max-width:240px" value="${escHtml(S.profilnamn)}">
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary" id="ruttValTillbaka">← Mappning</button>
+      <button class="btn btn-navy" id="ruttImportKor">Importera <span id="ruttImpAntal"></span> ärenden</button>
+    </div></div>
+    ${S.harArenden ? `<p class="text-sm" style="color:var(--amber);margin-top:8px">⚠ Planeringen har redan ärenden – importen ersätter dem.</p>` : ''}`;
+
+  const raknaInkl = () => {
+    const n = v.rader.filter(r => r.inkludera).length;
+    const el = document.getElementById('ruttImpAntal'); if (el) el.textContent = n;
+  };
+  raknaInkl();
+  c.querySelectorAll('.rutt-inkl').forEach(ch => ch.addEventListener('change', () => {
+    v.rader[ch.dataset.i].inkludera = ch.checked; raknaInkl();
+  }));
+  c.querySelectorAll('.rutt-cell').forEach(inp => inp.addEventListener('change', () => {
+    const r = v.rader[inp.dataset.i], f = inp.dataset.f;
+    r[f] = inp.value.trim() === '' ? null : inp.value.trim();
+  }));
+  document.getElementById('ruttValTillbaka').addEventListener('click', () => { S.steg = 2; renderRuttplanering(document.getElementById('app')); });
+  document.getElementById('ruttImportKor').addEventListener('click', async () => {
+    const inkluderade = v.rader.filter(r => r.inkludera);
+    if (!inkluderade.length) { toast('Inga ärenden valda att importera.', 'error'); return; }
+    try {
+      const r = await api('POST', `/rutt/planeringar/${RuttState.planeringId}/import/bekrafta`, {
+        arenden: v.rader, headers: S.headers, mappning: S.mappning,
+        profilnamn: document.getElementById('ruttProfilNamn').value.trim(),
+      });
+      let msg = `${r.infogade} ärenden importerade`;
+      if (r.hoppade && r.hoppade.length) msg += `, ${r.hoppade.length} hoppades över`;
+      toast(msg, 'success');
+      RuttState.import = null;
+      ruttGaTill('planering', RuttState.planeringId);
+    } catch (e) { toast(e.message, 'error'); }
+  });
 }
 
 // ---- Inställningar: Tekniker- och Ärendetyp-register ----

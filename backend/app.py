@@ -5,6 +5,7 @@ from functools import wraps
 from flask import Flask, jsonify, request, session, send_from_directory, Response
 from database import get_db, init_db, DB_PATH
 from models import rows_to_list, row_to_dict, nu, nasta_projektnummer
+from ruttimport import gissa_mappning, validera_rader, rubrik_signatur, IMPORT_FALT
 from mall_berakning import berakna
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend')
@@ -2675,6 +2676,124 @@ def rutt_ta_bort_planering(pid):
         conn.execute("DELETE FROM rutt_planering WHERE id=?", (pid,))
         conn.commit()
     return jsonify({'meddelande': 'Planering borttagen.'})
+
+
+# ---- Import: förhandsvisning, validering, bekräftelse ----
+def _rutt_profiler(conn, uid):
+    rader = rows_to_list(conn.execute(
+        "SELECT * FROM rutt_importprofil WHERE agare=? ORDER BY uppdaterad DESC", (uid,)).fetchall())
+    for p in rader:
+        try:
+            p['mappning'] = json.loads(p['mappning']) if p.get('mappning') else {}
+        except (ValueError, TypeError):
+            p['mappning'] = {}
+    return rader
+
+
+@app.get('/api/rutt/importprofiler')
+def rutt_importprofiler():
+    uid = _rutt_uid()
+    if not uid:
+        return jsonify({'profiler': []})
+    with get_db() as conn:
+        return jsonify({'profiler': _rutt_profiler(conn, uid)})
+
+
+@app.post('/api/rutt/import/forhandsvisa')
+def rutt_import_forhandsvisa():
+    d = request.get_json(silent=True) or {}
+    headers = d.get('headers') or []
+    if not headers:
+        return fel('Filen saknar kolumnrubriker.')
+    uid = _rutt_uid()
+    profiler = []
+    if uid:
+        with get_db() as conn:
+            profiler = _rutt_profiler(conn, uid)
+    mappning, profilnamn = gissa_mappning(headers, profiler)
+    return jsonify({
+        'mappning': mappning,
+        'falt': [{'nyckel': k, 'etikett': e} for k, e in IMPORT_FALT],
+        'headers': headers,
+        'profil_namn': profilnamn,
+    })
+
+
+@app.post('/api/rutt/import/validera')
+def rutt_import_validera():
+    d = request.get_json(silent=True) or {}
+    rader = d.get('rader') or []
+    mappning = d.get('mappning') or {}
+    if not isinstance(rader, list):
+        return fel('Ogiltiga rader.')
+    with get_db() as conn:
+        typer = rows_to_list(conn.execute(
+            "SELECT namn, servicetid_min FROM rutt_arendetyp").fetchall())
+    return jsonify(validera_rader(rader, mappning, typer))
+
+
+@app.post('/api/rutt/planeringar/<int:pid>/import/bekrafta')
+def rutt_import_bekrafta(pid):
+    uid = _rutt_uid()
+    d = request.get_json(silent=True) or {}
+    arenden = d.get('arenden') or []
+    with get_db() as conn:
+        p = conn.execute("SELECT * FROM rutt_planering WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return fel('Planeringen hittades inte.', 404)
+        if p['agare'] != uid:
+            return fel('Du har inte åtkomst till den här planeringen.', 403)
+
+        # Ersätt befintliga ärenden i planeringen (import = dagens ärenden)
+        conn.execute("DELETE FROM rutt_arende WHERE planering_id=?", (pid,))
+        infogade, hoppade = 0, []
+        for a in arenden:
+            if not a.get('inkludera', True):
+                continue
+            lat, lon = _num(a.get('lat')), _num(a.get('lon'))
+            if lat is None or lon is None:
+                hoppade.append({'etikett': a.get('etikett') or '?', 'orsak': 'saknar koordinat'})
+                continue
+            st = a.get('servicetid_min')
+            try:
+                st = int(st) if st not in (None, '') else None
+            except (TypeError, ValueError):
+                st = None
+            conn.execute(
+                "INSERT INTO rutt_arende "
+                "(planering_id,etikett,lat,lon,arendetyp,servicetid_min,fonster_fran,fonster_till,"
+                "kompetenskrav,anteckning,skapad) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (pid, (a.get('etikett') or '').strip(), lat, lon,
+                 (a.get('arendetyp') or '').strip() or None, st,
+                 (a.get('fonster_fran') or None), (a.get('fonster_till') or None),
+                 (a.get('kompetenskrav') or '').strip() or None,
+                 (a.get('anteckning') or '').strip() or None, nu()))
+            infogade += 1
+
+        # Spara/uppdatera importprofil (per användare, per rubrik-signatur)
+        headers = d.get('headers') or []
+        mappning = d.get('mappning') or {}
+        profilnamn = (d.get('profilnamn') or '').strip()
+        if uid and headers and mappning and profilnamn:
+            sig = rubrik_signatur(headers)
+            bef = conn.execute(
+                "SELECT id FROM rutt_importprofil WHERE agare=? AND rubrik_signatur=?",
+                (uid, sig)).fetchone()
+            if bef:
+                conn.execute(
+                    "UPDATE rutt_importprofil SET namn=?, mappning=?, uppdaterad=? WHERE id=?",
+                    (profilnamn, json.dumps(mappning), nu(), bef['id']))
+            else:
+                conn.execute(
+                    "INSERT INTO rutt_importprofil (agare,namn,rubrik_signatur,mappning,skapad,uppdaterad) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (uid, profilnamn, sig, json.dumps(mappning), nu(), nu()))
+
+        conn.execute("UPDATE rutt_planering SET uppdaterad=? WHERE id=?", (nu(), pid))
+        conn.commit()
+        arend = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_arende WHERE planering_id=? ORDER BY id", (pid,)).fetchall())
+    return jsonify({'infogade': infogade, 'hoppade': hoppade, 'arenden': arend})
 
 
 # ============================================================
