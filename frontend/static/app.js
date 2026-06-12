@@ -327,11 +327,11 @@ async function renderProjekt(app) {
         ${anslKpiHtml('Avg. ledtid',anslAvgLT,`dagar (${anslDoneCount} avslutade)`,undefined,'var(--green)')}
       </div>
       <div style="display:grid;grid-template-columns:1fr min(360px,40%);gap:16px;width:100%;position:relative;z-index:1">
-        <div style="background:rgba(124,58,237,.05);border-radius:10px;border:1px solid rgba(124,58,237,.12);backdrop-filter:blur(4px);padding:14px 16px">
+        <div style="background:rgba(124,58,237,.05);border-radius:10px;border:1px solid rgba(124,58,237,.12);padding:14px 16px">
           <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(124,58,237,.6);margin-bottom:12px">Nya ärenden / månad</div>
           ${anslBarChartHtml(anslProjekt)}
         </div>
-        <div style="background:rgba(124,58,237,.05);border-radius:10px;border:1px solid rgba(124,58,237,.15);backdrop-filter:blur(6px)">
+        <div style="background:rgba(124,58,237,.05);border-radius:10px;border:1px solid rgba(124,58,237,.15)">
           <div style="padding:11px 16px;border-bottom:1px solid rgba(124,58,237,.10);display:flex;align-items:center;justify-content:space-between">
             <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(124,58,237,.7)">Kommande montagestart</span>
             <span style="font-size:10px;font-family:monospace;color:rgba(42,36,64,.4)">${kommandeMontage.length} st / 30 dagar</span>
