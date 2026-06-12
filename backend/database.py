@@ -1260,6 +1260,88 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','38')")
         conn.commit()
 
+    if v < 39:
+        # v39: Ruttplanering – fältserviceplanering / ruttoptimering.
+        conn.executescript(_RUTT_SCHEMA)
+        if conn.execute("SELECT COUNT(*) FROM rutt_arendetyp").fetchone()[0] == 0:
+            for namn, mins in (('Tillkoppling', 30), ('Frånkoppling', 20),
+                               ('Mätarbyte', 25), ('Felavhjälpning', 45),
+                               ('Besiktning', 30), ('Övrigt', 30)):
+                conn.execute(
+                    "INSERT OR IGNORE INTO rutt_arendetyp (namn,servicetid_min,skapad) "
+                    "VALUES (?,?,datetime('now'))", (namn, mins))
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','39')")
+        conn.commit()
+
+
+# Schema för ruttplanering – delas av _migrera (v39) och _create_tables (färska databaser)
+_RUTT_SCHEMA = """
+    CREATE TABLE IF NOT EXISTS rutt_tekniker (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        namn            TEXT NOT NULL DEFAULT '',
+        kompetenser     TEXT NOT NULL DEFAULT '',
+        arbetstid_start TEXT NOT NULL DEFAULT '07:00',
+        arbetstid_slut  TEXT NOT NULL DEFAULT '16:00',
+        start_lat REAL, start_lon REAL,
+        slut_lat  REAL, slut_lon  REAL,
+        farg            TEXT,
+        aktiv           INTEGER NOT NULL DEFAULT 1,
+        skapad          TEXT
+    );
+    CREATE TABLE IF NOT EXISTS rutt_arendetyp (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        namn           TEXT NOT NULL UNIQUE,
+        servicetid_min INTEGER NOT NULL DEFAULT 30,
+        skapad         TEXT
+    );
+    CREATE TABLE IF NOT EXISTS rutt_planering (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        agare     INTEGER NOT NULL,
+        namn      TEXT NOT NULL DEFAULT '',
+        datum     TEXT,
+        status    TEXT NOT NULL DEFAULT 'utkast',
+        skapad    TEXT,
+        uppdaterad TEXT
+    );
+    CREATE TABLE IF NOT EXISTS rutt_arende (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        planering_id       INTEGER NOT NULL,
+        etikett            TEXT NOT NULL DEFAULT '',
+        lat REAL, lon REAL,
+        arendetyp          TEXT,
+        servicetid_min     INTEGER,
+        fonster_fran       TEXT,
+        fonster_till       TEXT,
+        kompetenskrav      TEXT,
+        anteckning         TEXT,
+        tilldelad_tekniker INTEGER,
+        ordning            INTEGER,
+        ankomst            TEXT,
+        ej_placerad_orsak  TEXT,
+        skapad             TEXT
+    );
+    CREATE TABLE IF NOT EXISTS rutt_restidscache (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_lat REAL, from_lon REAL, to_lat REAL, to_lon REAL,
+        restid_sekunder INTEGER,
+        avstand_meter   INTEGER,
+        kalla           TEXT,
+        skapad          TEXT,
+        UNIQUE(from_lat, from_lon, to_lat, to_lon)
+    );
+    CREATE TABLE IF NOT EXISTS rutt_importprofil (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        agare           INTEGER NOT NULL,
+        namn            TEXT NOT NULL DEFAULT '',
+        rubrik_signatur TEXT,
+        mappning        TEXT,
+        skapad          TEXT,
+        uppdaterad      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_rutt_arende_plan ON rutt_arende(planering_id);
+    CREATE INDEX IF NOT EXISTS idx_rutt_planering_agare ON rutt_planering(agare);
+"""
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -1581,6 +1663,8 @@ def _create_tables(conn):
             uppdaterad   DATETIME NOT NULL
         );
     """)
+    # Ruttplanering (v39) – samma schema som migrationen, för färska databaser
+    conn.executescript(_RUTT_SCHEMA)
 
 
 def _is_tom(conn):

@@ -3005,3 +3005,65 @@ body[data-view="tjallmo"] #app { max-width: none; padding-left: 14px; padding-ri
   .hjalp-taggar { display: none; }
   .hjalp-a { padding-left: 18px; }
 }
+
+/* ================================================================
+   RUTTPLANERING
+   ================================================================ */
+.rutt-steg {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.rutt-steg-kort {
+  flex: 1 1 200px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.rutt-steg-nr {
+  flex-shrink: 0;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--cyan);
+  color: #fff;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.rutt-steg-titel { font-weight: 700; color: var(--text-strong); }
+.rutt-steg-txt { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
+.rutt-steg-pil { display: flex; align-items: center; color: var(--gray-400); font-size: 20px; }
+.rutt-tabell thead th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--text-muted);
+  font-weight: 700;
+  background: var(--surface-2);
+}
+.rutt-tabell tbody tr:hover { background: var(--surface-2); }
+.rutt-tabort { color: var(--red); }
+.rutt-farg-prick {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.rutt-fargval { display: flex; gap: 8px; flex-wrap: wrap; }
+.rutt-farg-knapp {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform .1s;
+}
+.rutt-farg-knapp:hover { transform: scale(1.12); }
+.rutt-farg-knapp.vald { border-color: var(--text-strong); box-shadow: 0 0 0 2px #fff inset; }
+@media (max-width: 700px) {
+  .rutt-steg-pil { display: none; }
+}

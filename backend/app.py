@@ -2443,6 +2443,241 @@ def sla_ihop_projekt():
 
 
 # ============================================================
+# RUTTPLANERING (v39) – fältserviceplanering / ruttoptimering
+# ============================================================
+
+def _rutt_uid():
+    """Inloggad användares id (None vid delat app-lösenord utan personligt konto)."""
+    return session.get('user_id')
+
+
+def _komp_str(v):
+    """Normalisera kompetenser till komma-separerad sträng."""
+    if isinstance(v, list):
+        return ', '.join(str(x).strip() for x in v if str(x).strip())
+    return (v or '').strip()
+
+
+# ---- Tekniker (delat register, alla planerare delar samma tekniker) ----
+@app.get('/api/rutt/tekniker')
+def rutt_lista_tekniker():
+    with get_db() as conn:
+        rader = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_tekniker ORDER BY aktiv DESC, namn").fetchall())
+    return jsonify({'tekniker': rader})
+
+
+@app.post('/api/rutt/tekniker')
+def rutt_skapa_tekniker():
+    d = request.get_json(silent=True) or {}
+    namn = (d.get('namn') or '').strip()
+    if not namn:
+        return fel('Teknikerns namn är obligatoriskt.')
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO rutt_tekniker "
+            "(namn,kompetenser,arbetstid_start,arbetstid_slut,start_lat,start_lon,slut_lat,slut_lon,farg,aktiv,skapad) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (namn, _komp_str(d.get('kompetenser')),
+             d.get('arbetstid_start') or '07:00', d.get('arbetstid_slut') or '16:00',
+             _num(d.get('start_lat')), _num(d.get('start_lon')),
+             _num(d.get('slut_lat')), _num(d.get('slut_lon')),
+             (d.get('farg') or None), 1 if d.get('aktiv', True) else 0, nu()))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM rutt_tekniker WHERE id=?", (cur.lastrowid,)).fetchone())
+    return jsonify({'tekniker': rad}), 201
+
+
+@app.put('/api/rutt/tekniker/<int:tid>')
+def rutt_uppdatera_tekniker(tid):
+    d = request.get_json(silent=True) or {}
+    with get_db() as conn:
+        bef = conn.execute("SELECT * FROM rutt_tekniker WHERE id=?", (tid,)).fetchone()
+        if not bef:
+            return fel('Teknikern hittades inte.', 404)
+        # default samma slutpunkt som startpunkt om slut saknas
+        start_lat = _num(d.get('start_lat', bef['start_lat']))
+        start_lon = _num(d.get('start_lon', bef['start_lon']))
+        slut_lat = _num(d.get('slut_lat', bef['slut_lat']))
+        slut_lon = _num(d.get('slut_lon', bef['slut_lon']))
+        if slut_lat is None and slut_lon is None:
+            slut_lat, slut_lon = start_lat, start_lon
+        conn.execute(
+            "UPDATE rutt_tekniker SET namn=?, kompetenser=?, arbetstid_start=?, arbetstid_slut=?, "
+            "start_lat=?, start_lon=?, slut_lat=?, slut_lon=?, farg=?, aktiv=? WHERE id=?",
+            ((d.get('namn', bef['namn']) or '').strip(),
+             _komp_str(d.get('kompetenser', bef['kompetenser'])),
+             d.get('arbetstid_start', bef['arbetstid_start']) or '07:00',
+             d.get('arbetstid_slut', bef['arbetstid_slut']) or '16:00',
+             start_lat, start_lon, slut_lat, slut_lon,
+             (d.get('farg', bef['farg']) or None),
+             1 if d.get('aktiv', bef['aktiv']) else 0, tid))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM rutt_tekniker WHERE id=?", (tid,)).fetchone())
+    return jsonify({'tekniker': rad})
+
+
+@app.delete('/api/rutt/tekniker/<int:tid>')
+def rutt_ta_bort_tekniker(tid):
+    with get_db() as conn:
+        if not conn.execute("SELECT 1 FROM rutt_tekniker WHERE id=?", (tid,)).fetchone():
+            return fel('Teknikern hittades inte.', 404)
+        conn.execute("DELETE FROM rutt_tekniker WHERE id=?", (tid,))
+        conn.commit()
+    return jsonify({'meddelande': 'Tekniker borttagen.'})
+
+
+# ---- Ärendetyper (delat register, namn + default servicetid) ----
+@app.get('/api/rutt/arendetyper')
+def rutt_lista_arendetyper():
+    with get_db() as conn:
+        rader = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_arendetyp ORDER BY namn").fetchall())
+    return jsonify({'arendetyper': rader})
+
+
+@app.post('/api/rutt/arendetyper')
+def rutt_skapa_arendetyp():
+    d = request.get_json(silent=True) or {}
+    namn = (d.get('namn') or '').strip()
+    if not namn:
+        return fel('Ärendetypens namn är obligatoriskt.')
+    try:
+        mins = int(d.get('servicetid_min') or 30)
+    except (TypeError, ValueError):
+        return fel('Servicetid måste vara ett heltal (minuter).')
+    with get_db() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO rutt_arendetyp (namn,servicetid_min,skapad) VALUES (?,?,?)",
+                (namn, mins, nu()))
+            conn.commit()
+        except Exception as e:
+            return fel(f'Ärendetypen "{namn}" finns redan.') if 'UNIQUE' in str(e) else fel(str(e))
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM rutt_arendetyp WHERE id=?", (cur.lastrowid,)).fetchone())
+    return jsonify({'arendetyp': rad}), 201
+
+
+@app.put('/api/rutt/arendetyper/<int:aid>')
+def rutt_uppdatera_arendetyp(aid):
+    d = request.get_json(silent=True) or {}
+    with get_db() as conn:
+        bef = conn.execute("SELECT * FROM rutt_arendetyp WHERE id=?", (aid,)).fetchone()
+        if not bef:
+            return fel('Ärendetypen hittades inte.', 404)
+        try:
+            mins = int(d.get('servicetid_min', bef['servicetid_min']))
+        except (TypeError, ValueError):
+            return fel('Servicetid måste vara ett heltal (minuter).')
+        conn.execute("UPDATE rutt_arendetyp SET namn=?, servicetid_min=? WHERE id=?",
+                     ((d.get('namn', bef['namn']) or '').strip(), mins, aid))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM rutt_arendetyp WHERE id=?", (aid,)).fetchone())
+    return jsonify({'arendetyp': rad})
+
+
+@app.delete('/api/rutt/arendetyper/<int:aid>')
+def rutt_ta_bort_arendetyp(aid):
+    with get_db() as conn:
+        if not conn.execute("SELECT 1 FROM rutt_arendetyp WHERE id=?", (aid,)).fetchone():
+            return fel('Ärendetypen hittades inte.', 404)
+        conn.execute("DELETE FROM rutt_arendetyp WHERE id=?", (aid,))
+        conn.commit()
+    return jsonify({'meddelande': 'Ärendetyp borttagen.'})
+
+
+# ---- Planeringar (per användare – historik) ----
+@app.get('/api/rutt/planeringar')
+def rutt_lista_planeringar():
+    uid = _rutt_uid()
+    if not uid:
+        return jsonify({'planeringar': []})
+    with get_db() as conn:
+        rader = rows_to_list(conn.execute(
+            "SELECT p.*, "
+            "(SELECT COUNT(*) FROM rutt_arende a WHERE a.planering_id=p.id) AS antal_arenden "
+            "FROM rutt_planering p WHERE agare=? ORDER BY COALESCE(datum,'') DESC, id DESC",
+            (uid,)).fetchall())
+    return jsonify({'planeringar': rader})
+
+
+@app.post('/api/rutt/planeringar')
+def rutt_skapa_planering():
+    uid = _rutt_uid()
+    if not uid:
+        return fel('Du måste vara inloggad med ett personligt konto för att skapa planeringar.', 403)
+    d = request.get_json(silent=True) or {}
+    namn = (d.get('namn') or '').strip() or 'Ny planering'
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO rutt_planering (agare,namn,datum,status,skapad,uppdaterad) "
+            "VALUES (?,?,?,'utkast',?,?)",
+            (uid, namn, (d.get('datum') or None), nu(), nu()))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM rutt_planering WHERE id=?", (cur.lastrowid,)).fetchone())
+    return jsonify({'planering': rad}), 201
+
+
+@app.get('/api/rutt/planeringar/<int:pid>')
+def rutt_hamta_planering(pid):
+    uid = _rutt_uid()
+    with get_db() as conn:
+        p = conn.execute("SELECT * FROM rutt_planering WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return fel('Planeringen hittades inte.', 404)
+        if p['agare'] != uid:
+            return fel('Du har inte åtkomst till den här planeringen.', 403)
+        arenden = rows_to_list(conn.execute(
+            "SELECT * FROM rutt_arende WHERE planering_id=? "
+            "ORDER BY COALESCE(tilldelad_tekniker,999999), COALESCE(ordning,999999), id",
+            (pid,)).fetchall())
+    res = row_to_dict(p)
+    res['arenden'] = arenden
+    return jsonify({'planering': res})
+
+
+@app.put('/api/rutt/planeringar/<int:pid>')
+def rutt_uppdatera_planering(pid):
+    uid = _rutt_uid()
+    d = request.get_json(silent=True) or {}
+    with get_db() as conn:
+        p = conn.execute("SELECT * FROM rutt_planering WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return fel('Planeringen hittades inte.', 404)
+        if p['agare'] != uid:
+            return fel('Du har inte åtkomst till den här planeringen.', 403)
+        conn.execute(
+            "UPDATE rutt_planering SET namn=?, datum=?, status=?, uppdaterad=? WHERE id=?",
+            ((d.get('namn', p['namn']) or '').strip() or p['namn'],
+             (d.get('datum', p['datum']) or None),
+             d.get('status', p['status']), nu(), pid))
+        conn.commit()
+        rad = row_to_dict(conn.execute(
+            "SELECT * FROM rutt_planering WHERE id=?", (pid,)).fetchone())
+    return jsonify({'planering': rad})
+
+
+@app.delete('/api/rutt/planeringar/<int:pid>')
+def rutt_ta_bort_planering(pid):
+    uid = _rutt_uid()
+    with get_db() as conn:
+        p = conn.execute("SELECT agare FROM rutt_planering WHERE id=?", (pid,)).fetchone()
+        if not p:
+            return fel('Planeringen hittades inte.', 404)
+        if p['agare'] != uid:
+            return fel('Du har inte åtkomst till den här planeringen.', 403)
+        conn.execute("DELETE FROM rutt_arende WHERE planering_id=?", (pid,))
+        conn.execute("DELETE FROM rutt_planering WHERE id=?", (pid,))
+        conn.commit()
+    return jsonify({'meddelande': 'Planering borttagen.'})
+
+
+# ============================================================
 # START
 # ============================================================
 

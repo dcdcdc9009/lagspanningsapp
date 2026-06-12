@@ -113,6 +113,7 @@ function render(view, params = {}) {
     case 'tjallmo':         renderTjallmo(app); break;
     case 'kabeltrummor':    renderKabeltrummor(app); break;
     case 'kontakter':       renderKontakter(app); break;
+    case 'ruttplanering':   renderRuttplanering(app); break;
     case 'karta':           renderKarta(app); break;
     case 'tidplan':         renderTidplan(app); break;
     case 'hjalp':           renderHjalp(app); break;
@@ -4622,6 +4623,325 @@ async function renderKontakter(app) {
 }
 
 // ----------------------------------------------------------------
+// VIEW: RUTTPLANERING (fältserviceplanering / ruttoptimering)
+// ----------------------------------------------------------------
+const RUTT_FARGER = ['#7c3aed','#2563eb','#16a34a','#ea580c','#dc2626','#0891b2','#9333ea','#ca8a04','#db2777','#4f46e5'];
+const RuttState = { vy: 'hem', planeringId: null, tekniker: [], arendetyper: [], planeringar: [], planering: null };
+
+function ruttGaTill(vy, planeringId = null) {
+  RuttState.vy = vy;
+  RuttState.planeringId = planeringId;
+  renderRuttplanering(document.getElementById('app'));
+}
+
+async function renderRuttplanering(app) {
+  app.innerHTML = `<div class="text-muted" style="padding:48px;text-align:center">Laddar ruttplanering…</div>`;
+  try {
+    const [tk, at, pl] = await Promise.all([
+      api('GET', '/rutt/tekniker'),
+      api('GET', '/rutt/arendetyper'),
+      api('GET', '/rutt/planeringar'),
+    ]);
+    RuttState.tekniker     = tk.tekniker || [];
+    RuttState.arendetyper  = at.arendetyper || [];
+    RuttState.planeringar  = pl.planeringar || [];
+  } catch (e) {
+    app.innerHTML = `<div class="card"><div class="card-body">Kunde inte ladda ruttplanering: ${escHtml(e.message)}</div></div>`;
+    return;
+  }
+  if (RuttState.vy === 'installningar') return ruttInstallningarVy(app);
+  if (RuttState.vy === 'planering' && RuttState.planeringId) return ruttPlaneringVy(app);
+  ruttHemVy(app);
+}
+
+// ---- Hem: 3-stegsguide + planeringshistorik ----
+function ruttHemVy(app) {
+  const antalTek = RuttState.tekniker.filter(t => t.aktiv).length;
+  const pl = RuttState.planeringar;
+  app.innerHTML = `
+    <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <h1 class="page-title">Ruttplanering</h1>
+      <button class="btn btn-secondary" id="ruttInst">⚙ Inställningar</button>
+    </div>
+
+    <div class="rutt-steg">
+      <div class="rutt-steg-kort"><span class="rutt-steg-nr">1</span><div><div class="rutt-steg-titel">Importera ärenden</div><div class="rutt-steg-txt">Ladda upp dagens ärenden från Excel eller CSV.</div></div></div>
+      <div class="rutt-steg-pil">→</div>
+      <div class="rutt-steg-kort"><span class="rutt-steg-nr">2</span><div><div class="rutt-steg-titel">Välj tekniker</div><div class="rutt-steg-txt">${antalTek} ${antalTek === 1 ? 'tekniker' : 'tekniker'} i registret.</div></div></div>
+      <div class="rutt-steg-pil">→</div>
+      <div class="rutt-steg-kort"><span class="rutt-steg-nr">3</span><div><div class="rutt-steg-titel">Optimera</div><div class="rutt-steg-txt">Få optimerade körordningar per tekniker.</div></div></div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+        <span class="card-title">Mina planeringar</span>
+        <button class="btn btn-navy btn-sm" id="ruttNy">+ Ny planering</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        ${pl.length ? `
+          <table class="rutt-tabell" style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="text-align:left;padding:11px 16px">Namn</th>
+              <th style="text-align:left;padding:11px 16px">Datum</th>
+              <th style="text-align:left;padding:11px 16px">Ärenden</th>
+              <th style="text-align:left;padding:11px 16px">Status</th>
+              <th style="padding:11px 16px"></th>
+            </tr></thead>
+            <tbody>
+              ${pl.map(p => `
+                <tr class="rutt-rad" data-id="${p.id}" style="border-top:1px solid var(--border);cursor:pointer">
+                  <td style="padding:11px 16px;font-weight:600">${escHtml(p.namn)}</td>
+                  <td style="padding:11px 16px">${escHtml(p.datum || '–')}</td>
+                  <td style="padding:11px 16px">${p.antal_arenden || 0}</td>
+                  <td style="padding:11px 16px">${ruttStatusBadge(p.status)}</td>
+                  <td style="padding:11px 16px;text-align:right;white-space:nowrap">
+                    <button class="btn btn-outline btn-sm" data-oppna="${p.id}">Öppna</button>
+                    <button class="btn btn-outline btn-sm rutt-tabort" data-tabort="${p.id}" title="Ta bort">✕</button>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>` : `
+          <div style="padding:40px;text-align:center;color:var(--text-muted)">
+            <div style="font-size:34px;margin-bottom:8px">🗺️</div>
+            Inga planeringar än. Skapa en med <strong>+ Ny planering</strong>.
+          </div>`}
+      </div>
+    </div>`;
+
+  document.getElementById('ruttInst').addEventListener('click', () => ruttGaTill('installningar'));
+  document.getElementById('ruttNy').addEventListener('click', ruttNyPlanering);
+  app.querySelectorAll('[data-oppna]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation(); ruttGaTill('planering', Number(b.dataset.oppna));
+  }));
+  app.querySelectorAll('.rutt-rad').forEach(r => r.addEventListener('click', () =>
+    ruttGaTill('planering', Number(r.dataset.id))));
+  app.querySelectorAll('[data-tabort]').forEach(b => b.addEventListener('click', async e => {
+    e.stopPropagation();
+    const p = RuttState.planeringar.find(x => x.id == b.dataset.tabort);
+    const ok = await confirm('Ta bort planering', `Ta bort "${p.namn}" och alla dess ärenden?`);
+    if (!ok) return;
+    try { await api('DELETE', `/rutt/planeringar/${p.id}`); toast('Borttagen', 'success'); renderRuttplanering(document.getElementById('app')); }
+    catch (err) { toast(err.message, 'error'); }
+  }));
+}
+
+function ruttStatusBadge(s) {
+  const map = { utkast: ['Utkast', 'badge-utkast'], optimerad: ['Optimerad', 'badge-klart'], klar: ['Klar', 'badge-klart'] };
+  const [txt, cls] = map[s] || [s || 'Utkast', 'badge-utkast'];
+  return `<span class="badge ${cls}">${escHtml(txt)}</span>`;
+}
+
+async function ruttNyPlanering() {
+  const idag = new Date().toISOString().slice(0, 10);
+  Modal.open('Ny planering', `
+    <form id="ruttNyForm">
+      <div class="form-group"><label class="form-label">Namn</label>
+        <input name="namn" class="form-control" value="Planering ${idag}" required></div>
+      <div class="form-group"><label class="form-label">Datum</label>
+        <input name="datum" type="date" class="form-control" value="${idag}"></div>
+    </form>`,
+    `<button class="btn btn-navy" id="ruttNySpara">Skapa</button>
+     <button class="btn btn-secondary" id="ruttNyAvbryt">Avbryt</button>`);
+  document.getElementById('ruttNyAvbryt').addEventListener('click', Modal.close);
+  document.getElementById('ruttNySpara').addEventListener('click', async () => {
+    const f = document.getElementById('ruttNyForm');
+    if (!f.reportValidity()) return;
+    const body = Object.fromEntries(new FormData(f).entries());
+    try {
+      const r = await api('POST', '/rutt/planeringar', body);
+      Modal.close(); toast('Planering skapad', 'success');
+      ruttGaTill('planering', r.planering.id);
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+// ---- Öppnad planering (CP1: skal, import/optimering kommer i nästa steg) ----
+async function ruttPlaneringVy(app) {
+  let p;
+  try { p = (await api('GET', `/rutt/planeringar/${RuttState.planeringId}`)).planering; }
+  catch (e) { toast(e.message, 'error'); return ruttGaTill('hem'); }
+  RuttState.planering = p;
+  const arenden = p.arenden || [];
+  app.innerHTML = `
+    <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" id="ruttTillbaka">← Mina planeringar</button>
+      <h1 class="page-title" style="margin:0">${escHtml(p.namn)}</h1>
+      <span class="text-muted">${escHtml(p.datum || '')}</span>
+      ${ruttStatusBadge(p.status)}
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="card-body" style="padding:40px;text-align:center;color:var(--text-muted)">
+        <div style="font-size:34px;margin-bottom:10px">📥</div>
+        <div style="font-size:16px;color:var(--text);font-weight:600;margin-bottom:6px">
+          ${arenden.length ? `${arenden.length} ärenden i planeringen` : 'Inga ärenden ännu'}
+        </div>
+        Importfunktionen (Excel/CSV → mappning → validering) byggs i nästa steg.
+      </div>
+    </div>`;
+  document.getElementById('ruttTillbaka').addEventListener('click', () => ruttGaTill('hem'));
+}
+
+// ---- Inställningar: Tekniker- och Ärendetyp-register ----
+function ruttInstallningarVy(app) {
+  const tek = RuttState.tekniker, typer = RuttState.arendetyper;
+  app.innerHTML = `
+    <div class="page-header" style="display:flex;align-items:center;gap:12px">
+      <button class="btn btn-outline btn-sm" id="ruttInstTillbaka">← Tillbaka</button>
+      <h1 class="page-title" style="margin:0">Inställningar – Ruttplanering</h1>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+        <span class="card-title">Tekniker</span>
+        <button class="btn btn-navy btn-sm" id="ruttNyTek">+ Ny tekniker</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        ${tek.length ? `<table class="rutt-tabell" style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="text-align:left;padding:10px 16px"></th>
+            <th style="text-align:left;padding:10px 16px">Namn</th>
+            <th style="text-align:left;padding:10px 16px">Kompetenser</th>
+            <th style="text-align:left;padding:10px 16px">Arbetstid</th>
+            <th style="text-align:left;padding:10px 16px">Depå</th>
+            <th style="padding:10px 16px"></th>
+          </tr></thead>
+          <tbody>${tek.map((t, i) => `
+            <tr style="border-top:1px solid var(--border)">
+              <td style="padding:10px 16px"><span class="rutt-farg-prick" style="background:${escHtml(t.farg || RUTT_FARGER[i % RUTT_FARGER.length])}"></span></td>
+              <td style="padding:10px 16px;font-weight:600">${escHtml(t.namn)}${t.aktiv ? '' : ' <span class="text-muted">(inaktiv)</span>'}</td>
+              <td style="padding:10px 16px">${escHtml(t.kompetenser || '–')}</td>
+              <td style="padding:10px 16px">${escHtml(t.arbetstid_start)}–${escHtml(t.arbetstid_slut)}</td>
+              <td style="padding:10px 16px">${(t.start_lat != null && t.start_lon != null) ? `${Number(t.start_lat).toFixed(4)}, ${Number(t.start_lon).toFixed(4)}` : '<span class="text-muted">saknas</span>'}</td>
+              <td style="padding:10px 16px;text-align:right;white-space:nowrap">
+                <button class="btn btn-outline btn-sm" data-tek-red="${t.id}">Redigera</button>
+                <button class="btn btn-outline btn-sm" data-tek-bort="${t.id}">✕</button>
+              </td>
+            </tr>`).join('')}</tbody></table>`
+        : `<div style="padding:30px;text-align:center;color:var(--text-muted)">Inga tekniker än. Lägg till med <strong>+ Ny tekniker</strong>.</div>`}
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+        <span class="card-title">Ärendetyper <span class="text-muted" style="font-weight:400">(default servicetid)</span></span>
+        <button class="btn btn-navy btn-sm" id="ruttNyTyp">+ Ny ärendetyp</button>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table class="rutt-tabell" style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="text-align:left;padding:10px 16px">Ärendetyp</th>
+            <th style="text-align:left;padding:10px 16px">Servicetid</th>
+            <th style="padding:10px 16px"></th>
+          </tr></thead>
+          <tbody>${typer.map(t => `
+            <tr style="border-top:1px solid var(--border)">
+              <td style="padding:10px 16px;font-weight:600">${escHtml(t.namn)}</td>
+              <td style="padding:10px 16px">${t.servicetid_min} min</td>
+              <td style="padding:10px 16px;text-align:right;white-space:nowrap">
+                <button class="btn btn-outline btn-sm" data-typ-red="${t.id}">Redigera</button>
+                <button class="btn btn-outline btn-sm" data-typ-bort="${t.id}">✕</button>
+              </td>
+            </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.getElementById('ruttInstTillbaka').addEventListener('click', () => ruttGaTill('hem'));
+  document.getElementById('ruttNyTek').addEventListener('click', () => ruttTekForm(null));
+  document.getElementById('ruttNyTyp').addEventListener('click', () => ruttTypForm(null));
+  app.querySelectorAll('[data-tek-red]').forEach(b => b.addEventListener('click', () =>
+    ruttTekForm(RuttState.tekniker.find(t => t.id == b.dataset.tekRed))));
+  app.querySelectorAll('[data-typ-red]').forEach(b => b.addEventListener('click', () =>
+    ruttTypForm(RuttState.arendetyper.find(t => t.id == b.dataset.typRed))));
+  app.querySelectorAll('[data-tek-bort]').forEach(b => b.addEventListener('click', async () => {
+    const t = RuttState.tekniker.find(x => x.id == b.dataset.tekBort);
+    if (!await confirm('Ta bort tekniker', `Ta bort "${t.namn}"?`)) return;
+    try { await api('DELETE', `/rutt/tekniker/${t.id}`); toast('Borttagen', 'success'); renderRuttplanering(document.getElementById('app')); }
+    catch (e) { toast(e.message, 'error'); }
+  }));
+  app.querySelectorAll('[data-typ-bort]').forEach(b => b.addEventListener('click', async () => {
+    const t = RuttState.arendetyper.find(x => x.id == b.dataset.typBort);
+    if (!await confirm('Ta bort ärendetyp', `Ta bort "${t.namn}"?`)) return;
+    try { await api('DELETE', `/rutt/arendetyper/${t.id}`); toast('Borttagen', 'success'); renderRuttplanering(document.getElementById('app')); }
+    catch (e) { toast(e.message, 'error'); }
+  }));
+}
+
+function ruttTekForm(t) {
+  Modal.open(t ? `Redigera ${escHtml(t.namn)}` : 'Ny tekniker', `
+    <form id="ruttTekForm">
+      <div class="form-group"><label class="form-label">Namn <span class="req">*</span></label>
+        <input name="namn" class="form-control" value="${escHtml(t?.namn || '')}" required></div>
+      <div class="form-group"><label class="form-label">Kompetenser <span class="text-muted">(komma-separerade)</span></label>
+        <input name="kompetenser" class="form-control" value="${escHtml(t?.kompetenser || '')}" placeholder="t.ex. mätarbyte, kabel"></div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Arbetstid start</label>
+          <input name="arbetstid_start" type="time" class="form-control" value="${escHtml(t?.arbetstid_start || '07:00')}"></div>
+        <div class="form-group"><label class="form-label">Arbetstid slut</label>
+          <input name="arbetstid_slut" type="time" class="form-control" value="${escHtml(t?.arbetstid_slut || '16:00')}"></div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Depå latitud</label>
+          <input name="start_lat" class="form-control" value="${t?.start_lat ?? ''}" placeholder="t.ex. 56.1379"></div>
+        <div class="form-group"><label class="form-label">Depå longitud</label>
+          <input name="start_lon" class="form-control" value="${t?.start_lon ?? ''}" placeholder="t.ex. 13.1300"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Färg på kartan</label>
+        <div class="rutt-fargval" id="ruttFargval">
+          ${RUTT_FARGER.map(f => `<button type="button" class="rutt-farg-knapp${(t?.farg || RUTT_FARGER[0]) === f ? ' vald' : ''}" data-farg="${f}" style="background:${f}"></button>`).join('')}
+        </div></div>
+      <div class="form-check">
+        <input type="checkbox" name="aktiv" id="ruttTekAktiv" ${(!t || t.aktiv) ? 'checked' : ''}>
+        <label for="ruttTekAktiv">Aktiv</label>
+      </div>
+    </form>`,
+    `<button class="btn btn-navy" id="ruttTekSpara">Spara</button>
+     <button class="btn btn-secondary" id="ruttTekAvbryt">Avbryt</button>`);
+  let vald = t?.farg || RUTT_FARGER[0];
+  document.querySelectorAll('#ruttFargval .rutt-farg-knapp').forEach(b => b.addEventListener('click', () => {
+    vald = b.dataset.farg;
+    document.querySelectorAll('#ruttFargval .rutt-farg-knapp').forEach(x => x.classList.remove('vald'));
+    b.classList.add('vald');
+  }));
+  document.getElementById('ruttTekAvbryt').addEventListener('click', Modal.close);
+  document.getElementById('ruttTekSpara').addEventListener('click', async () => {
+    const f = document.getElementById('ruttTekForm');
+    if (!f.reportValidity()) return;
+    const body = Object.fromEntries(new FormData(f).entries());
+    body.aktiv = document.getElementById('ruttTekAktiv').checked ? 1 : 0;
+    body.farg = vald;
+    try {
+      if (t) await api('PUT', `/rutt/tekniker/${t.id}`, body);
+      else   await api('POST', '/rutt/tekniker', body);
+      Modal.close(); toast('Sparad', 'success'); renderRuttplanering(document.getElementById('app'));
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+function ruttTypForm(t) {
+  Modal.open(t ? `Redigera ${escHtml(t.namn)}` : 'Ny ärendetyp', `
+    <form id="ruttTypForm">
+      <div class="form-group"><label class="form-label">Namn <span class="req">*</span></label>
+        <input name="namn" class="form-control" value="${escHtml(t?.namn || '')}" required></div>
+      <div class="form-group"><label class="form-label">Default servicetid (minuter)</label>
+        <input name="servicetid_min" type="number" min="0" class="form-control" value="${t?.servicetid_min ?? 30}"></div>
+    </form>`,
+    `<button class="btn btn-navy" id="ruttTypSpara">Spara</button>
+     <button class="btn btn-secondary" id="ruttTypAvbryt">Avbryt</button>`);
+  document.getElementById('ruttTypAvbryt').addEventListener('click', Modal.close);
+  document.getElementById('ruttTypSpara').addEventListener('click', async () => {
+    const f = document.getElementById('ruttTypForm');
+    if (!f.reportValidity()) return;
+    const body = Object.fromEntries(new FormData(f).entries());
+    try {
+      if (t) await api('PUT', `/rutt/arendetyper/${t.id}`, body);
+      else   await api('POST', '/rutt/arendetyper', body);
+      Modal.close(); toast('Sparad', 'success'); renderRuttplanering(document.getElementById('app'));
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
+// ----------------------------------------------------------------
 // VIEW: HJÄLP (statisk guide – sökbar dragspelslayout)
 // ----------------------------------------------------------------
 const HJALP_FLIKAR = [
@@ -4641,6 +4961,8 @@ const HJALP_FLIKAR = [
     text: 'Telefonbok för alla i systemet. Sök på namn, telefon eller e-post och filtrera på roll. Klicka på ett telefonnummer för att ringa, eller på en e-postadress för att skicka mejl direkt.' },
   { ikon: '🗺️', namn: 'Karta', taggar: ['Alla'],
     text: 'En karta som visar alla projekt som har koordinater. Filtrera på beredare och område och klicka på en nål för att se projektinfo och öppna ärendet. Koordinaterna sätts inne i projektet – se guiden ”Sätta koordinater på ett projekt”.' },
+  { ikon: '🧭', namn: 'Ruttplanering', taggar: ['Alla'],
+    text: 'Planera dagens fältserviceärenden och få optimerade körordningar per tekniker. Flödet är: 1) importera ärenden från Excel/CSV, 2) välj tekniker, 3) optimera. Tekniker och ärendetyper (med default servicetid) hanteras under ⚙ Inställningar. Varje planerare ser sina egna sparade planeringar som historik.' },
   { ikon: '📅', namn: 'Tidplan', taggar: ['Beredare', 'Admin'],
     text: 'En Gantt-liknande tidsöversikt där projekten visas som staplar över tid (beredning, montage, drifttagning). Zooma på period och filtrera på beredare eller på om ärendet är klart.' },
   { ikon: '⚙️', namn: 'Admin', taggar: ['Admin'],
