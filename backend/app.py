@@ -177,6 +177,7 @@ def auth_status():
         'beredare':     session.get('beredare'),
         'admin':        bool(session.get('admin')),
         'far_artiklar': bool(session.get('far_artiklar')),
+        'har_profil':   bool(session.get('user_id')),
     })
 
 
@@ -1548,7 +1549,7 @@ GILTIGA_ROLLER = ('admin', 'beredare', 'ue')
 def admin_lista_anvandare():
     with get_db() as conn:
         rader = rows_to_list(conn.execute(
-            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, far_hantera_artiklar, skapad "
+            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, far_hantera_artiklar, telefon, epost, skapad "
             "FROM anvandare ORDER BY roll, anvandarnamn").fetchall())
     return jsonify({'anvandare': rader})
 
@@ -1563,6 +1564,8 @@ def admin_skapa_anvandare():
     roll         = (d.get('roll') or 'beredare').strip()
     beredare     = (d.get('beredare') or '').strip() or None
     far_art      = 1 if d.get('far_hantera_artiklar') else 0
+    telefon      = (d.get('telefon') or '').strip()
+    epost        = (d.get('epost') or '').strip()
     if not anvandarnamn: return fel('Användarnamn är obligatoriskt.')
     if not losenord:     return fel('Lösenord är obligatoriskt.')
     if roll not in GILTIGA_ROLLER:
@@ -1570,12 +1573,12 @@ def admin_skapa_anvandare():
     with get_db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO anvandare (anvandarnamn,namn,losenord_hash,roll,beredare,aktiv,far_hantera_artiklar,skapad) "
-                "VALUES (?,?,?,?,?,1,?,?)",
-                (anvandarnamn, namn, hash_pw(losenord), roll, beredare, far_art, nu()))
+                "INSERT INTO anvandare (anvandarnamn,namn,losenord_hash,roll,beredare,aktiv,far_hantera_artiklar,telefon,epost,skapad) "
+                "VALUES (?,?,?,?,?,1,?,?,?,?)",
+                (anvandarnamn, namn, hash_pw(losenord), roll, beredare, far_art, telefon, epost, nu()))
             conn.commit()
             rad = row_to_dict(conn.execute(
-                "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, far_hantera_artiklar, skapad "
+                "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, far_hantera_artiklar, telefon, epost, skapad "
                 "FROM anvandare WHERE id=?", (cur.lastrowid,)).fetchone())
             return jsonify({'anvandare': rad}), 201
         except Exception as e:
@@ -1596,16 +1599,18 @@ def admin_uppdatera_anvandare(uid):
         beredare = (d.get('beredare', bef['beredare']) or '').strip() or None
         aktiv    = int(d.get('aktiv', bef['aktiv']))
         far_art  = 1 if d.get('far_hantera_artiklar', bef['far_hantera_artiklar']) else 0
+        telefon  = (d.get('telefon', bef['telefon']) or '').strip()
+        epost    = (d.get('epost', bef['epost']) or '').strip()
         losenord = (d.get('losenord') or '').strip()
         if losenord:
             conn.execute("UPDATE anvandare SET losenord_hash=? WHERE id=?",
                          (hash_pw(losenord), uid))
         conn.execute(
-            "UPDATE anvandare SET namn=?, roll=?, beredare=?, aktiv=?, far_hantera_artiklar=? WHERE id=?",
-            (namn, roll, beredare, aktiv, far_art, uid))
+            "UPDATE anvandare SET namn=?, roll=?, beredare=?, aktiv=?, far_hantera_artiklar=?, telefon=?, epost=? WHERE id=?",
+            (namn, roll, beredare, aktiv, far_art, telefon, epost, uid))
         conn.commit()
         rad = row_to_dict(conn.execute(
-            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, far_hantera_artiklar, skapad "
+            "SELECT id, anvandarnamn, namn, roll, beredare, aktiv, far_hantera_artiklar, telefon, epost, skapad "
             "FROM anvandare WHERE id=?", (uid,)).fetchone())
     return jsonify({'anvandare': rad})
 
@@ -1624,6 +1629,63 @@ def admin_ta_bort_anvandare(uid):
         conn.execute("DELETE FROM anvandare WHERE id=?", (uid,))
         conn.commit()
     return jsonify({'meddelande': f'Användare "{rad["anvandarnamn"]}" borttagen.'})
+
+
+# ============================================================
+# PROFIL – inloggad användare hanterar SITT EGNA konto
+# ============================================================
+
+@app.get('/api/profil')
+def hamta_profil():
+    uid = session.get('user_id')
+    if not uid:
+        return fel('Ingen personlig profil (delat konto).', 404)
+    with get_db() as conn:
+        rad = conn.execute(
+            "SELECT id, anvandarnamn, namn, roll, telefon, epost FROM anvandare WHERE id=?",
+            (uid,)).fetchone()
+    if not rad:
+        return fel('Profilen hittades inte.', 404)
+    return jsonify({'profil': row_to_dict(rad)})
+
+
+@app.put('/api/profil')
+def uppdatera_profil():
+    """Inloggad användare ändrar SITT EGNA lösenord/telefon/epost."""
+    uid = session.get('user_id')
+    if not uid:
+        return fel('Ingen personlig profil (delat konto).', 404)
+    d = request.get_json(silent=True) or {}
+    with get_db() as conn:
+        bef = conn.execute("SELECT * FROM anvandare WHERE id=?", (uid,)).fetchone()
+        if not bef:
+            return fel('Profilen hittades inte.', 404)
+        telefon  = (d.get('telefon', bef['telefon']) or '').strip()
+        epost    = (d.get('epost', bef['epost']) or '').strip()
+        losenord = (d.get('losenord') or '').strip()
+        if losenord:
+            if len(losenord) < 4:
+                return fel('Lösenordet måste vara minst 4 tecken.')
+            conn.execute("UPDATE anvandare SET losenord_hash=? WHERE id=?",
+                         (hash_pw(losenord), uid))
+        conn.execute("UPDATE anvandare SET telefon=?, epost=? WHERE id=?",
+                     (telefon, epost, uid))
+        conn.commit()
+        rad = conn.execute(
+            "SELECT id, anvandarnamn, namn, roll, telefon, epost FROM anvandare WHERE id=?",
+            (uid,)).fetchone()
+    return jsonify({'profil': row_to_dict(rad),
+                    'meddelande': 'Profil uppdaterad.' + (' Lösenord ändrat.' if losenord else '')})
+
+
+@app.get('/api/kontakter')
+def hamta_kontakter():
+    """Kontaktlista för alla aktiva användare (alla inloggade får läsa)."""
+    with get_db() as conn:
+        rader = rows_to_list(conn.execute(
+            "SELECT namn, anvandarnamn, roll, beredare, telefon, epost "
+            "FROM anvandare WHERE aktiv=1 ORDER BY roll, namn, anvandarnamn").fetchall())
+    return jsonify({'kontakter': rader})
 
 
 # ============================================================

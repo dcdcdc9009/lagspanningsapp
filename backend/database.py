@@ -1249,6 +1249,17 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','37')")
         conn.commit()
 
+    if v < 38:
+        # v38: Kontaktuppgifter (telefon + epost) per användare.
+        for kol in ("ALTER TABLE anvandare ADD COLUMN telefon TEXT NOT NULL DEFAULT ''",
+                    "ALTER TABLE anvandare ADD COLUMN epost TEXT NOT NULL DEFAULT ''"):
+            try:
+                conn.execute(kol)
+            except Exception:
+                pass
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','38')")
+        conn.commit()
+
 
 def _create_tables(conn):
     conn.executescript("""
@@ -1531,6 +1542,8 @@ def _create_tables(conn):
             beredare      TEXT,
             aktiv         INTEGER NOT NULL DEFAULT 1,
             far_hantera_artiklar INTEGER NOT NULL DEFAULT 0,
+            telefon       TEXT NOT NULL DEFAULT '',
+            epost         TEXT NOT NULL DEFAULT '',
             skapad        DATETIME
         );
 

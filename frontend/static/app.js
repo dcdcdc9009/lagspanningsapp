@@ -112,6 +112,7 @@ function render(view, params = {}) {
     case 'anslutning':      renderAnslutning(app); break;
     case 'tjallmo':         renderTjallmo(app); break;
     case 'kabeltrummor':    renderKabeltrummor(app); break;
+    case 'kontakter':       renderKontakter(app); break;
     case 'karta':           renderKarta(app); break;
     case 'tidplan':         renderTidplan(app); break;
     case 'kontrollrum':     renderKontrollrum(app); break;
@@ -2970,6 +2971,12 @@ async function adminAnvandare(cont) {
           <div class="form-group"><label class="form-label">Beredare (för auto-filter)</label>
             <select name="beredare" class="form-control">${berOpts(u?.beredare || '')}</select></div>
         </div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label class="form-label">Telefon</label>
+            <input name="telefon" class="form-control" value="${escHtml(u?.telefon||'')}" placeholder="07X-XXX XX XX"></div>
+          <div class="form-group"><label class="form-label">E-post</label>
+            <input name="epost" type="email" class="form-control" value="${escHtml(u?.epost||'')}" placeholder="namn@oneco.se"></div>
+        </div>
         <div class="form-check">
           <input type="checkbox" name="aktiv" id="anvAktiv" ${(!u||u.aktiv)?'checked':''}>
           <label for="anvAktiv">Aktiv</label>
@@ -4531,6 +4538,134 @@ async function renderKarta(app) {
   setTimeout(() => map.invalidateSize(), 200);
 }
 
+// ----------------------------------------------------------------
+// VIEW: KONTAKTUPPGIFTER
+// ----------------------------------------------------------------
+async function renderKontakter(app) {
+  app.innerHTML = `<div class="text-muted" style="padding:48px;text-align:center">Laddar kontaktuppgifter…</div>`;
+  let kontakter = [];
+  try { kontakter = (await api('GET', '/kontakter')).kontakter || []; }
+  catch (e) { app.innerHTML = `<div class="card"><div class="card-body">Kunde inte ladda: ${escHtml(e.message)}</div></div>`; return; }
+
+  const rollLabel = r => ROLL_NAMN[r] || r || '–';
+  const roller = [...new Set(kontakter.map(k => k.roll))]
+    .sort((a, b) => rollLabel(a).localeCompare(rollLabel(b), 'sv'));
+
+  app.innerHTML = `
+    <div class="page-header"><h1 class="page-title">Kontaktuppgifter</h1></div>
+    <div class="filter-row" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      <input id="kontSok" class="form-control" style="max-width:280px" placeholder="🔍 Sök namn, telefon, e-post…">
+      <select id="kontRoll" class="form-control" style="max-width:220px">
+        <option value="">Alla roller</option>
+        ${roller.map(r => `<option value="${escHtml(r)}">${escHtml(rollLabel(r))}</option>`).join('')}
+      </select>
+      <span id="kontAntal" class="text-muted text-sm"></span>
+    </div>
+    <div class="card">
+      <div class="table-wrap" style="overflow-x:auto">
+        <table class="kont-table" style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:10px 14px">Namn</th>
+              <th style="text-align:left;padding:10px 14px">Roll</th>
+              <th style="text-align:left;padding:10px 14px">Telefon</th>
+              <th style="text-align:left;padding:10px 14px">E-post</th>
+            </tr>
+          </thead>
+          <tbody id="kontBody"></tbody>
+        </table>
+      </div>
+    </div>`;
+
+  const body  = document.getElementById('kontBody');
+  const sokEl  = document.getElementById('kontSok');
+  const rollEl = document.getElementById('kontRoll');
+  const antalEl = document.getElementById('kontAntal');
+
+  function rita() {
+    const q = (sokEl.value || '').toLowerCase().trim();
+    const rf = rollEl.value;
+    const lista = kontakter.filter(k => {
+      if (rf && k.roll !== rf) return false;
+      if (!q) return true;
+      return [k.namn, k.anvandarnamn, k.telefon, k.epost, rollLabel(k.roll)]
+        .some(v => (v || '').toLowerCase().includes(q));
+    });
+    antalEl.textContent = `${lista.length} av ${kontakter.length} kontakter`;
+    if (!lista.length) {
+      body.innerHTML = `<tr><td colspan="4" style="padding:24px;text-align:center;opacity:.6">Inga kontakter matchar.</td></tr>`;
+      return;
+    }
+    body.innerHTML = lista.map(k => {
+      const namn = escHtml(k.namn || k.anvandarnamn || '–');
+      const tel = (k.telefon || '').trim();
+      const epost = (k.epost || '').trim();
+      const telCell = tel
+        ? `<a href="tel:${escHtml(tel.replace(/\s/g,''))}">${escHtml(tel)}</a>`
+        : '<span style="opacity:.4">–</span>';
+      const epCell = epost
+        ? `<a href="mailto:${escHtml(epost)}">${escHtml(epost)}</a>`
+        : '<span style="opacity:.4">–</span>';
+      return `<tr style="border-top:1px solid var(--line,#ece8f5)">
+        <td style="padding:10px 14px;font-weight:600">${namn}</td>
+        <td style="padding:10px 14px">${escHtml(rollLabel(k.roll))}</td>
+        <td style="padding:10px 14px">${telCell}</td>
+        <td style="padding:10px 14px">${epCell}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  sokEl.addEventListener('input', rita);
+  rollEl.addEventListener('change', rita);
+  rita();
+}
+
+async function modalProfil() {
+  let p = {};
+  try { p = (await api('GET', '/profil')).profil || {}; }
+  catch (e) { toast(e.message, 'error'); return; }
+  Modal.open('Min profil', `
+    <form id="profilForm">
+      <p class="text-sm" style="opacity:.8;margin-top:0">
+        Inloggad som <strong>${escHtml(p.namn || p.anvandarnamn || '')}</strong>
+        (${escHtml(p.anvandarnamn || '')})</p>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Telefon</label>
+          <input name="telefon" class="form-control" value="${escHtml(p.telefon||'')}" placeholder="07X-XXX XX XX"></div>
+        <div class="form-group"><label class="form-label">E-post</label>
+          <input name="epost" type="email" class="form-control" value="${escHtml(p.epost||'')}" placeholder="namn@oneco.se"></div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--line,#e5e0f0);margin:14px 0">
+      <p class="text-sm" style="opacity:.8;margin:0 0 8px">Byt lösenord (lämna tomt för att behålla nuvarande)</p>
+      <div class="form-group"><label class="form-label">Nytt lösenord</label>
+        <input type="password" name="losenord" class="form-control" autocomplete="new-password" placeholder="Minst 4 tecken"></div>
+      <div class="form-group"><label class="form-label">Bekräfta nytt lösenord</label>
+        <input type="password" name="losenord2" class="form-control" autocomplete="new-password"></div>
+    </form>`,
+    `<button class="btn btn-navy" id="sparaProfil">Spara</button>
+     <button class="btn btn-secondary" id="avbrytProfil">Avbryt</button>`
+  );
+  document.getElementById('avbrytProfil').addEventListener('click', Modal.close);
+  document.getElementById('sparaProfil').addEventListener('click', async () => {
+    const f = document.getElementById('profilForm');
+    if (!f.reportValidity()) return;
+    const body = Object.fromEntries(new FormData(f).entries());
+    if (body.losenord || body.losenord2) {
+      if (body.losenord !== body.losenord2) { toast('Lösenorden matchar inte.', 'error'); return; }
+      if (body.losenord.length < 4) { toast('Lösenordet måste vara minst 4 tecken.', 'error'); return; }
+    } else {
+      delete body.losenord;
+    }
+    delete body.losenord2;
+    try {
+      const r = await api('PUT', '/profil', body);
+      toast(r.meddelande || 'Profil sparad', 'success');
+      // Uppdatera namnet i navbaren om det ändrats (namn ändras ej här, men håll konsekvent)
+      Modal.close();
+    } catch (e) { toast(e.message, 'error'); }
+  });
+}
+
 async function boot() {
   // Kräv inloggning vid varje ny webbläsarsession (ny flik/fönster)
   if (!sessionStorage.getItem('logged_in')) {
@@ -4557,6 +4692,7 @@ async function boot() {
     roll:         status.roll,
     beredare:     status.beredare,
     far_artiklar: !!status.far_artiklar,
+    har_profil:   !!status.har_profil,
   } : null;
   S.minBeredare = status.beredare || null;
 
@@ -4567,8 +4703,14 @@ async function boot() {
     if (S.user && S.user.namn) {
       const namnEl = document.createElement('span');
       namnEl.className = 'nav-user text-sm';
-      namnEl.style.cssText = 'margin-right:8px;opacity:.85;white-space:nowrap';
       namnEl.textContent = `👤 ${S.user.namn}`;
+      if (S.user.har_profil) {
+        namnEl.title = 'Min profil – byt lösenord, telefon, e-post';
+        namnEl.style.cssText = 'margin-right:8px;white-space:nowrap;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px';
+        namnEl.addEventListener('click', modalProfil);
+      } else {
+        namnEl.style.cssText = 'margin-right:8px;opacity:.85;white-space:nowrap';
+      }
       navRight.prepend(namnEl);
     }
     const logoutBtn = document.createElement('button');
