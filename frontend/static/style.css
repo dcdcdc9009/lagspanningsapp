@@ -49,22 +49,15 @@
 
 body {
   font-family: var(--font);
-  background: var(--bg);
+  /* Mjuk violett ton upptill – som vanlig bakgrund, INTE ett fast helskärmslager.
+     Ett fast (position:fixed) helskärmselement tvingar fram ett eget komposit-
+     lager som kan få muspekaren att försvinna över input-fält i Edge/Chromium
+     på Windows. */
+  background: linear-gradient(180deg, rgba(124,58,237,.05), transparent 340px) no-repeat, var(--bg);
   color: var(--text);
   min-height: 100vh;
   font-size: 14px;
   line-height: 1.5;
-  background-image: none;
-}
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  /* Mjuk violett ton upptill för djup */
-  background: linear-gradient(180deg, rgba(124,58,237,.05), transparent 340px);
-  z-index: 0;
-  pointer-events: none;
 }
 
 #app, .topnav, .modal-overlay, .toast-container {
