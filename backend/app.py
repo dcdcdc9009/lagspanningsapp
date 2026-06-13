@@ -3170,6 +3170,30 @@ def rutt_tilldelning(pid):
 
 
 # ============================================================
+# ASSISTENT (AI – Claude API)
+# ============================================================
+@app.post('/api/assistent/chat')
+def assistent_chat():
+    d = request.get_json(silent=True) or {}
+    messages = d.get('messages') or []
+    bekrafta = d.get('bekrafta')
+    if not isinstance(messages, list):
+        return fel('Ogiltig konversation.')
+    try:
+        from assistent import chatta
+    except Exception:
+        return fel('Assistenten är inte tillgänglig (saknar bibliotek).', 500)
+    try:
+        res = chatta(messages, bekrafta, {'namn': session.get('namn'), 'roll': session.get('roll')})
+        return jsonify(res)
+    except Exception as e:
+        msg = str(e)
+        if 'api_key' in msg.lower() or 'authentication' in msg.lower() or 'x-api-key' in msg.lower():
+            return fel('Assistenten saknar en giltig API-nyckel.', 500)
+        return fel('Assistenten kunde inte svara just nu: ' + msg, 500)
+
+
+# ============================================================
 # START
 # ============================================================
 

@@ -117,6 +117,7 @@ function render(view, params = {}) {
     case 'karta':           renderKarta(app); break;
     case 'tidplan':         renderTidplan(app); break;
     case 'hjalp':           renderHjalp(app); break;
+    case 'assistent':       renderAssistent(app); break;
     default:
       app.dataset.view = 'projekt';
       document.body.dataset.view = 'projekt';
@@ -5556,6 +5557,270 @@ function ruttTypForm(t) {
       Modal.close(); toast('Sparad', 'success'); renderRuttplanering(document.getElementById('app'));
     } catch (e) { toast(e.message, 'error'); }
   });
+}
+
+// ----------------------------------------------------------------
+// VIEW: ASSISTENT (AI – neon-kärna + chatt + röst)
+// ----------------------------------------------------------------
+const AssistState = { messages: [], lage: 'vilar', energi: 0.15, talar: true, väntar: false, mik: null };
+const ASS_VYNAMN = { projekt: 'Projekt', konstruktioner: 'Byggprotokoll', artiklar: 'Artiklar', anslutning: 'Analys', tjallmo: 'Tjällmo', kabeltrummor: 'Kabeltrummor', kontakter: 'Kontaktuppgifter', karta: 'Karta', ruttplanering: 'Ruttplanering', tidplan: 'Tidplan', admin: 'Admin', hjalp: 'Hjälp', assistent: 'Assistent' };
+
+function renderAssistent(app) {
+  AssistState.messages = []; AssistState.lage = 'vilar'; AssistState.energi = 0.15; AssistState.väntar = false;
+  app.innerHTML = `
+    <div class="ass-hud">
+      <div class="ass-top">
+        <span class="ass-brand">◢ BPV // ASSISTENT</span>
+        <span class="ass-online">● ONLINE</span>
+        <span id="assMeta" class="ass-meta">––</span>
+      </div>
+      <div class="ass-stage">
+        <canvas id="assKarna"></canvas>
+        <div class="ass-chat" id="assChat"></div>
+      </div>
+      <div class="ass-cmd">
+        <button class="ass-mic" id="assMic" data-lage="vilar" title="Tryck för att prata">●</button>
+        <input id="assInput" class="ass-input" placeholder="Skriv eller prata med assistenten…" autocomplete="off">
+        <button class="ass-talk" id="assTalk" title="Röstuppläsning på/av">🔊</button>
+        <button class="ass-send" id="assSend" title="Skicka">➤</button>
+      </div>
+    </div>`;
+
+  assKärnaStart();
+  assUppdateraMeta();
+  AssistState._metaTimer = setInterval(assUppdateraMeta, 1000);
+
+  const inp = document.getElementById('assInput');
+  const skicka = () => { const t = inp.value.trim(); if (t) { inp.value = ''; assSkicka(t); } };
+  document.getElementById('assSend').addEventListener('click', skicka);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') skicka(); });
+  document.getElementById('assMic').addEventListener('click', assLyssna);
+  const talk = document.getElementById('assTalk');
+  talk.classList.toggle('av', !AssistState.talar);
+  talk.addEventListener('click', () => {
+    AssistState.talar = !AssistState.talar;
+    talk.classList.toggle('av', !AssistState.talar);
+    if (!AssistState.talar && window.speechSynthesis) speechSynthesis.cancel();
+    toast(AssistState.talar ? 'Röstuppläsning på' : 'Röstuppläsning av', 'info');
+  });
+
+  assBubbla('ai', 'Hej! Jag är BPV-assistenten. Fråga mig om beredning, era ärenden eller hur du gör i appen — eller be mig skapa/ändra ett ärende. Du kan skriva eller trycka på mikrofonen och prata.');
+}
+
+function assUppdateraMeta() {
+  const el = document.getElementById('assMeta'); if (!el) return;
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const v = (() => { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const day = (t.getUTCDay() + 6) % 7; t.setUTCDate(t.getUTCDate() - day + 3);
+    const ft = new Date(Date.UTC(t.getUTCFullYear(), 0, 4)); const fd = (ft.getUTCDay() + 6) % 7;
+    ft.setUTCDate(ft.getUTCDate() - fd + 3); return 1 + Math.round((t - ft) / 6048e5); })();
+  el.textContent = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}  ·  v.${v}  ·  ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function assSättLäge(l) { AssistState.lage = l; const b = document.getElementById('assMic'); if (b) b.dataset.lage = l; }
+
+function assBubbla(roll, html) {
+  const c = document.getElementById('assChat'); if (!c) return null;
+  const div = document.createElement('div'); div.className = 'assist-msg assist-' + roll; div.innerHTML = html;
+  c.appendChild(div); c.scrollTop = c.scrollHeight; return div;
+}
+
+function assFmt(text) {
+  return escHtml(text).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+}
+
+async function assSkicka(text, bekrafta) {
+  if (AssistState.väntar) return;
+  if (text) { assBubbla('me', assFmt(text)); AssistState.messages.push({ role: 'user', content: text }); }
+  AssistState.väntar = true; assSättLäge('tänker');
+  const väntBubbla = assBubbla('ai väntar', '<span class="ass-dots"><i></i><i></i><i></i></span>');
+  try {
+    const body = { messages: AssistState.messages };
+    if (bekrafta) body.bekrafta = bekrafta;
+    const res = await api('POST', '/assistent/chat', body);
+    if (väntBubbla) väntBubbla.remove();
+    AssistState.messages = res.messages || AssistState.messages;
+    const åtg = (res.atgarder || []).filter(a => a.typ === 'navigera');
+    if (res.typ === 'bekrafta') {
+      assVisaBekrafta(res.text, res.bekrafta);
+      assSättLäge('vilar');
+    } else {
+      const txt = res.text || '…';
+      assBubbla('ai', assFmt(txt) + assÅtgärderHtml(åtg));
+      assKopplaÅtgärder();
+      assTala(txt);
+      if (AssistState.lage !== 'pratar') assSättLäge('vilar');
+    }
+  } catch (e) {
+    if (väntBubbla) väntBubbla.remove();
+    assBubbla('ai fel', '⚠ ' + escHtml(e.message || 'Något gick fel.'));
+    assSättLäge('vilar');
+  } finally {
+    AssistState.väntar = false;
+  }
+}
+
+function assÅtgärderHtml(åtg) {
+  const sedda = new Set();
+  const knappar = åtg.filter(a => a.vy && !sedda.has(a.vy) && sedda.add(a.vy))
+    .map(a => `<button class="ass-atgard" data-vy="${escHtml(a.vy)}">→ Öppna ${escHtml(ASS_VYNAMN[a.vy] || a.vy)}</button>`);
+  return knappar.length ? `<div class="ass-atgarder">${knappar.join('')}</div>` : '';
+}
+function assKopplaÅtgärder() {
+  document.querySelectorAll('.ass-atgard[data-vy]').forEach(b => {
+    if (b._k) return; b._k = 1;
+    b.addEventListener('click', () => { assStäda(); navigate(b.dataset.vy); });
+  });
+}
+
+function assVisaBekrafta(text, b) {
+  let html = text ? assFmt(text) + '<br>' : '';
+  html += `<div class="ass-bekr"><div class="ass-bekr-txt">${assBekrText(b.verktyg, b.input)}</div>
+    <div class="ass-bekr-knappar"><button class="ass-ok">✓ Bekräfta</button><button class="ass-no">Avbryt</button></div></div>`;
+  const div = assBubbla('ai', html);
+  div.querySelector('.ass-ok').addEventListener('click', () => {
+    div.querySelector('.ass-bekr-knappar').innerHTML = '<span class="ass-bekr-klar">✓ Bekräftat</span>';
+    assSkicka(null, { tool_use_id: b.tool_use_id, godkand: true });
+  });
+  div.querySelector('.ass-no').addEventListener('click', () => {
+    div.querySelector('.ass-bekr-knappar').innerHTML = '<span class="ass-bekr-avbr">Avbrutet</span>';
+    assSkicka(null, { tool_use_id: b.tool_use_id, godkand: false });
+  });
+}
+function assBekrText(verktyg, inp) {
+  inp = inp || {};
+  if (verktyg === 'skapa_projekt') {
+    const ex = []; ['fas', 'status', 'kund', 'omrade', 'ib_nummer'].forEach(k => { if (inp[k]) ex.push(`${k}: ${inp[k]}`); });
+    return `Skapa projekt <b>${escHtml(inp.projektnamn || '')}</b> – beredare <b>${escHtml(inp.beredare || '')}</b>${ex.length ? ' (' + escHtml(ex.join(', ')) + ')' : ''}?`;
+  }
+  if (verktyg === 'uppdatera_projekt') {
+    const ex = Object.entries(inp).filter(([k]) => k !== 'projektnummer').map(([k, v]) => `${k}: ${v}`);
+    return `Uppdatera projekt <b>${escHtml(inp.projektnummer || '')}</b> – ${escHtml(ex.join(', '))}?`;
+  }
+  return `Utföra åtgärden <b>${escHtml(verktyg)}</b>?`;
+}
+
+// ---- Röstuppläsning (sv-SE) ----
+function assTala(text) {
+  if (!AssistState.talar || !window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const ren = text.replace(/\*\*/g, '').replace(/[#*_`>]/g, '').replace(/\n+/g, '. ');
+  const u = new SpeechSynthesisUtterance(ren);
+  u.lang = 'sv-SE';
+  const röster = speechSynthesis.getVoices();
+  const sv = röster.find(r => /sv[-_]SE/i.test(r.lang)) || röster.find(r => /^sv/i.test(r.lang));
+  if (sv) u.voice = sv;
+  u.onstart = () => assSättLäge('pratar');
+  u.onend = () => { if (AssistState.lage === 'pratar') assSättLäge('vilar'); };
+  speechSynthesis.speak(u);
+}
+
+// ---- Röststyrning in (sv-SE) + mikrofonnivå ----
+function assLyssna() {
+  if (AssistState.lage === 'lyssnar') { if (AssistState._recog) AssistState._recog.stop(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('Röststyrning stöds inte i den här webbläsaren – skriv istället.', 'error'); return; }
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  const recog = new SR(); AssistState._recog = recog;
+  recog.lang = 'sv-SE'; recog.interimResults = true; recog.continuous = false;
+  let färdig = '';
+  recog.onstart = () => { assSättLäge('lyssnar'); assMikNivåStart(); };
+  recog.onresult = e => { let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+    färdig = t; const el = document.getElementById('assInput'); if (el) el.value = t; };
+  recog.onerror = () => { assMikNivåStopp(); assSättLäge('vilar'); };
+  recog.onend = () => { assMikNivåStopp(); assSättLäge('vilar'); AssistState._recog = null;
+    const el = document.getElementById('assInput'); const t = (färdig || (el ? el.value : '')).trim();
+    if (el) el.value = ''; if (t) assSkicka(t); };
+  try { recog.start(); } catch (e) {}
+}
+async function assMikNivåStart() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream); const an = ctx.createAnalyser(); an.fftSize = 256; src.connect(an);
+    const data = new Uint8Array(an.frequencyBinCount);
+    AssistState.mik = { stream, ctx, an, data, raf: 0 };
+    const loop = () => { const m = AssistState.mik; if (!m) return; m.an.getByteFrequencyData(m.data);
+      let s = 0; for (const v of m.data) s += v; AssistState.energi = Math.max(0.12, Math.min(1, (s / m.data.length) / 70));
+      m.raf = requestAnimationFrame(loop); };
+    loop();
+  } catch (e) { /* mic-nivå ej tillgänglig – kärnan animeras ändå i lyssna-läge */ }
+}
+function assMikNivåStopp() {
+  const m = AssistState.mik; AssistState.mik = null;
+  if (m) { if (m.raf) cancelAnimationFrame(m.raf); try { m.stream.getTracks().forEach(t => t.stop()); } catch (e) {} try { m.ctx.close(); } catch (e) {} }
+  AssistState.energi = 0.15;
+}
+
+function assStäda() {
+  if (AssistState._metaTimer) clearInterval(AssistState._metaTimer);
+  if (AssistState._recog) { try { AssistState._recog.stop(); } catch (e) {} }
+  assMikNivåStopp();
+  if (window.speechSynthesis) speechSynthesis.cancel();
+}
+
+// ---- Neon-kärna (canvas) – tillståndsdriven ----
+function assKärnaStart() {
+  const c = document.getElementById('assKarna'); if (!c || typeof window === 'undefined') return;
+  const x = c.getContext('2d'); const DPR = Math.min(devicePixelRatio || 1, 2);
+  const COL = a => { const d = ((a * 180 / Math.PI) % 360 + 360) % 360;
+    if (d < 55) return [56, 225, 255]; if (d < 110) return [70, 235, 150]; if (d < 165) return [120, 120, 255];
+    if (d < 220) return [255, 70, 110]; if (d < 285) return [255, 60, 200]; return [60, 140, 255]; };
+  let nodes = [], sparks = [];
+  function size() { c.width = c.clientWidth * DPR; c.height = c.clientHeight * DPR; x.setTransform(DPR, 0, 0, DPR, 0, 0); }
+  function init() { size(); const W = c.clientWidth, H = c.clientHeight, maxR = Math.min(W, H) * 0.42;
+    nodes = []; for (let i = 0; i < 130; i++) { const ang = Math.random() * 6.283;
+      nodes.push({ ang, baseR: Math.pow(Math.random(), 1.7) * maxR, col: COL(ang).map(v => Math.max(0, Math.min(255, v + (Math.random() * 50 - 25)))), phase: Math.random() * 7, sz: 0.8 + Math.random() * 1.8, breath: 0.04 + Math.random() * 0.05 }); }
+    sparks = []; for (let i = 0; i < 80; i++) sparks.push(nyspark()); }
+  function nyspark() { const ang = Math.random() * 6.283; return { ang, r: Math.random() * 26, sp: 0.6 + Math.random() * 1.8, col: COL(ang) }; }
+  let t = 0, rot = 0, energiVis = 0.15;
+  function frame() {
+    const c2 = document.getElementById('assKarna');
+    if (!c2) { assStäda(); return; }  // vyn har lämnats
+    let mål = AssistState.energi;
+    if (AssistState.lage === 'pratar') mål = 0.45 + Math.sin(t * 9) * 0.22 + Math.sin(t * 5.3) * 0.1;
+    else if (AssistState.lage === 'tänker') mål = 0.42 + Math.sin(t * 3) * 0.12;
+    else if (AssistState.lage === 'vilar') mål = 0.15 + Math.sin(t * 1.2) * 0.04;
+    energiVis += (mål - energiVis) * 0.12;
+    const e = Math.max(0.08, energiVis);
+    const fart = AssistState.lage === 'tänker' ? 0.0022 : 0.0007;
+    t += 0.016; rot += fart;
+    const W = c.clientWidth, H = c.clientHeight, cx = W / 2, cy = H / 2, maxR = Math.min(W, H) * 0.42;
+    x.globalCompositeOperation = 'source-over';
+    x.fillStyle = 'rgba(4,7,17,0.34)'; x.fillRect(0, 0, W, H);
+    x.globalCompositeOperation = 'lighter';
+    const bl = maxR * (0.4 + e * 0.5);
+    const g = x.createRadialGradient(cx, cy, 0, cx, cy, bl);
+    g.addColorStop(0, `rgba(210,240,255,${0.55 + e * 0.4})`); g.addColorStop(.12, `rgba(110,200,255,${0.3 + e * 0.3})`);
+    g.addColorStop(.45, 'rgba(60,120,255,0.10)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(cx, cy, bl, 0, 7); x.fill();
+    const pts = [];
+    for (const n of nodes) {
+      const a = n.ang + rot + Math.sin(t * 0.7 + n.phase) * 0.04;
+      const r = n.baseR * (1 + Math.sin(t * 0.9 + n.phase) * n.breath) * (0.7 + e * 0.55);
+      const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r * 0.66;
+      pts.push({ px, py, col: n.col }); const [R, G, B] = n.col;
+      const gr = x.createLinearGradient(cx, cy, px, py);
+      gr.addColorStop(0, `rgba(${R},${G},${B},0)`); gr.addColorStop(1, `rgba(${R},${G},${B},${0.15 + 0.35 * (r / maxR)})`);
+      x.strokeStyle = gr; x.lineWidth = 0.7; x.shadowBlur = 6; x.shadowColor = `rgb(${R},${G},${B})`;
+      x.beginPath(); x.moveTo(cx, cy); x.lineTo(px, py); x.stroke();
+      x.fillStyle = `rgb(${R},${G},${B})`; x.shadowBlur = 12; x.beginPath(); x.arc(px, py, n.sz, 0, 7); x.fill();
+    }
+    x.shadowBlur = 0; x.lineWidth = 0.5;
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+      const a = pts[i], b = pts[j], dx = a.px - b.px, dy = a.py - b.py, d = dx * dx + dy * dy;
+      if (d < 2400) { const [R, G, B] = a.col; x.strokeStyle = `rgba(${R},${G},${B},${(1 - d / 2400) * 0.2})`;
+        x.beginPath(); x.moveTo(a.px, a.py); x.lineTo(b.px, b.py); x.stroke(); } }
+    for (const s of sparks) { s.r += s.sp * (0.6 + e); const px = cx + Math.cos(s.ang) * s.r, py = cy + Math.sin(s.ang) * s.r * 0.66;
+      const [R, G, B] = s.col, al = Math.max(0, 1 - s.r / (maxR * 1.05));
+      x.fillStyle = `rgba(${R},${G},${B},${al})`; x.shadowBlur = 10; x.shadowColor = `rgb(${R},${G},${B})`;
+      x.beginPath(); x.arc(px, py, 1.2, 0, 7); x.fill(); if (s.r > maxR * 1.05 || al <= 0) Object.assign(s, nyspark()); }
+    x.shadowBlur = 40; x.shadowColor = '#bfe6ff'; x.fillStyle = '#eaf6ff';
+    x.beginPath(); x.arc(cx, cy, 6 + e * 7, 0, 7); x.fill();
+    x.globalCompositeOperation = 'source-over'; x.shadowBlur = 0;
+    requestAnimationFrame(frame);
+  }
+  init(); addEventListener('resize', () => { if (document.getElementById('assKarna')) init(); }); frame();
 }
 
 // ----------------------------------------------------------------
