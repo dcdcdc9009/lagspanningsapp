@@ -321,6 +321,14 @@ body {
 select.form-control { cursor: pointer; }
 select.form-control option { background: var(--surface-2); color: var(--text-strong); }
 textarea.form-control { resize: vertical; min-height: 70px; }
+/* Edge ritar ibland en VIT (osynlig) text-I-beam över ljusa fält. Vi tvingar fram en egen,
+   alltid synlig I-beam (svart kärna + vit halo) så muspekaren aldrig "försvinner". */
+input[type="text"], input[type="search"], input[type="number"], input[type="email"],
+input[type="password"], input[type="tel"], input[type="url"], input[type="time"],
+input[type="date"], input[type="datetime-local"], input:not([type]), textarea {
+  cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAcCAYAAABoMT8aAAAB+0lEQVR4nO1UvY7aQBCeb42RI3QBLs9ARXUNDUG6JIoo0/EOOd6Gx6CJ0kcnIZAbLEPPE6D8NMnx43h3otkb3xlIkE5pb6T1rHdnZr/5VvuBSpYkSdhut19ba0M6siAI2FqLPM+TRqPxg5kBgP2m/KhvMvMdn7d3GhuIr8gH8PnU6/UoDMMdgBcaDGYmY4xsOwAycfIzGAwOEEJ9k4i+EpHVQC6NXMd10ZV8jMLxK3EcYzabNebzuZlMJtTpdKR3Go1GNJ1OgzRNgziOPerxePx4PD9ycMHMn5k5ZWbX7/cFhVssFtLOd2a+ZeYrjfWHG+XgHgLRHYAP6/X6Rhjf7/ey7qyVjigF8BbAQnM8F5Wj2xLSzG63qwn0glwlsaKnyvX5ig8IyqaVffUjk4sviKV/FniqmSdnPBc4MUP/aea5AJ1woFL1N26gezhHIstLc879Osi8f5W57JVf4kmB1WoVbjabHoCuc/5BSiayLJP5q+12+4aZLxUpHvSAVaJbrVaNiL4QUVWWq9WqL6D1r6IouiWi9xojh9tjVeYwDH8CaBpjsFwuvZgMh0Oq1+vSGowxIqxnVfmbqrIEii/Gb/UHqly04FGIKltra1EUGVkrhqAQOROfZVnQ7Xa9KguKQo09B8z8kog+EZF4ka7ylQmr0vdHAIkUFIn7A6A/Ij8VE2PuAAAAAElFTkSuQmCC") 8 14, text;
+  caret-color: var(--text-strong);
+}
 
 .form-row { display: grid; gap: 12px; }
 .form-row.cols-2 { grid-template-columns: 1fr 1fr; }
@@ -2905,9 +2913,15 @@ body[data-view="tidplan"] #app {
 /* Sorterbar rubrik + resize-handtag */
 .tj-hlbl { cursor: pointer; user-select: none; display: inline-block; }
 .tj-hlbl:hover { color: var(--cyan); }
+.tj-hlbl[draggable="true"] { cursor: grab; }
+.tj-hlbl[draggable="true"]:active { cursor: grabbing; }
 .tj-sortind { font-size: 10px; color: var(--cyan); }
-.tj-resize { position: absolute; top: 0; right: -3px; width: 8px; height: 100%; cursor: col-resize; z-index: 4; }
-.tj-resize:hover { background: var(--cyan-border); }
+.tj-resize { position: absolute; top: 0; right: -5px; width: 12px; height: 100%; cursor: col-resize; z-index: 4;
+  background: linear-gradient(var(--border-hi), var(--border-hi)) center / 2px 60% no-repeat; opacity: .55; }
+.tj-resize:hover { opacity: 1; background: linear-gradient(var(--cyan), var(--cyan)) center / 2px 100% no-repeat; }
+/* Kolumn-omordning (drag & drop) */
+.tj-grid th.tj-dragging { opacity: .45; }
+.tj-grid th.tj-drop-target { box-shadow: inset 3px 0 0 var(--cyan); }
 
 /* UE-kolumner (vad UE ska fylla i) – lätt amber */
 .tj-grid th.tj-ue { background: #f3e6c2; }
@@ -3001,12 +3015,21 @@ body[data-view="tjallmo"] #app { max-width: none; padding-left: 14px; padding-ri
   font-size: 14px;
   transition: max-height .25s ease, padding .25s ease;
 }
-.hjalp-item.open .hjalp-a { max-height: 800px; padding-bottom: 17px; }
+.hjalp-item.open .hjalp-a { max-height: 4000px; padding-bottom: 17px; }
 .hjalp-a p { margin: 0; }
 .hjalp-a strong { color: var(--text-strong); font-weight: 700; }
 .hjalp-steg { margin: 0; padding-left: 20px; }
 .hjalp-steg li { margin: 6px 0; padding-left: 4px; }
 .hjalp-steg li::marker { color: var(--cyan); font-weight: 700; }
+/* Guider + frågor som visas inne i en flik */
+.hjalp-under { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line, #e5e0f0); }
+.hjalp-under-titel { font-size: 12.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--accent, #7c3aed); margin: 0 0 9px; }
+.hjalp-guide { margin: 0 0 13px; }
+.hjalp-guide:last-child { margin-bottom: 0; }
+.hjalp-guide-titel { font-weight: 700; margin: 0 0 5px; color: var(--text-strong, #1e293b); }
+.hjalp-guide .hjalp-steg { margin-top: 4px; }
+.hjalp-guide > p { margin: 0; }
 .hjalp-tom { padding: 36px; text-align: center; color: var(--text-muted); }
 .nav-link-hjalp { opacity: .92; }
 @media (max-width: 600px) {
@@ -3151,10 +3174,13 @@ body[data-view="ruttplanering"] #app { max-width: none; padding-left: 16px; padd
   border-radius: 14px; border: 1px solid var(--border); overflow: hidden; z-index: 0;
 }
 .rutt-rad-sub { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top: 1px; }
-.rutt-drag { cursor: grab; }
+/* Egen mörk flytt-pekare (Edge ritar annars 'grab' vit → osynlig på de ljusa raderna) */
+.rutt-drag, .rutt-grip {
+  cursor: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABoAAAAaCAYAAACpSkzOAAAEKUlEQVR4nLWVS0grVxjHz0wSNUaj9yqtULRqsSC6cozoKikxRhSxcBGDFV30Rpe9KJS+Ft20q1uuLoTEdmOXLmrBjbuLRjRWjYhRFB+gkNbCNbjwkdfkX77TMzINsY22HRjOnOf/nO//++YwluMDQNZVjez/eAAYqEwkEnZNEICDMSYDkOj9L0RMonwOAB6P5+eenp4Xt7e3VP1B28i/EtNOkkqlvLTq6Ohoiprz8/PR3NycSqVS1Dwtxj7uZLoQfUyrjYyMkEiaMaZKksQFFUVJqqpK3X673W7M8DEnEZPY4QdCJEEilZWVqKmpAQ0pLy/npaIoMRoD4CsxNy+nk+l2RUYX+/1+PzUXFxcndnZ20NvbywXm5+fhdDr5yVpaWn4D8F7ONGqeJJNJh/ZtMpnY4ODgNIkASNvtdi4UDAbT5FFra+uvjLEWGmswGP6ZRgBGvSc+n2/abDazvr4+g8ViofZvAMRcLhf3aWVlJQ1gHcA7tBnGmFRfX//y+vpaD8hfacykizwxGo2gk+gNBnDR2dlJJ0rs7e3R0E95jGWZ1dXVvRJhjGelURMB4NXTRZ6EQiFq+vb09PTJ8fHx+wAu3W43F9re3qa+l+Fw+CmAZ2dnZ2hqakrSXCo1GikimgaJUMbD6/WqNLC2thZix6p4oyRCHgkhrK9T1HAr+jh58Xgc7e3tGo0JQeMXPK7kIQBzf3//j7Ozsx/Ksoyqqiq5oaGB3dzcMKPRqJnMVFVloVCIRaNRpigKKysrY5LEo0IAsby8PHZxccG2trbSqqpKQ0NDyzMzMx9JkhRhlGik6Ha7PzEYDJBlmSOre6meEC/u6Uvq22VZpsigqKjotYDhT58Jyaurq7sYV1RUYG5uDktLS+nV1VWEw2GQJ4uLixQSvtjExATW1tZ4++bmJvWpy8vLBAPvt1qticPDQwrdl3fEhcPhIgDfk4FCDC6Xi6MDgIj4mownT7q6umghdXd3l/oCom+OKuPj43yu1WpNCo/XIpFIFSdXzzkhKcRiVLXZbL8DeEvX/0bgHadTAnih9U1NTRHOMJvNMSHySyAQeKIhznSsa5j7aVRbW1tEy/iCggJqfwbguqOjgxI2SeEC8JNYxERJ6/F4fAcHB9QeXFhYeJrxS7vb7d0vg5AEUE2JSGQ2Nja+ikaJYqQdDgcJIRAI8ESZnJzkfxAyvLCwkM89Pz9/O6tIpqD2TULV1dXfiTCmCJju7m5u9sbGBsbGxpImkwkDAwM+8QszZFvn78TytGvi8vKSLjnyLO10OumbC9lsNl5aLJbY/v6+/prIz/kCFCKyoJEDQpecyBNVy7WSkhKNruDJycm7NOfBt2w2GhVFiVNVkiSeJ/fS9dAnG43Dw8MrpaWlr4+OjrjIvXQ9Ukyj8TMA5YQygM9zousxgg9pz3z+AB292iwVRXULAAAAAElFTkSuQmCC") 13 13, grab;
+}
 .rutt-drag:hover { background: var(--surface-2); }
 .rutt-dragging { opacity: .45; }
-.rutt-grip { color: var(--gray-400); cursor: grab; letter-spacing: -2px; }
+.rutt-grip { color: var(--gray-400); letter-spacing: -2px; }
 .rutt-drop.rutt-over { outline: 2px dashed var(--cyan); outline-offset: -2px; }
 .rutt-blink { animation: ruttBlink 1.3s ease; }
 @keyframes ruttBlink { 0%, 100% { background: transparent; } 30% { background: var(--cyan-glow); } }
@@ -3262,3 +3288,15 @@ body[data-view="assistent"] { background: #03040a; }
 .ass-talk.av { opacity: .4; }
 .ass-send { background: rgba(56,225,255,.14); border-color: rgba(56,225,255,.45); color: #aef0ff; }
 .ass-send:hover, .ass-talk:hover { background: rgba(56,225,255,.22); }
+/* Röst-väljare (visas i ljus modal) */
+.ass-röstnotis { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 9px 11px; border-radius: 8px; font-size: 13px; margin: 0 0 12px; line-height: 1.45; }
+.ass-röstinfo { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 9px 11px; border-radius: 8px; font-size: 13px; margin: 0 0 12px; line-height: 1.45; }
+.ass-rösthead { font-weight: 700; margin: 4px 0 6px; color: #334155; font-size: 13px; }
+.ass-röstrad { display: flex; align-items: center; gap: 9px; padding: 7px 4px; border-bottom: 1px solid #eef1f6; cursor: pointer; }
+.ass-röstrad:hover { background: #f8fafc; }
+.ass-röstnamn { flex: 1; font-size: 13.5px; color: #1e293b; }
+.ass-röstlang { color: #7c8aa5; font-size: 12px; }
+.ass-rösttest { font-size: 12px; padding: 3px 9px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; color: #334155; cursor: pointer; }
+.ass-rösttest:hover { background: #eef2f7; }
+.ass-röstmer { margin-top: 10px; }
+.ass-röstmer summary { cursor: pointer; color: #64748b; font-size: 13px; padding: 4px 0; }

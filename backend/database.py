@@ -1273,6 +1273,19 @@ def _migrera(conn):
         conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','39')")
         conn.commit()
 
+    if v < 40:
+        # v40: Per-användar-inställningar (nyckel/värde), t.ex. kolumnordning i Tjällmo.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS anvandar_installning (
+                user_id INTEGER NOT NULL,
+                nyckel  TEXT NOT NULL,
+                varde   TEXT,
+                PRIMARY KEY (user_id, nyckel)
+            )
+        """)
+        conn.execute("INSERT OR REPLACE INTO installningar (nyckel,varde) VALUES ('db_version','40')")
+        conn.commit()
+
 
 # Schema för ruttplanering – delas av _migrera (v39) och _create_tables (färska databaser)
 _RUTT_SCHEMA = """
@@ -1661,6 +1674,13 @@ def _create_tables(conn):
             notat        TEXT,
             skapad       DATETIME NOT NULL,
             uppdaterad   DATETIME NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS anvandar_installning (
+            user_id INTEGER NOT NULL,
+            nyckel  TEXT NOT NULL,
+            varde   TEXT,
+            PRIMARY KEY (user_id, nyckel)
         );
     """)
     # Ruttplanering (v39) – samma schema som migrationen, för färska databaser

@@ -4226,6 +4226,20 @@ function projektStatusPaneHtml(status, vy) {
   return statusFormHtml(BEREDNING_FALT, status, 'Beredningsstatus');
 }
 
+// Per-användar-inställning: backend (per användare) med localStorage som fallback/cache.
+async function laddaAnvInst(nyckel) {
+  try {
+    const r = await api('GET', '/anvandar-installning/' + encodeURIComponent(nyckel));
+    if (r && r.varde) return JSON.parse(r.varde);
+  } catch (e) {}
+  try { const ls = localStorage.getItem(nyckel); if (ls) return JSON.parse(ls); } catch (e) {}
+  return null;
+}
+async function sparaAnvInst(nyckel, varde) {
+  try { localStorage.setItem(nyckel, JSON.stringify(varde)); } catch (e) {}
+  try { await api('PUT', '/anvandar-installning/' + encodeURIComponent(nyckel), { varde: JSON.stringify(varde) }); } catch (e) {}
+}
+
 // ----------------------------------------------------------------
 // VIEW: TJÄLLMO (fält-/UE-vy – Excel-lik redigerbar grid, alla statusar)
 // ----------------------------------------------------------------
@@ -4243,14 +4257,34 @@ async function renderTjallmo(app) {
     .map(f => `<datalist id="tdl_${f.key}">${f.alt.map(o => `<option value="${escHtml(o)}">`).join('')}</datalist>`).join('');
 
   // Kolumner: fasta projektfält + alla Tjällmo-statusfält
-  const KOL = [
+  const KOL_DEF = [
     { key: 'projektnummer', label: 'Ärendenummer', sticky: 'tj-c0', proj: true },
     { key: 'projektnamn',   label: 'Benämning',     sticky: 'tj-c1', proj: true },
     { key: 'beredare',      label: 'Beredare',      proj: true },
     ...TJALLMO_FALT.map(f => ({ ...f, status: true })),
   ];
   const defW = k => k.sticky === 'tj-c0' ? 104 : k.sticky === 'tj-c1' ? 190 : k.proj ? 130 : (k.typ === 'datum' ? 140 : 124);
+
+  // Sticky-kolumnerna ligger alltid först (frusna); resten kan flyttas/sparas per användare.
+  const ORDER_KEY = 'tjallmo_kolumnordning';
+  const stickyKol = KOL_DEF.filter(k => k.sticky);
+  let restKol = KOL_DEF.filter(k => !k.sticky);
+  const sparadOrdning = await laddaAnvInst(ORDER_KEY);
+  if (Array.isArray(sparadOrdning)) {
+    const byKey = new Map(restKol.map(k => [k.key, k]));
+    const ny = [];
+    sparadOrdning.forEach(key => { if (byKey.has(key)) { ny.push(byKey.get(key)); byKey.delete(key); } });
+    restKol.forEach(k => { if (byKey.has(k.key)) ny.push(k); });  // nya fält läggs sist
+    restKol = ny;
+  }
+  let KOL = [...stickyKol, ...restKol];
   let sortKey = null, sortDir = 1;
+  let visaStangda = false;
+
+  const colgroupHtml = () => KOL.map(k => `<col style="width:${k._w || defW(k)}px">`).join('');
+  const theadHtml = () => KOL.map((k, i) => `<th class="${k.sticky || ''}${k.ue ? ' tj-ue' : ''}" data-sort="${k.key}" data-col="${i}">
+      <span class="tj-hlbl"${k.sticky ? '' : ' draggable="true"'} title="Klicka för att sortera${k.sticky ? '' : ' · dra för att flytta kolumnen'}">${escHtml(k.label)}<span class="tj-sortind"></span></span>${k.sticky ? '' : '<span class="tj-resize" title="Dra för att ändra bredd"></span>'}
+    </th>`).join('');
 
   app.innerHTML = `
     <div class="page-header"><h1 class="page-title">Tjällmo – fältplanering</h1></div>
@@ -4262,16 +4296,17 @@ async function renderTjallmo(app) {
           ${S.beredare.map(b => `<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;border-radius:5px"><input type="checkbox" class="tj-ber-cb" value="${escHtml(b.namn)}"> ${escHtml(b.namn)}</label>`).join('')}
         </div>
       </div>
+      <select class="form-control" id="tjOmr" style="max-width:150px">
+        <option value="">Alla områden</option>
+        ${C_OMRADEN.map(o => `<option>${o}</option>`).join('')}
+      </select>
+      <button type="button" class="btn btn-sm" id="tjVisaStangda" title="Visa/dölj slutfakturerade ärenden">Visa stängda projekt</button>
       <span class="text-sm text-muted" id="tjInfo"></span>
     </div>
     ${datalists}
     <div class="card tj-grid-card"><div class="tj-grid-wrap"><table class="tj-grid">
-      <colgroup>${KOL.map(k => `<col style="width:${defW(k)}px">`).join('')}</colgroup>
-      <thead><tr>
-        ${KOL.map((k, i) => `<th class="${k.sticky || ''}${k.ue ? ' tj-ue' : ''}" data-sort="${k.key}" data-col="${i}">
-          <span class="tj-hlbl" title="Klicka för att sortera">${escHtml(k.label)}<span class="tj-sortind"></span></span>${k.sticky ? '' : '<span class="tj-resize" title="Dra för att ändra bredd"></span>'}
-        </th>`).join('')}
-      </tr></thead>
+      <colgroup>${colgroupHtml()}</colgroup>
+      <thead><tr id="tjHead">${theadHtml()}</tr></thead>
       <tbody id="tjBody"></tbody>
     </table></div></div>`;
 
@@ -4290,12 +4325,18 @@ async function renderTjallmo(app) {
     return k.proj ? (p[k.key] || '') : ((statusAlla[String(p.id)] || {})[k.key] || '');
   }
 
+  const arStangd = p => ((statusAlla[String(p.id)] || {})['status_fakturering'] || '') === 'Slutfakturerad';
+
   function rita() {
     const sok = document.getElementById('tjSok').value.trim().toLowerCase();
+    const omr = document.getElementById('tjOmr').value;
     const valda = new Set([...document.querySelectorAll('.tj-ber-cb:checked')].map(c => c.value));
     const tbody = document.getElementById('tjBody');
+    let antalStangda = 0;
     let rader = projekt.filter(p => {
       if (valda.size && !valda.has(p.beredare)) return false;
+      if (omr && (p.omrade || '') !== omr) return false;
+      if (arStangd(p)) { antalStangda++; if (!visaStangda) return false; }
       if (sok) {
         const hay = `${p.projektnummer} ${p.projektnamn} ${p.beredare}`.toLowerCase();
         if (!hay.includes(sok)) return false;
@@ -4318,7 +4359,8 @@ async function renderTjallmo(app) {
       const ind = document.querySelector(`.tj-grid th[data-sort="${sortKey}"] .tj-sortind`);
       if (ind) ind.textContent = sortDir === 1 ? ' ▲' : ' ▼';
     }
-    document.getElementById('tjInfo').textContent = `${rader.length} ärenden · klick på ärendenr öppnar ärendet`;
+    const stangdInfo = (!visaStangda && antalStangda) ? ` · ${antalStangda} stängda dolda` : '';
+    document.getElementById('tjInfo').textContent = `${rader.length} ärenden${stangdInfo} · klick på ärendenr öppnar ärendet`;
     if (!rader.length) { tbody.innerHTML = `<tr><td colspan="${KOL.length}" class="muted text-center">Inga ärenden</td></tr>`; return; }
     tbody.innerHTML = rader.map(p => {
       const st = statusAlla[String(p.id)] || {};
@@ -4335,31 +4377,94 @@ async function renderTjallmo(app) {
       a.addEventListener('click', () => navigate('projekt-detail', { id: a.dataset.id, vy: 'tjallmo' })));
   }
 
-  // Sortering: klick på rubriktexten
-  document.querySelectorAll('.tj-grid th[data-sort] .tj-hlbl').forEach(lbl => {
-    lbl.addEventListener('click', () => {
-      const key = lbl.closest('th').dataset.sort;
-      if (sortKey === key) sortDir = -sortDir; else { sortKey = key; sortDir = 1; }
-      rita();
-    });
-  });
+  // Bygg om colgroup + thead (efter omordning) och bind om hanterarna.
+  function ritaHuvud() {
+    document.querySelector('.tj-grid colgroup').innerHTML = colgroupHtml();
+    document.getElementById('tjHead').innerHTML = theadHtml();
+    bindHuvud();
+  }
 
-  // Kolumn-resize: dra i handtaget
-  const cols = document.querySelectorAll('.tj-grid colgroup col');
-  let resizing = null;
-  document.querySelectorAll('.tj-grid .tj-resize').forEach(h => {
-    h.addEventListener('mousedown', e => {
-      e.preventDefault(); e.stopPropagation();
-      const th = h.closest('th');
-      resizing = { col: cols[parseInt(th.dataset.col)], startX: e.clientX, startW: th.offsetWidth };
-      document.body.style.userSelect = 'none';
+  let resizing = null, dragKey = null;
+  function bindHuvud() {
+    // Sortering: klick på rubriktexten (men inte direkt efter en dra-omordning)
+    document.querySelectorAll('.tj-grid th[data-sort] .tj-hlbl').forEach(lbl => {
+      lbl.addEventListener('click', () => {
+        if (lbl._dragJustNu) { lbl._dragJustNu = false; return; }
+        const key = lbl.closest('th').dataset.sort;
+        if (sortKey === key) sortDir = -sortDir; else { sortKey = key; sortDir = 1; }
+        rita();
+      });
     });
-  });
+
+    // Kolumn-resize: dra i handtaget (icke-frysta kolumner)
+    const cols = document.querySelectorAll('.tj-grid colgroup col');
+    document.querySelectorAll('.tj-grid .tj-resize').forEach(h => {
+      h.addEventListener('mousedown', e => {
+        e.preventDefault(); e.stopPropagation();
+        const th = h.closest('th');
+        const idx = parseInt(th.dataset.col);
+        resizing = { kol: KOL[idx], col: cols[idx], startX: e.clientX, startW: th.offsetWidth };
+        document.body.style.userSelect = 'none';
+      });
+    });
+
+    // Kolumn-omordning: dra rubriken till ny plats (icke-frysta kolumner)
+    document.querySelectorAll('.tj-grid th .tj-hlbl[draggable="true"]').forEach(lbl => {
+      const th = lbl.closest('th');
+      lbl.addEventListener('dragstart', e => {
+        dragKey = th.dataset.sort; lbl._dragJustNu = true;
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', dragKey); } catch (err) {}
+        th.classList.add('tj-dragging');
+      });
+      lbl.addEventListener('dragend', () => {
+        document.querySelectorAll('.tj-grid th').forEach(t => t.classList.remove('tj-dragging', 'tj-drop-target'));
+        dragKey = null;
+      });
+    });
+    document.querySelectorAll('.tj-grid th[data-sort]').forEach(th => {
+      if (!th.querySelector('.tj-hlbl[draggable="true"]')) return;  // frysta = ej droppmål
+      th.addEventListener('dragover', e => {
+        if (!dragKey || th.dataset.sort === dragKey) return;
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+        th.classList.add('tj-drop-target');
+      });
+      th.addEventListener('dragleave', () => th.classList.remove('tj-drop-target'));
+      th.addEventListener('drop', e => {
+        e.preventDefault(); th.classList.remove('tj-drop-target');
+        if (dragKey && th.dataset.sort !== dragKey) flyttaKolumn(dragKey, th.dataset.sort);
+      });
+    });
+
+    // Återställ sorteringsindikator efter ombyggnad
+    if (sortKey) {
+      const ind = document.querySelector(`.tj-grid th[data-sort="${sortKey}"] .tj-sortind`);
+      if (ind) ind.textContent = sortDir === 1 ? ' ▲' : ' ▼';
+    }
+  }
+
+  async function flyttaKolumn(fromKey, toKey) {
+    const fromIdx = restKol.findIndex(k => k.key === fromKey);
+    const toIdx = restKol.findIndex(k => k.key === toKey);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [flyttad] = restKol.splice(fromIdx, 1);
+    restKol.splice(toIdx, 0, flyttad);
+    KOL = [...stickyKol, ...restKol];
+    ritaHuvud();
+    rita();
+    await sparaAnvInst(ORDER_KEY, restKol.map(k => k.key));
+    toast('Kolumnordning sparad.', 'success');
+  }
+
   document.addEventListener('mousemove', e => {
     if (!resizing) return;
-    resizing.col.style.width = Math.max(60, resizing.startW + (e.clientX - resizing.startX)) + 'px';
+    const ny = Math.max(60, resizing.startW + (e.clientX - resizing.startX));
+    resizing.col.style.width = ny + 'px';
+    resizing.kol._w = ny;  // spara på kolumnobjektet så bredden överlever omordning
   });
   document.addEventListener('mouseup', () => { if (resizing) { resizing = null; document.body.style.userSelect = ''; } });
+
+  bindHuvud();
 
   // Autospar per cell
   document.getElementById('tjBody').addEventListener('change', async e => {
@@ -4376,6 +4481,16 @@ async function renderTjallmo(app) {
   });
 
   document.getElementById('tjSok').addEventListener('input', rita);
+  document.getElementById('tjOmr').addEventListener('change', rita);
+
+  // Visa/dölj slutfakturerade (stängda) ärenden
+  const stangdaBtn = document.getElementById('tjVisaStangda');
+  const uppdateraStangdaBtn = () => {
+    stangdaBtn.textContent = visaStangda ? 'Dölj stängda projekt' : 'Visa stängda projekt';
+    stangdaBtn.classList.toggle('btn-primary', visaStangda);
+  };
+  stangdaBtn.addEventListener('click', () => { visaStangda = !visaStangda; uppdateraStangdaBtn(); rita(); });
+  uppdateraStangdaBtn();
 
   // Flerval av beredare (kryssrutor)
   const berBtn = document.getElementById('tjBerBtn');
@@ -4501,6 +4616,13 @@ async function renderKarta(app) {
         <option value="">Alla områden</option>
         ${C_OMRADEN.map(o => `<option>${o}</option>`).join('')}
       </select>
+      <select class="form-control" id="kartaStatus" style="max-width:200px">
+        <option value="aktiva">Aktiva (döljer utförda)</option>
+        <option value="Beredning">Beredning</option>
+        <option value="Projektledning">Projektledning</option>
+        <option value="Utförda">Utförda</option>
+        <option value="">Alla statusar</option>
+      </select>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div id="kartaMap" style="height:calc(100vh - 235px);min-height:380px;width:100%"></div>
@@ -4520,7 +4642,11 @@ async function renderKarta(app) {
     markers.forEach(m => map.removeLayer(m)); markers = [];
     const ber = document.getElementById('kartaBer').value;
     const omr = document.getElementById('kartaOmr').value;
-    const synl = p => (!ber || p.beredare === ber) && (!omr || (p.omrade || '') === omr);
+    const stat = document.getElementById('kartaStatus').value;
+    const statusOk = p => stat === '' ? true
+      : stat === 'aktiva' ? p.fas !== 'Utförda'
+      : (p.fas || '') === stat;
+    const synl = p => (!ber || p.beredare === ber) && (!omr || (p.omrade || '') === omr) && statusOk(p);
     const med  = projekt.filter(p => p.lat != null && p.lng != null && synl(p));
     const utan = projekt.filter(p => (p.lat == null || p.lng == null) && synl(p)).length;
     document.getElementById('kartaInfo').textContent =
@@ -4537,6 +4663,7 @@ async function renderKarta(app) {
   }
   document.getElementById('kartaBer').addEventListener('change', rita);
   document.getElementById('kartaOmr').addEventListener('change', rita);
+  document.getElementById('kartaStatus').addEventListener('change', rita);
   rita();
   setTimeout(() => map.invalidateSize(), 200);
 }
@@ -4857,12 +4984,20 @@ function ruttResultatHtml(c, arenden, tekById, sammanfattning) {
   Object.keys(grupper).forEach(tid => { RuttState.tilldelning[tid] = grupper[tid].map(a => a.id); });
   RuttState.ejPlacerade = ejPlac.map(a => a.id);
 
+  // Dropdown för att välja/byta tekniker direkt på ärendet (alternativ till dra-och-släpp)
+  const tekValHtml = a => `<select class="rutt-tek-val" draggable="false" data-aid="${a.id}" title="Välj tekniker"
+      style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--text-strong);max-width:120px;vertical-align:middle;margin-right:5px">
+    ${Object.keys(tekById).map(id => `<option value="${id}"${String(a.tilldelad_tekniker) === String(id) ? ' selected' : ''}>${escHtml(tekById[id].namn)}</option>`).join('')}
+    <option value="ej"${a.tilldelad_tekniker == null ? ' selected' : ''}>– ej placerad –</option>
+  </select>`;
+
   const radHtml = (a, nr, farg) => `
     <tr class="rutt-drag" draggable="true" data-aid="${a.id}" style="border-top:1px solid var(--border)">
       <td style="padding:9px 12px;width:30px">${nr ? `<span class="rutt-stopp-nr" style="background:${escHtml(farg)}">${nr}</span>` : '<span class="rutt-grip">⋮⋮</span>'}</td>
       <td style="padding:9px 12px;font-weight:600">${escHtml(a.etikett)}<div class="rutt-rad-sub">${escHtml(a.arendetyp || '')}${(a.fonster_fran || a.fonster_till) ? ` · ${a.fonster_fran || '…'}–${a.fonster_till || '…'}` : ''}</div></td>
       <td style="padding:9px 12px;white-space:nowrap">${a.ankomst ? `ank. <b>${a.ankomst}</b>` : ''}<div class="rutt-rad-sub">${a.servicetid_min || '–'} min</div></td>
       <td style="padding:6px 10px;text-align:right;white-space:nowrap">
+        ${tekValHtml(a)}
         <button class="rutt-ikonbtn" draggable="false" data-ar-red="${a.id}" title="Redigera">✎</button>
         <button class="rutt-ikonbtn rutt-ikonbtn-bort" draggable="false" data-ar-bort="${a.id}" title="Ta bort">✕</button>
       </td>
@@ -4897,6 +5032,7 @@ function ruttResultatHtml(c, arenden, tekById, sammanfattning) {
           <td style="padding:9px 12px;font-weight:600">${escHtml(a.etikett)}<div class="rutt-rad-sub">${escHtml(a.arendetyp || '')}</div></td>
           <td style="padding:9px 12px;color:var(--red);font-size:12px">${escHtml(a.ej_placerad_orsak || '')}</td>
           <td style="padding:6px 10px;text-align:right;white-space:nowrap">
+            ${tekValHtml(a)}
             <button class="rutt-ikonbtn" draggable="false" data-ar-red="${a.id}" title="Redigera">✎</button>
             <button class="rutt-ikonbtn rutt-ikonbtn-bort" draggable="false" data-ar-bort="${a.id}" title="Ta bort">✕</button>
           </td>
@@ -4913,6 +5049,17 @@ function ruttResultatHtml(c, arenden, tekById, sammanfattning) {
 
   ruttRitaKarta(arenden, tekById);
   ruttKopplaDnD();
+
+  // Tekniker-dropdown: byt tekniker direkt (placerar sist hos vald tekniker, räknar om)
+  c.querySelectorAll('.rutt-tek-val').forEach(sel => {
+    sel.addEventListener('mousedown', e => e.stopPropagation());   // hindra att rad-draget startar
+    sel.addEventListener('click', e => e.stopPropagation());
+    sel.addEventListener('change', () => {
+      const aid = Number(sel.dataset.aid), mal = sel.value;
+      const index = (mal !== 'ej' && RuttState.tilldelning[mal]) ? RuttState.tilldelning[mal].length : 0;
+      ruttFlytta(aid, mal, index);
+    });
+  });
 }
 
 function ruttRitaKarta(arenden, tekById) {
@@ -5498,11 +5645,18 @@ function ruttTekForm(t) {
         <div class="form-group"><label class="form-label">Arbetstid slut</label>
           <input name="arbetstid_slut" type="time" class="form-control" value="${escHtml(t?.arbetstid_slut || '16:00')}"></div>
       </div>
+      <div class="form-group"><label class="form-label">Depå (start-/slutpunkt) – sök ort eller klicka på kartan</label>
+        <div class="flex gap-1">
+          <input id="ruttTekOrtSok" class="form-control" placeholder="🔍 Skriv ort, t.ex. Klippan" autocomplete="off">
+          <button type="button" class="btn btn-secondary" id="ruttTekOrtBtn">Sök</button>
+        </div></div>
+      <div class="form-group">
+        <div id="ruttTekMap" style="height:260px;border-radius:10px;overflow:hidden;border:1px solid var(--border)"></div></div>
       <div class="form-row cols-2">
         <div class="form-group"><label class="form-label">Depå latitud</label>
-          <input name="start_lat" class="form-control" value="${t?.start_lat ?? ''}" placeholder="t.ex. 56.1379"></div>
+          <input name="start_lat" id="ruttTekLat" class="form-control" value="${t?.start_lat ?? ''}" placeholder="fylls i automatiskt"></div>
         <div class="form-group"><label class="form-label">Depå longitud</label>
-          <input name="start_lon" class="form-control" value="${t?.start_lon ?? ''}" placeholder="t.ex. 13.1300"></div>
+          <input name="start_lon" id="ruttTekLon" class="form-control" value="${t?.start_lon ?? ''}" placeholder="fylls i automatiskt"></div>
       </div>
       <div class="form-group"><label class="form-label">Färg på kartan</label>
         <div class="rutt-fargval" id="ruttFargval">
@@ -5521,7 +5675,47 @@ function ruttTekForm(t) {
     document.querySelectorAll('#ruttFargval .rutt-farg-knapp').forEach(x => x.classList.remove('vald'));
     b.classList.add('vald');
   }));
-  document.getElementById('ruttTekAvbryt').addEventListener('click', Modal.close);
+  // Karta + ortsök för depån
+  let tekMap = null, tekMark = null;
+  const tekSatt = (la, lo) => {
+    document.getElementById('ruttTekLat').value = Number(la).toFixed(6);
+    document.getElementById('ruttTekLon').value = Number(lo).toFixed(6);
+    if (tekMap) {
+      if (!tekMark) { tekMark = L.marker([la, lo], { draggable: true }).addTo(tekMap); tekMark.on('dragend', () => { const ll = tekMark.getLatLng(); tekSatt(ll.lat, ll.lng); }); }
+      else tekMark.setLatLng([la, lo]);
+    }
+  };
+  setTimeout(() => {
+    if (typeof L === 'undefined' || !document.getElementById('ruttTekMap')) return;
+    if (RuttState.tekMap) { try { RuttState.tekMap.remove(); } catch (e) {} }
+    const lat0 = parseFloat(t?.start_lat), lon0 = parseFloat(t?.start_lon);
+    const harPos = !isNaN(lat0) && !isNaN(lon0);
+    tekMap = L.map('ruttTekMap').setView([harPos ? lat0 : 58.41, harPos ? lon0 : 15.62], harPos ? 12 : 5);
+    RuttState.tekMap = tekMap;
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(tekMap);
+    if (harPos) { tekMark = L.marker([lat0, lon0], { draggable: true }).addTo(tekMap); tekMark.on('dragend', () => { const ll = tekMark.getLatLng(); tekSatt(ll.lat, ll.lng); }); }
+    tekMap.on('click', e => tekSatt(e.latlng.lat, e.latlng.lng));
+    setTimeout(() => tekMap.invalidateSize(), 200);
+  }, 160);
+
+  const tekSokOrt = async () => {
+    const q = document.getElementById('ruttTekOrtSok').value.trim();
+    if (!q) return;
+    const btn = document.getElementById('ruttTekOrtBtn'); btn.disabled = true; const o = btn.textContent; btn.textContent = '…';
+    try {
+      const r = await api('GET', '/rutt/geokoda?q=' + encodeURIComponent(q));
+      const tr = (r.traffar || [])[0];
+      if (!tr) toast(`Hittade ingen ort som heter "${q}".`, 'error');
+      else { tekSatt(tr.lat, tr.lon); if (tekMap) tekMap.setView([tr.lat, tr.lon], 12);
+        toast('Hittade: ' + [tr.namn, tr.lan, tr.land].filter(Boolean).join(', '), 'success'); }
+    } catch (e) { toast(e.message, 'error'); }
+    btn.disabled = false; btn.textContent = o;
+  };
+  document.getElementById('ruttTekOrtBtn').addEventListener('click', tekSokOrt);
+  document.getElementById('ruttTekOrtSok').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tekSokOrt(); } });
+
+  const tekStang = () => { if (RuttState.tekMap) { try { RuttState.tekMap.remove(); } catch (e) {} RuttState.tekMap = null; } Modal.close(); };
+  document.getElementById('ruttTekAvbryt').addEventListener('click', tekStang);
   document.getElementById('ruttTekSpara').addEventListener('click', async () => {
     const f = document.getElementById('ruttTekForm');
     if (!f.reportValidity()) return;
@@ -5531,7 +5725,7 @@ function ruttTekForm(t) {
     try {
       if (t) await api('PUT', `/rutt/tekniker/${t.id}`, body);
       else   await api('POST', '/rutt/tekniker', body);
-      Modal.close(); toast('Sparad', 'success'); renderRuttplanering(document.getElementById('app'));
+      tekStang(); toast('Sparad', 'success'); renderRuttplanering(document.getElementById('app'));
     } catch (e) { toast(e.message, 'error'); }
   });
 }
@@ -5562,7 +5756,7 @@ function ruttTypForm(t) {
 // ----------------------------------------------------------------
 // VIEW: ASSISTENT (AI – neon-kärna + chatt + röst)
 // ----------------------------------------------------------------
-const AssistState = { messages: [], lage: 'vilar', energi: 0.15, talar: true, väntar: false, mik: null };
+const AssistState = { messages: [], lage: 'vilar', energi: 0.15, talar: true, väntar: false, mik: null, röstSvar: false };
 const ASS_VYNAMN = { projekt: 'Projekt', konstruktioner: 'Byggprotokoll', artiklar: 'Artiklar', anslutning: 'Analys', tjallmo: 'Tjällmo', kabeltrummor: 'Kabeltrummor', kontakter: 'Kontaktuppgifter', karta: 'Karta', ruttplanering: 'Ruttplanering', tidplan: 'Tidplan', admin: 'Admin', hjalp: 'Hjälp', assistent: 'Assistent' };
 
 function renderAssistent(app) {
@@ -5581,12 +5775,14 @@ function renderAssistent(app) {
       <div class="ass-cmd">
         <button class="ass-mic" id="assMic" data-lage="vilar" title="Tryck för att prata">●</button>
         <input id="assInput" class="ass-input" placeholder="Skriv eller prata med assistenten…" autocomplete="off">
+        <button class="ass-talk" id="assRoster" title="Välj röst">🎙</button>
         <button class="ass-talk" id="assTalk" title="Röstuppläsning på/av">🔊</button>
         <button class="ass-send" id="assSend" title="Skicka">➤</button>
       </div>
     </div>`;
 
   assKärnaStart();
+  if (window.speechSynthesis) { try { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => { AssistState._röst = null; assVäljRöst(); }; } catch (e) {} }
   assUppdateraMeta();
   AssistState._metaTimer = setInterval(assUppdateraMeta, 1000);
 
@@ -5595,16 +5791,17 @@ function renderAssistent(app) {
   document.getElementById('assSend').addEventListener('click', skicka);
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') skicka(); });
   document.getElementById('assMic').addEventListener('click', assLyssna);
+  document.getElementById('assRoster').addEventListener('click', assRöstModal);
   const talk = document.getElementById('assTalk');
   talk.classList.toggle('av', !AssistState.talar);
   talk.addEventListener('click', () => {
     AssistState.talar = !AssistState.talar;
     talk.classList.toggle('av', !AssistState.talar);
-    if (!AssistState.talar && window.speechSynthesis) speechSynthesis.cancel();
+    if (!AssistState.talar) assStoppaTal();
     toast(AssistState.talar ? 'Röstuppläsning på' : 'Röstuppläsning av', 'info');
   });
 
-  assBubbla('ai', 'Hej! Jag är BPV-assistenten. Fråga mig om beredning, era ärenden eller hur du gör i appen — eller be mig skapa/ändra ett ärende. Du kan skriva eller trycka på mikrofonen och prata.');
+  AssistState._valkomst = assBubbla('ai', 'Hur kan jag hjälpa dig?');
 }
 
 function assUppdateraMeta() {
@@ -5625,13 +5822,24 @@ function assBubbla(roll, html) {
   c.appendChild(div); c.scrollTop = c.scrollHeight; return div;
 }
 
-function assFmt(text) {
-  return escHtml(text).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+// Tar bort emojis/smileys/symboler – så de varken syns i chatten eller läses upp av rösten.
+function assRensaEmoji(s) {
+  return (s || '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{2300}-\u{23FF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu, '')
+    .replace(/[ \t]{2,}/g, ' ');
 }
 
-async function assSkicka(text, bekrafta) {
+function assFmt(text) {
+  return escHtml(assRensaEmoji(text)).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+}
+
+async function assSkicka(text, bekrafta, viaRöst) {
   if (AssistState.väntar) return;
-  if (text) { assBubbla('me', assFmt(text)); AssistState.messages.push({ role: 'user', content: text }); }
+  // Skriven text → bara textsvar. Inröstat tal → både ljud + text. (Bekräfta-svar ärver senaste inmatningssätt.)
+  if (text) {
+    if (AssistState._valkomst) { AssistState._valkomst.remove(); AssistState._valkomst = null; }   // hälsningen försvinner vid första meddelandet
+    assBubbla('me', assFmt(text)); AssistState.messages.push({ role: 'user', content: text }); AssistState.röstSvar = !!viaRöst;
+  }
   AssistState.väntar = true; assSättLäge('tänker');
   const väntBubbla = assBubbla('ai väntar', '<span class="ass-dots"><i></i><i></i><i></i></span>');
   try {
@@ -5648,7 +5856,7 @@ async function assSkicka(text, bekrafta) {
       const txt = res.text || '…';
       assBubbla('ai', assFmt(txt) + assÅtgärderHtml(åtg));
       assKopplaÅtgärder();
-      assTala(txt);
+      if (AssistState.röstSvar) assTala(txt);   // läs bara upp om frågan kom via röst
       if (AssistState.lage !== 'pratar') assSättLäge('vilar');
     }
   } catch (e) {
@@ -5701,18 +5909,139 @@ function assBekrText(verktyg, inp) {
 }
 
 // ---- Röstuppläsning (sv-SE) ----
-function assTala(text) {
-  if (!AssistState.talar || !window.speechSynthesis) return;
+// Naturliga serverröster (edge-tts – gratis, skapas på servern, oberoende av webbläsarens röster).
+const ASS_SERVERRÖSTER = [
+  { id: 'sv-SE-SofieNeural', namn: 'Sofie', kon: 'kvinna' },
+  { id: 'sv-SE-HilleviNeural', namn: 'Hillevi', kon: 'kvinna' },
+  { id: 'sv-SE-MattiasNeural', namn: 'Mattias', kon: 'man' },
+];
+function assServerRöst() {
+  let v = null; try { v = localStorage.getItem('ass_serverröst'); } catch (e) {}
+  return ASS_SERVERRÖSTER.some(r => r.id === v) ? v : 'sv-SE-SofieNeural';
+}
+
+// Läser upp text snabbt: delar svaret i meningar, börjar prata så fort FÖRSTA biten är klar
+// och hämtar resten parallellt under tiden → kort fördröjning innan rösten startar.
+async function assTala(text) {
+  if (!AssistState.talar) return;
+  assStoppaTal();
+  const ren = assRensaEmoji(text).replace(/\*\*/g, '').replace(/[#*_`>]/g, '').replace(/\n+/g, '. ').replace(/[ \t]{2,}/g, ' ').trim();
+  if (!ren) return;
+  const bitar = assDelaMeningar(ren);
+  const token = (AssistState._talToken = {});                 // identitet för att kunna avbryta
+  const röst = assServerRöst();
+  const hämta = b => fetch('/api/assistent/tts', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: b, röst })
+  }).then(r => r.ok ? r.blob() : Promise.reject(r.status)).then(bl => URL.createObjectURL(bl));
+
+  let nästa = hämta(bitar[0]);                                 // starta första hämtningen direkt
+  assSättLäge('pratar');
+  for (let i = 0; i < bitar.length; i++) {
+    let url;
+    try { url = await nästa; }
+    catch (e) { if (i === 0) assTalaWebb(ren); if (AssistState._talToken === token) assSättLäge('vilar'); return; }
+    if (AssistState._talToken !== token) { URL.revokeObjectURL(url); return; }   // avbruten av nytt tal
+    nästa = (i + 1 < bitar.length) ? hämta(bitar[i + 1]).catch(() => null) : null;  // förhämta nästa medan denna spelas
+    await assSpelaUrl(url);
+    if (AssistState._talToken !== token) return;
+  }
+  if (AssistState._talToken === token && AssistState.lage === 'pratar') assSättLäge('vilar');
+}
+
+// Delar text i bitar för uppläsning. Första biten kort → rösten kommer igång snabbt; resten större.
+function assDelaMeningar(s) {
+  const delar = s.match(/[^.!?:\n]+[.!?:]*\s*/g) || [s];
+  const ut = []; let buf = '';
+  for (const d of delar) {
+    buf += d;
+    if (buf.trim().length >= (ut.length === 0 ? 40 : 180)) { ut.push(buf.trim()); buf = ''; }
+  }
+  if (buf.trim()) ut.push(buf.trim());
+  return ut.length ? ut : [s];
+}
+
+// Spelar en ljud-URL och resolvar när den är klar (eller vid fel).
+function assSpelaUrl(url) {
+  return new Promise(resolve => {
+    const audio = new Audio(url); AssistState._audio = audio;
+    let klar = false;
+    const done = () => { if (klar) return; klar = true; URL.revokeObjectURL(url);
+      if (AssistState._audio === audio) AssistState._audio = null; resolve(); };
+    audio.onended = done; audio.onerror = done;
+    audio.play().catch(() => done());
+  });
+}
+
+function assStoppaTal() {
+  AssistState._talToken = null;                               // ogiltigförklara pågående uppläsning
+  const a = AssistState._audio; AssistState._audio = null;
+  if (a) { try { a.pause(); } catch (e) {} }
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  if (AssistState.lage === 'pratar') assSättLäge('vilar');
+}
+
+// Fallback: webbläsarens egen röst (oftast robot-Bengt) om serverrösten inte är tillgänglig.
+function assTalaWebb(ren) {
+  if (!window.speechSynthesis) return;
   speechSynthesis.cancel();
-  const ren = text.replace(/\*\*/g, '').replace(/[#*_`>]/g, '').replace(/\n+/g, '. ');
-  const u = new SpeechSynthesisUtterance(ren);
-  u.lang = 'sv-SE';
-  const röster = speechSynthesis.getVoices();
-  const sv = röster.find(r => /sv[-_]SE/i.test(r.lang)) || röster.find(r => /^sv/i.test(r.lang));
-  if (sv) u.voice = sv;
+  const u = new SpeechSynthesisUtterance(ren); u.lang = 'sv-SE';
+  const röst = assVäljRöst(); if (röst) u.voice = röst;
   u.onstart = () => assSättLäge('pratar');
   u.onend = () => { if (AssistState.lage === 'pratar') assSättLäge('vilar'); };
   speechSynthesis.speak(u);
+}
+
+// Väljer röst: 1) användarens sparade val, annars 2) bästa automatiska –
+// föredrar en KVINNLIG neural "Online (Natural)"-röst (Sofie) framför robot-standardrösten (Bengt/Hedda).
+function assVäljRöst() {
+  const röster = speechSynthesis.getVoices() || [];
+  const valt = (() => { try { return localStorage.getItem('ass_röst'); } catch (e) { return null; } })();
+  if (valt) { const v = röster.find(r => r.name === valt); if (v) return v; }   // användarens val vinner
+  if (AssistState._röst) return AssistState._röst;
+  const sv = röster.filter(r => /^sv/i.test(r.lang));
+  if (!sv.length) return null;
+  const KVINNA = /sofie|hillevi|hedda|female|kvinn/i;
+  const rank = r => { const n = (r.name || '').toLowerCase(); let s = 0;
+    if (/natural|neural/.test(n)) s += 100; if (/online/.test(n)) s += 40;
+    if (KVINNA.test(n)) s += 30;                      // föredra kvinnoröst
+    if (/sv[-_]se/i.test(r.lang)) s += 8; return s; };
+  const bäst = sv.slice().sort((a, b) => rank(b) - rank(a))[0];
+  if (rank(bäst) >= 40) AssistState._röst = bäst;     // cacha bara om vi hittade en neural (de laddas async)
+  return bäst;
+}
+
+// Röst-väljare: naturliga serverröster (gratis, fungerar oavsett webbläsare). Testa + välj, sparas lokalt.
+function assRöstModal() {
+  const vald = assServerRöst();
+  const rad = r => `<label class="ass-röstrad">
+      <input type="radio" name="assröst" value="${r.id}" ${r.id === vald ? 'checked' : ''}>
+      <span class="ass-röstnamn">${r.namn} <span class="ass-röstlang">(${r.kon}, naturlig)</span></span>
+      <button type="button" class="ass-rösttest" data-id="${r.id}">▶ Testa</button>
+    </label>`;
+  Modal.open('Välj röst', `
+    <p class="ass-röstinfo">Dessa naturliga röster skapas på servern – helt gratis och fungerar oavsett vilken webbläsare du har.</p>
+    <div class="ass-röstlista">${ASS_SERVERRÖSTER.map(rad).join('')}</div>`,
+    `<button class="btn btn-navy" id="assRöstSpara">Spara</button>
+     <button class="btn btn-secondary" id="assRöstAvbryt">Avbryt</button>`);
+  document.getElementById('assRöstAvbryt').addEventListener('click', Modal.close);
+  document.querySelectorAll('.ass-rösttest').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; const txt = b.textContent; b.textContent = '…';
+    try {
+      const resp = await fetch('/api/assistent/tts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'Hej, jag är din assistent. Så här låter den här rösten.', röst: b.dataset.id })
+      });
+      if (resp.ok) { const a = new Audio(URL.createObjectURL(await resp.blob())); a.play(); }
+      else toast('Kunde inte spela upp rösten.', 'error');
+    } catch (e) { toast('Kunde inte spela upp rösten.', 'error'); }
+    b.disabled = false; b.textContent = txt;
+  }));
+  document.getElementById('assRöstSpara').addEventListener('click', () => {
+    const sel = document.querySelector('input[name="assröst"]:checked');
+    try { if (sel) localStorage.setItem('ass_serverröst', sel.value); } catch (e) {}
+    Modal.close(); toast('Röst sparad', 'success');
+  });
 }
 
 // ---- Röststyrning in (sv-SE) + mikrofonnivå ----
@@ -5730,7 +6059,7 @@ function assLyssna() {
   recog.onerror = () => { assMikNivåStopp(); assSättLäge('vilar'); };
   recog.onend = () => { assMikNivåStopp(); assSättLäge('vilar'); AssistState._recog = null;
     const el = document.getElementById('assInput'); const t = (färdig || (el ? el.value : '')).trim();
-    if (el) el.value = ''; if (t) assSkicka(t); };
+    if (el) el.value = ''; if (t) assSkicka(t, null, true); };   // röst-inmatning → svara med ljud + text
   try { recog.start(); } catch (e) {}
 }
 async function assMikNivåStart() {
@@ -5756,71 +6085,129 @@ function assStäda() {
   if (AssistState._metaTimer) clearInterval(AssistState._metaTimer);
   if (AssistState._recog) { try { AssistState._recog.stop(); } catch (e) {} }
   assMikNivåStopp();
-  if (window.speechSynthesis) speechSynthesis.cancel();
+  assStoppaTal();
 }
 
 // ---- Neon-kärna (canvas) – tillståndsdriven ----
 function assKärnaStart() {
   const c = document.getElementById('assKarna'); if (!c || typeof window === 'undefined') return;
-  const x = c.getContext('2d'); const DPR = Math.min(devicePixelRatio || 1, 2);
-  const COL = a => { const d = ((a * 180 / Math.PI) % 360 + 360) % 360;
-    if (d < 55) return [56, 225, 255]; if (d < 110) return [70, 235, 150]; if (d < 165) return [120, 120, 255];
-    if (d < 220) return [255, 70, 110]; if (d < 285) return [255, 60, 200]; return [60, 140, 255]; };
-  let nodes = [], sparks = [];
-  function size() { c.width = c.clientWidth * DPR; c.height = c.clientHeight * DPR; x.setTransform(DPR, 0, 0, DPR, 0, 0); }
-  function init() { size(); const W = c.clientWidth, H = c.clientHeight, maxR = Math.min(W, H) * 0.42;
-    nodes = []; for (let i = 0; i < 130; i++) { const ang = Math.random() * 6.283;
-      nodes.push({ ang, baseR: Math.pow(Math.random(), 1.7) * maxR, col: COL(ang).map(v => Math.max(0, Math.min(255, v + (Math.random() * 50 - 25)))), phase: Math.random() * 7, sz: 0.8 + Math.random() * 1.8, breath: 0.04 + Math.random() * 0.05 }); }
-    sparks = []; for (let i = 0; i < 80; i++) sparks.push(nyspark()); }
-  function nyspark() { const ang = Math.random() * 6.283; return { ang, r: Math.random() * 26, sp: 0.6 + Math.random() * 1.8, col: COL(ang) }; }
-  let t = 0, rot = 0, energiVis = 0.15;
-  function frame() {
-    const c2 = document.getElementById('assKarna');
-    if (!c2) { assStäda(); return; }  // vyn har lämnats
-    let mål = AssistState.energi;
-    if (AssistState.lage === 'pratar') mål = 0.45 + Math.sin(t * 9) * 0.22 + Math.sin(t * 5.3) * 0.1;
-    else if (AssistState.lage === 'tänker') mål = 0.42 + Math.sin(t * 3) * 0.12;
-    else if (AssistState.lage === 'vilar') mål = 0.15 + Math.sin(t * 1.2) * 0.04;
-    energiVis += (mål - energiVis) * 0.12;
-    const e = Math.max(0.08, energiVis);
-    const fart = AssistState.lage === 'tänker' ? 0.0022 : 0.0007;
-    t += 0.016; rot += fart;
-    const W = c.clientWidth, H = c.clientHeight, cx = W / 2, cy = H / 2, maxR = Math.min(W, H) * 0.42;
-    x.globalCompositeOperation = 'source-over';
-    x.fillStyle = 'rgba(4,7,17,0.34)'; x.fillRect(0, 0, W, H);
-    x.globalCompositeOperation = 'lighter';
-    const bl = maxR * (0.4 + e * 0.5);
-    const g = x.createRadialGradient(cx, cy, 0, cx, cy, bl);
-    g.addColorStop(0, `rgba(210,240,255,${0.55 + e * 0.4})`); g.addColorStop(.12, `rgba(110,200,255,${0.3 + e * 0.3})`);
-    g.addColorStop(.45, 'rgba(60,120,255,0.10)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-    x.fillStyle = g; x.beginPath(); x.arc(cx, cy, bl, 0, 7); x.fill();
-    const pts = [];
-    for (const n of nodes) {
-      const a = n.ang + rot + Math.sin(t * 0.7 + n.phase) * 0.04;
-      const r = n.baseR * (1 + Math.sin(t * 0.9 + n.phase) * n.breath) * (0.7 + e * 0.55);
-      const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r * 0.66;
-      pts.push({ px, py, col: n.col }); const [R, G, B] = n.col;
-      const gr = x.createLinearGradient(cx, cy, px, py);
-      gr.addColorStop(0, `rgba(${R},${G},${B},0)`); gr.addColorStop(1, `rgba(${R},${G},${B},${0.15 + 0.35 * (r / maxR)})`);
-      x.strokeStyle = gr; x.lineWidth = 0.7; x.shadowBlur = 6; x.shadowColor = `rgb(${R},${G},${B})`;
-      x.beginPath(); x.moveTo(cx, cy); x.lineTo(px, py); x.stroke();
-      x.fillStyle = `rgb(${R},${G},${B})`; x.shadowBlur = 12; x.beginPath(); x.arc(px, py, n.sz, 0, 7); x.fill();
-    }
-    x.shadowBlur = 0; x.lineWidth = 0.5;
-    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
-      const a = pts[i], b = pts[j], dx = a.px - b.px, dy = a.py - b.py, d = dx * dx + dy * dy;
-      if (d < 2400) { const [R, G, B] = a.col; x.strokeStyle = `rgba(${R},${G},${B},${(1 - d / 2400) * 0.2})`;
-        x.beginPath(); x.moveTo(a.px, a.py); x.lineTo(b.px, b.py); x.stroke(); } }
-    for (const s of sparks) { s.r += s.sp * (0.6 + e); const px = cx + Math.cos(s.ang) * s.r, py = cy + Math.sin(s.ang) * s.r * 0.66;
-      const [R, G, B] = s.col, al = Math.max(0, 1 - s.r / (maxR * 1.05));
-      x.fillStyle = `rgba(${R},${G},${B},${al})`; x.shadowBlur = 10; x.shadowColor = `rgb(${R},${G},${B})`;
-      x.beginPath(); x.arc(px, py, 1.2, 0, 7); x.fill(); if (s.r > maxR * 1.05 || al <= 0) Object.assign(s, nyspark()); }
-    x.shadowBlur = 40; x.shadowColor = '#bfe6ff'; x.fillStyle = '#eaf6ff';
-    x.beginPath(); x.arc(cx, cy, 6 + e * 7, 0, 7); x.fill();
-    x.globalCompositeOperation = 'source-over'; x.shadowBlur = 0;
-    requestAnimationFrame(frame);
+  const x = c.getContext('2d');
+  const DPR = Math.min(devicePixelRatio || 1, 1.75);
+
+  // Cachad glöd-sprite för den heta kärnan (vit→genomskinlig). Ingen shadowBlur (= snabbt).
+  const glow = document.createElement('canvas'); const GS = 128; glow.width = glow.height = GS;
+  (() => { const g = glow.getContext('2d'); const gr = g.createRadialGradient(GS / 2, GS / 2, 0, GS / 2, GS / 2, GS / 2);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.28, 'rgba(190,235,255,.65)');
+    gr.addColorStop(.6, 'rgba(70,160,255,.16)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, GS, GS); })();
+
+  // Lägesfärger – vilar=cyan/blå, lyssnar=rött, pratar=grönt, tänker=sval blå. colVis glider mjukt (crossfade).
+  const FÄRG = { vilar: [80, 175, 255], tänker: [95, 165, 255], lyssnar: [255, 60, 60], pratar: [55, 230, 115] };
+  const colVis = [80, 175, 255];
+
+  // ~3600 små prickar på en sfär (3D). Klotet andas in/ut + roterar mjukt. Ytfördelning ger ihålig klot-silhuett.
+  const N = 3600, P = new Array(N);
+  let W = 0, H = 0, cx = 0, cy = 0, Rad = 0;
+  function riktning() { const u = Math.random(), v = Math.random();
+    const th = Math.acos(2 * u - 1), ph = 6.2832 * v, s = Math.sin(th);
+    return [s * Math.cos(ph), s * Math.sin(ph), Math.cos(th)]; }
+  function init() {
+    c.width = (W = c.clientWidth) * DPR; c.height = (H = c.clientHeight) * DPR;
+    x.setTransform(DPR, 0, 0, DPR, 0, 0); cx = W / 2; cy = H * 0.45; Rad = Math.min(W, H) * 0.47;
+    for (let i = 0; i < N; i++) { const d = riktning();
+      const r = (i % 10 < 8) ? 0.88 + Math.random() * 0.15 : Math.pow(Math.random(), 2) * 0.72;   // tunt skal + lite stoft
+      P[i] = { dx: d[0], dy: d[1], dz: d[2], r,
+        // EGNA frekvenser/faser → varje partikel rör sig olika, aldrig i lås
+        fa: 0.4 + Math.random() * 1.2, fb: 0.3 + Math.random() * 1.0, fr: 0.3 + Math.random() * 0.9,
+        pa: Math.random() * 6.283, pb: Math.random() * 6.283, pr: Math.random() * 6.283,
+        tw: Math.random() * 6.283, ts: 0.6 + Math.random() * 1.5 }; }
   }
-  init(); addEventListener('resize', () => { if (document.getElementById('assKarna')) init(); }); frame();
+  init(); addEventListener('resize', () => { if (document.getElementById('assKarna')) init(); });
+
+  const NIV = 9, pts = []; for (let i = 0; i < NIV; i++) pts.push([]);
+  let t = 0, rot = 0, eVis = 0.15, last = 0, micVis = 0.2, loVis = 0.42, hiVis = 0.86;
+
+  function frame(now) {
+    if (!document.getElementById('assKarna')) { assStäda(); return; }   // vyn har lämnats
+    requestAnimationFrame(frame);
+    if (now - last < 15) return; last = now;                            // ~60 fps
+
+    const L = AssistState.lage;
+    t += 0.016;
+    // JÄMNA UT den brusiga mic-signalen (annars rycker rörelsen i lyssnar-läget)
+    micVis += (Math.max(0.12, Math.min(1, AssistState.energi)) - micVis) * 0.07;
+    // oregelbundna signaler (osynkade frekvenser) → upprepar sig aldrig
+    const irr = 0.5 + 0.5 * ((Math.sin(t * 0.7) + 0.6 * Math.sin(t * 1.27 + 2) + 0.4 * Math.sin(t * 2.1 + 4)) / 2.0);
+    // energi för kärnglöden
+    let emål;
+    if (L === 'lyssnar') emål = 0.22 + micVis * 0.6;     // mjukt, följer rösten utan att rycka
+    else if (L === 'pratar') emål = 0.45 + irr * 0.5;
+    else if (L === 'tänker') emål = 0.40 + irr * 0.35;
+    else emål = 0.14 + Math.sin(t * 1.1) * 0.03;
+    eVis += (emål - eVis) * 0.1; const e = Math.max(0.05, eVis);
+    const aktiv = (L === 'pratar' || L === 'tänker');
+    rot += (aktiv ? 0.0052 : 0.0030) * (1 + 0.45 * Math.sin(t * 0.27));   // variabel rotationsfart
+
+    // mjuk färgövergång mot lägets färg (lerp → mjuk crossfade)
+    const mc = FÄRG[L] || FÄRG.vilar;
+    colVis[0] += (mc[0] - colVis[0]) * 0.05; colVis[1] += (mc[1] - colVis[1]) * 0.05; colVis[2] += (mc[2] - colVis[2]) * 0.05;
+    const br = colVis[0], bg = colVis[1], bb = colVis[2];
+
+    // OREGELBUNDEN pump 0..1 → drar ihop sig hårt (lo) och blåser upp (hi), aldrig samma sekvens.
+    let env = 0.5 + 0.5 * ((Math.sin(t * 0.53) + 0.7 * Math.sin(t * 0.91 + 1.3) + 0.5 * Math.sin(t * 1.37 + 2.1) + 0.33 * Math.sin(t * 2.13 + 0.6)) / 2.53);
+    env = Math.pow(env < 0 ? 0 : env > 1 ? 1 : env, 1.35);    // DRA IHOP MER (djupare/längre sammandragningar)
+    if (L === 'lyssnar') env = env * 0.62 + micVis * 0.38;    // mjukt mic-svar (utjämnat) → rör sig inte ryckigt
+    let lo, hi;
+    if (L === 'pratar') { lo = 0.05; hi = 1.45; }        // kollapsar till tät punkt → stort moln
+    else if (L === 'lyssnar') { lo = 0.08; hi = 1.22; }
+    else if (L === 'tänker') { lo = 0.10; hi = 1.12; }
+    else { lo = 0.34; hi = 0.84; }                        // vila: drar ihop mer än förut
+    // mjuka övergångar av storleks-spannet → inga hopp när läget byts (mot hackningar)
+    loVis += (lo - loVis) * 0.06; hiVis += (hi - hiVis) * 0.06;
+    const fältR = Rad * (loVis + (hiVis - loVis) * env);
+
+    const cosY = Math.cos(rot), sinY = Math.sin(rot);
+    const tilt = Math.sin(t * 0.22) * 0.30 + Math.sin(t * 0.131 + 1) * 0.17;   // vinglar i två takter
+    const cosX = Math.cos(tilt), sinX = Math.sin(tilt);
+
+    x.globalCompositeOperation = 'source-over';
+    x.fillStyle = '#03040a'; x.fillRect(0, 0, W, H);
+    x.globalCompositeOperation = 'lighter';
+
+    for (let i = 0; i < NIV; i++) pts[i].length = 0;
+    const amp = fältR * 0.055;
+    for (let i = 0; i < N; i++) {
+      const p = P[i];
+      let ax = p.dx * cosY - p.dz * sinY, az = p.dx * sinY + p.dz * cosY, ay = p.dy;
+      const ay2 = ay * cosX - az * sinX, az2 = ay * sinX + az * cosX; ay = ay2; az = az2;
+      // KLUNGOR: radiell rörelse styrd av riktningen (grannar rör sig ihop) → ojämna klungor in/ut
+      const klung = Math.sin(p.dx * 2.7 + t * 0.80) + Math.sin(p.dy * 3.1 + t * 1.05 + 2) + Math.sin(p.dz * 2.3 + t * 0.65 + 4);
+      const rr = p.r * (1 + klung * 0.13 + Math.sin(t * p.fr + p.pr) * 0.05);
+      let X = cx + ax * rr * fältR, Y = cy + ay * rr * fältR * 0.95;
+      // individuell tangentiell vandring – egna frekvenser → aldrig samma mönster
+      X += (Math.sin(t * p.fa + p.pa) + Math.sin(t * p.fb * 1.6 + p.pb) * 0.6) * amp;
+      Y += (Math.cos(t * p.fb + p.pb) + Math.sin(t * p.fa * 1.4 + p.pa) * 0.6) * amp;
+      const djup = az * 0.5 + 0.5;
+      let ljus = (0.30 + djup * 0.70) * (0.80 + Math.sin(t * p.ts + p.tw) * 0.20);
+      const lvl = ljus <= 0 ? 0 : ljus >= 1 ? NIV - 1 : (ljus * NIV) | 0;
+      pts[lvl].push(X, Y);
+    }
+    // rita varje ljus-nivå i ETT svep (NIV fill-anrop = snabbt). Svaga prickar = lägets färg, ljusa = mot vitt.
+    for (let lvl = 0; lvl < NIV; lvl++) {
+      const a = pts[lvl]; if (!a.length) continue;
+      const f = lvl / (NIV - 1);
+      const r = (br + (255 - br) * f * 0.85) | 0, g = (bg + (255 - bg) * f * 0.85) | 0, b = (bb + (255 - bb) * f * 0.85) | 0;
+      const s = 0.6 + f * 1.2, hs = s / 2;
+      x.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + (0.22 + f * 0.6).toFixed(3) + ')';
+      x.beginPath(); for (let j = 0; j < a.length; j += 2) x.rect(a[j] - hs, a[j + 1] - hs, s, s); x.fill();
+    }
+    // het, tät kärna i mitten – lyser starkare när klotet dragit ihop sig (visar aktivitet)
+    const kr = 22 + e * 42 + (1 - env) * 34; x.globalAlpha = 0.9;
+    x.drawImage(glow, cx - kr, cy - kr, kr * 2, kr * 2); x.globalAlpha = 1;
+    x.fillStyle = '#f4fdff'; x.beginPath(); x.arc(cx, cy, 3.5 + e * 4 + (1 - env) * 5, 0, 6.2832); x.fill();
+    x.globalCompositeOperation = 'source-over';
+  }
+  requestAnimationFrame(frame);
 }
 
 // ----------------------------------------------------------------
@@ -5879,6 +6266,21 @@ const HJALP_MOMENT = [
   { ikon: '📦', titel: 'Lägga till eller ändra material/artiklar', steg: [
     'Har du behörighet ser du samma redigeringsvy som admin direkt i <strong>Artiklar</strong>-fliken – lägg till eller redigera artiklar och priser där.',
     'Saknar du behörighet? Be en administratör att kryssa i <strong>Får hantera artiklar</strong> för ditt konto under Admin → Användare.' ] },
+  { ikon: '🏗️', titel: 'Skapa en konstruktion (byggprotokoll)', steg: [
+    'Gå till fliken <strong>Byggprotokoll/materiallista</strong> och välj projekt i listan högst upp.',
+    'Klicka <strong>+ Ny konstruktion</strong>.',
+    'Välj typ (Kabelskåp, Kabelförläggning, Nätstation eller Övrigt) och fyll i namn, byggnummer, fri ID och status.',
+    'Spara. Konstruktionen dyker upp i tabellen – öppna den för att fylla i material och egenkontroll.' ] },
+  { ikon: '📦', titel: 'Lägga till material på en konstruktion', steg: [
+    'Öppna konstruktionen i <strong>Byggprotokoll/materiallista</strong>.',
+    'Klicka <strong>+ Lägg till rad</strong>.',
+    'Sök artikel på namn eller <strong>E-nummer</strong> (välj eventuellt kategori för att smalna av), markera artikeln och ange antal samt valfri anteckning.',
+    'Klicka <strong>✓ Lägg till</strong>. Allt sparas automatiskt (det står ”Sparas automatiskt” – ingen spara-knapp behövs).',
+    'Fyll även i egenkontroll och eventuell anmärkning längre ner i samma fönster.' ] },
+  { ikon: '🖨️', titel: 'Skriva ut byggprotokoll och materiallista', steg: [
+    'Välj projektet i <strong>Byggprotokoll/materiallista</strong>.',
+    'Klicka <strong>⬇ Byggprotokoll PDF</strong> för protokollet, eller <strong>⬇ Materiallista PDF</strong> / <strong>⬇ Materiallista Excel</strong> för en samlad materiallista för hela projektet.',
+    'Vill du ha en enskild konstruktion? Öppna den och klicka <strong>⬇ PDF</strong> uppe i fönstret.' ] },
   { ikon: '📇', titel: 'Hitta en kollegas kontaktuppgifter', steg: [
     'Gå till fliken <strong>Kontaktuppgifter</strong>.',
     'Sök på namn eller filtrera på roll.',
@@ -5908,6 +6310,14 @@ const HJALP_MOMENT = [
     'Optimera planeringen först.',
     'Klicka <strong>🖨 Skriv ut körlistor</strong> – du får en utskriftsvänlig sida per tekniker med datum, numrerad stopplista, ankomsttider, servicetid och anteckningar.',
     'Skriv ut eller spara som PDF och ge till montören.' ] },
+  { ikon: '🔀', titel: 'Ruttplanering: justera en optimerad plan (byta tekniker, ändra ordning)', steg: [
+    'Kör <strong>⚡ Optimera</strong> först så du har ett resultat att justera.',
+    'Byt tekniker: <strong>dra ett ärende</strong> till en annan teknikers lista – ankomsttiderna räknas om direkt, du behöver inte optimera om.',
+    'Ändra ordning: dra ärendet uppåt eller nedåt inom samma tekniker.',
+    'Blir någon sen eller över sin arbetstid efter flytten flaggas det så du ser det.',
+    'Plocka bort ett ärende från en rutt: dra det till rutan <strong>Ej placerade</strong>.',
+    'Klicka på ett ärende för att markera det på kartan (rad och nål synkar).',
+    'Vill du ändra själva ärendet (servicetid, tidsfönster, position m.m.) klickar du på <strong>✎</strong>, eller <strong>✕</strong> för att ta bort det. Kör <strong>⚡ Optimera</strong> igen om du vill placera om allt.' ] },
 ];
 
 const HJALP_FAQ = [
@@ -5920,6 +6330,8 @@ const HJALP_FAQ = [
   { fraga: 'Kan jag använda appen i mobilen?', svar: 'Ja, appen fungerar i mobilens webbläsare. Stora tabeller, som Tjällmo, är dock lättast att arbeta i på dator eller surfplatta.' },
   { fraga: 'Jag är UE – vad ska jag använda?', svar: 'Främst <strong>Tjällmo</strong> (fyll i de gulmarkerade kolumnerna) och <strong>Kabeltrummor</strong>. Du byter ditt eget lösenord via <strong>Min profil</strong> och hittar kontaktuppgifter under <strong>Kontaktuppgifter</strong>.' },
   { fraga: 'Vem kan ändra min roll eller mina behörigheter?', svar: 'En administratör, under Admin → Användare.' },
+  { fraga: 'Var hittar jag hela materiallistan för ett projekt?', svar: 'Välj projektet i fliken <strong>Byggprotokoll/materiallista</strong> och klicka <strong>⬇ Materiallista PDF</strong> eller <strong>⬇ Materiallista Excel</strong> – då får du allt material från projektets alla konstruktioner samlat.' },
+  { fraga: 'Sparas materialrader och egenkontroll automatiskt?', svar: 'Ja. Inne i en konstruktion sparas allt automatiskt medan du skriver (det står ”Sparas automatiskt”) – det finns ingen spara-knapp.' },
 ];
 
 function renderHjalp(app) {
@@ -5927,16 +6339,64 @@ function renderHjalp(app) {
   const plain = s => String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
   const tagKlass = t => t === 'Alla' ? 'alla' : t === 'Admin' ? 'admin' : t === 'UE' ? 'ue' : '';
 
-  const flikItem = f => `
-    <div class="hjalp-item" data-text="${escHtml(plain(f.namn + ' ' + f.text + ' ' + f.taggar.join(' ')))}">
+  // Vilken flik varje guide/FAQ hör till (matchar på titel/fråga → behöver ej röra text-arrayerna).
+  const flikNyckel = { 'Projekt': 'projekt', 'Byggprotokoll/materiallista': 'konstruktioner', 'Artiklar': 'artiklar',
+    'Analys': 'analys', 'Tjällmo': 'tjallmo', 'Kabeltrummor': 'kabeltrummor', 'Kontaktuppgifter': 'kontakter',
+    'Karta': 'karta', 'Ruttplanering': 'ruttplanering', 'Tidplan': 'tidplan', 'Admin': 'admin', 'Hjälp': 'hjalp' };
+  const MOMENT_FLIK = {
+    'Byta ditt lösenord (och uppdatera telefon/e-post)': 'allmant',
+    'Skapa ett nytt projekt': 'projekt',
+    'Sätta koordinater på ett projekt (så det syns på Kartan)': 'karta',
+    'Fylla i status i Tjällmo': 'tjallmo',
+    'Fylla i beredningsstatus och checklista på ett ärende': 'projekt',
+    'Lägga till eller ändra material/artiklar': 'artiklar',
+    'Skapa en konstruktion (byggprotokoll)': 'konstruktioner',
+    'Lägga till material på en konstruktion': 'konstruktioner',
+    'Skriva ut byggprotokoll och materiallista': 'konstruktioner',
+    'Hitta en kollegas kontaktuppgifter': 'kontakter',
+    'Admin: skapa konto, byta lösenord eller ge behörighet': 'admin',
+    'Ruttplanering: lägg till tekniker och ärendetyper': 'ruttplanering',
+    'Ruttplanering: planera en dag (importera → optimera → justera)': 'ruttplanering',
+    'Ruttplanering: lägg till ett ärende för hand (utan Excel)': 'ruttplanering',
+    'Ruttplanering: skriv ut körlistor till teknikerna': 'ruttplanering',
+    'Ruttplanering: justera en optimerad plan (byta tekniker, ändra ordning)': 'ruttplanering' };
+  const FAQ_FLIK = {
+    'Hur ser jag bara mina egna jobb?': 'projekt',
+    'Jag har glömt mitt lösenord – vad gör jag?': 'allmant',
+    'Min ändring eller status sparades inte?': 'allmant',
+    'Vad är skillnaden mellan Beredning och Tjällmo?': 'tjallmo',
+    'Varför är vissa kolumner gulmarkerade i Tjällmo?': 'tjallmo',
+    'Vad betyder ett grönt ärendenummer i Tjällmo?': 'tjallmo',
+    'Kan jag använda appen i mobilen?': 'allmant',
+    'Jag är UE – vad ska jag använda?': 'allmant',
+    'Vem kan ändra min roll eller mina behörigheter?': 'admin',
+    'Var hittar jag hela materiallistan för ett projekt?': 'konstruktioner',
+    'Sparas materialrader och egenkontroll automatiskt?': 'konstruktioner' };
+
+  const ALLMANT = { ikon: '🚀', namn: 'Allmänt / Komma igång', taggar: ['Alla'], nyckel: 'allmant',
+    text: 'Grunderna för att komma igång – logga in, byta ditt lösenord och allmänna tips. Öppna för att se guider och vanliga frågor som inte hör till en enskild flik.' };
+  const flikLista = [ALLMANT, ...HJALP_FLIKAR];
+
+  const flikItem = f => {
+    const nyckel = f.nyckel || flikNyckel[f.namn] || '';
+    const relM = HJALP_MOMENT.filter(m => MOMENT_FLIK[m.titel] === nyckel);
+    const relF = HJALP_FAQ.filter(q => FAQ_FLIK[q.fraga] === nyckel);
+    const sokText = plain(f.namn + ' ' + f.text + ' ' + f.taggar.join(' ') + ' '
+      + relM.map(m => m.titel + ' ' + m.steg.join(' ')).join(' ') + ' '
+      + relF.map(q => q.fraga + ' ' + q.svar).join(' '));
+    const guider = relM.length ? `<div class="hjalp-under"><h4 class="hjalp-under-titel">🧭 Så här gör du</h4>${relM.map(m => `<div class="hjalp-guide"><p class="hjalp-guide-titel">${m.ikon} ${escHtml(m.titel)}</p><ol class="hjalp-steg">${m.steg.map(s => `<li>${s}</li>`).join('')}</ol></div>`).join('')}</div>` : '';
+    const fragor = relF.length ? `<div class="hjalp-under"><h4 class="hjalp-under-titel">❓ Frågor &amp; svar</h4>${relF.map(q => `<div class="hjalp-guide"><p class="hjalp-guide-titel">💬 ${escHtml(q.fraga)}</p><p>${q.svar}</p></div>`).join('')}</div>` : '';
+    return `
+    <div class="hjalp-item" data-text="${escHtml(sokText)}">
       <button class="hjalp-q" type="button">
         <span class="hjalp-ikon">${f.ikon}</span>
         <span class="hjalp-q-txt">${escHtml(f.namn)}</span>
         <span class="hjalp-taggar">${f.taggar.map(t => `<span class="hjalp-tag ${tagKlass(t)}">${escHtml(t)}</span>`).join('')}</span>
         ${CHEV}
       </button>
-      <div class="hjalp-a"><p>${f.text}</p></div>
+      <div class="hjalp-a"><p>${f.text}</p>${guider}${fragor}</div>
     </div>`;
+  };
 
   const momentItem = m => `
     <div class="hjalp-item" data-text="${escHtml(plain(m.titel + ' ' + m.steg.join(' ')))}">
@@ -5960,12 +6420,12 @@ function renderHjalp(app) {
 
   app.innerHTML = `
     <div class="page-header"><h1 class="page-title">Hjälp &amp; guide</h1></div>
-    <p class="hjalp-intro">Korta förklaringar av flikarna, steg-för-steg-guider för vanliga moment och svar på vanliga frågor. Taggarna visar vem fliken främst är till för – alla flikar är synliga för alla (Admin-fliken kräver admin-inloggning).</p>
+    <p class="hjalp-intro">Klicka på en flik för att se allt som hör till den – beskrivning, steg-för-steg-guider och vanliga frågor. Längre ner finns alla guider och frågor samlade i egna listor också. Taggarna visar vem fliken främst är till för (alla flikar är synliga för alla; Admin-fliken kräver admin-inloggning).</p>
     <input id="hjalpSok" class="form-control hjalp-sok" placeholder="🔍 Sök i hjälpen…">
     <div id="hjalpInnehall">
       <section class="hjalp-sektion" data-sektion>
         <h2 class="hjalp-sektion-titel">📂 Flikarna förklarade</h2>
-        ${HJALP_FLIKAR.map(flikItem).join('')}
+        ${flikLista.map(flikItem).join('')}
       </section>
       <section class="hjalp-sektion" data-sektion>
         <h2 class="hjalp-sektion-titel">🧭 Så här gör du</h2>

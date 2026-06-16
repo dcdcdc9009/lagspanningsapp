@@ -1682,6 +1682,37 @@ def uppdatera_profil():
                     'meddelande': 'Profil uppdaterad.' + (' Lösenord ändrat.' if losenord else '')})
 
 
+@app.get('/api/anvandar-installning/<nyckel>')
+def hamta_anvandar_installning(nyckel):
+    """Hämtar en per-användar-inställning (t.ex. kolumnordning). Delat konto → tomt."""
+    uid = session.get('user_id')
+    if not uid:
+        return jsonify({'varde': None})
+    with get_db() as conn:
+        rad = conn.execute(
+            "SELECT varde FROM anvandar_installning WHERE user_id=? AND nyckel=?",
+            (uid, nyckel)).fetchone()
+    return jsonify({'varde': rad['varde'] if rad else None})
+
+
+@app.put('/api/anvandar-installning/<nyckel>')
+def spara_anvandar_installning(nyckel):
+    """Sparar en per-användar-inställning. Delat konto (utan user_id) sparas inte."""
+    uid = session.get('user_id')
+    if not uid:
+        return jsonify({'sparad': False})
+    varde = (request.get_json(silent=True) or {}).get('varde')
+    if varde is not None and not isinstance(varde, str):
+        varde = json.dumps(varde)
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO anvandar_installning (user_id,nyckel,varde) VALUES (?,?,?) "
+            "ON CONFLICT(user_id,nyckel) DO UPDATE SET varde=excluded.varde",
+            (uid, nyckel, varde))
+        conn.commit()
+    return jsonify({'sparad': True})
+
+
 @app.get('/api/kontakter')
 def hamta_kontakter():
     """Kontaktlista för alla aktiva användare (alla inloggade får läsa)."""
@@ -3191,6 +3222,64 @@ def assistent_chat():
         if 'api_key' in msg.lower() or 'authentication' in msg.lower() or 'x-api-key' in msg.lower():
             return fel('Assistenten saknar en giltig API-nyckel.', 500)
         return fel('Assistenten kunde inte svara just nu: ' + msg, 500)
+
+
+# Tillåtna serverröster (Microsoft neurala, via edge-tts – gratis, inget konto).
+_TTS_RÖSTER = ('sv-SE-SofieNeural', 'sv-SE-HilleviNeural', 'sv-SE-MattiasNeural')
+
+
+@app.post('/api/assistent/tts')
+def assistent_tts():
+    """Skapar naturligt svenskt tal på servern (edge-tts) → MP3. Gratis, ingen nyckel."""
+    d = request.get_json(silent=True) or {}
+    text = (d.get('text') or '').strip()[:2000]
+    rost = d.get('röst') or d.get('rost') or 'sv-SE-SofieNeural'
+    if not text:
+        return fel('Ingen text att läsa upp.')
+    if rost not in _TTS_RÖSTER:
+        rost = 'sv-SE-SofieNeural'
+    try:
+        import asyncio
+        import edge_tts
+    except Exception:
+        return fel('Röstuppläsning är inte tillgänglig (saknar bibliotek).', 500)
+
+    async def _gen():
+        c = edge_tts.Communicate(text, rost, rate='+10%')
+        buf = bytearray()
+        async for ch in c.stream():
+            if ch['type'] == 'audio':
+                buf += ch['data']
+        return bytes(buf)
+
+    try:
+        data = asyncio.run(_gen())
+    except Exception as e:
+        return fel('Kunde inte skapa tal just nu: ' + str(e), 500)
+    if not data:
+        return fel('Tom ljudfil.', 500)
+    return Response(data, mimetype='audio/mpeg', headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/api/rutt/geokoda')
+def rutt_geokoda():
+    """Slår upp en orts koordinater (gratis, Open-Meteo geokodning) – för depå/ärende-position."""
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return fel('Ingen ort angiven.')
+    import json
+    import urllib.request
+    import urllib.parse
+    try:
+        url = ('https://geocoding-api.open-meteo.com/v1/search?name='
+               + urllib.parse.quote(q) + '&count=5&language=sv&format=json')
+        with urllib.request.urlopen(url, timeout=8) as r:
+            res = (json.load(r).get('results') or [])
+    except Exception as e:
+        return fel('Kunde inte söka orten just nu: ' + str(e), 502)
+    traffar = [{'namn': o.get('name'), 'lan': o.get('admin1'), 'land': o.get('country'),
+                'lat': o.get('latitude'), 'lon': o.get('longitude')} for o in res]
+    return jsonify({'traffar': traffar})
 
 
 # ============================================================

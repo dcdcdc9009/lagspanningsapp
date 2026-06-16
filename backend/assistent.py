@@ -38,7 +38,9 @@ def _systemprompt(kontext):
         "(Beredning och Projektlednings Verktyget), ett webbverktyg för OneCo "
         "Networks AB som hanterar lågspännings-elinstallationer åt E.ON.\n\n"
         f"Idag är {d.isoformat()} (vecka {_veckonummer(d)}). Du pratar med {namn}.\n\n"
-        "SPRÅK: Svara alltid på svenska, kort, tydligt och vänligt.\n\n"
+        "SPRÅK: Svara alltid på svenska, kort, tydligt och vänligt.\n"
+        "Använd ALDRIG emojis, smileys, tumme-upp eller andra symboler/figurer i svaret "
+        "(svaret läses upp högt – emojis stör). Skriv bara ren text.\n\n"
         "OM APPEN (flikar): Projekt (projekt-/ärendeöversikt, skapa ärende), "
         "Byggprotokoll/materiallista, Artiklar, Analys (anslutningsärenden), "
         "Tjällmo (fältplanering), Kabeltrummor, Kontaktuppgifter, Karta, "
@@ -50,7 +52,8 @@ def _systemprompt(kontext):
         "VERKTYG: Använd verktygen för att slå upp riktig data i stället för att gissa. "
         "När du ska SKAPA eller ÄNDRA något: anropa rätt verktyg med föreslagna värden – "
         "systemet visar då en bekräftelseruta för användaren och utför ändringen först "
-        "efter godkännande. Påstå aldrig att något är gjort förrän det bekräftats.\n\n"
+        "efter godkännande. Påstå aldrig att något är gjort förrän det bekräftats.\n"
+        "Du kan hämta AKTUELLT väder för en ort med väder-verktyget (live från internet).\n\n"
         "ÄRLIGHET: Om du inte vet (t.ex. detaljer i EBR eller annat du inte fått data om), "
         "säg det rakt ut i stället för att hitta på."
     )
@@ -73,6 +76,12 @@ VERKTYG = [
      "Öppna en flik i appen åt användaren. Giltiga vyer: " + ", ".join(VYER) + ".",
      "input_schema": {"type": "object", "properties": {
          "vy": {"type": "string"}}, "required": ["vy"]}},
+    {"name": "vader", "description":
+     "Hämta AKTUELLT väder live för en ort/stad (gratis, från internet via Open-Meteo). "
+     "Använd när användaren frågar om vädret, temperatur, regn, vind e.d. på en plats.",
+     "input_schema": {"type": "object", "properties": {
+         "plats": {"type": "string", "description": "Ortens/stadens namn, t.ex. Linköping"}},
+         "required": ["plats"]}},
     {"name": "skapa_projekt", "description":
      "Skapa ett nytt projekt/ärende i Projekt-fliken. Kräver projektnamn och beredare. "
      "Valfritt: fas (Beredning/Projektledning/Utförda), status (Planerat/Pågående/Klart), "
@@ -93,8 +102,22 @@ VERKTYG = [
          "anteckningar": {"type": "string"}}, "required": ["projektnummer"]}},
 ]
 
-LAS_VERKTYG = {"projektoversikt", "sok_projekt", "projekt_detalj", "navigera"}
+LAS_VERKTYG = {"projektoversikt", "sok_projekt", "projekt_detalj", "navigera", "vader"}
 SKRIV_VERKTYG = {"skapa_projekt", "uppdatera_projekt"}
+
+# WMO-väderkoder → svensk beskrivning (Open-Meteo)
+_VADERKOD = {
+    0: "klart", 1: "mest klart", 2: "halvklart", 3: "mulet",
+    45: "dimma", 48: "underkyld dimma",
+    51: "lätt duggregn", 53: "duggregn", 55: "kraftigt duggregn",
+    56: "underkylt duggregn", 57: "kraftigt underkylt duggregn",
+    61: "lätt regn", 63: "regn", 65: "kraftigt regn",
+    66: "underkylt regn", 67: "kraftigt underkylt regn",
+    71: "lätt snöfall", 73: "snöfall", 75: "kraftigt snöfall", 77: "snökorn",
+    80: "lätta regnskurar", 81: "regnskurar", 82: "kraftiga regnskurar",
+    85: "lätta snöbyar", 86: "snöbyar",
+    95: "åskväder", 96: "åska med hagel", 99: "kraftig åska med hagel",
+}
 
 
 # ---- Verktygsutförande -> (text_till_modellen, ev. frontend-åtgärd) ----
@@ -143,6 +166,38 @@ def _kor(namn, inp):
         if vy not in VYER:
             return (f"Ogiltig vy '{vy}'.", None)
         return (f"Öppnar fliken {vy}.", {"typ": "navigera", "vy": vy})
+
+    if namn == "vader":
+        plats = (inp.get("plats") or "").strip()
+        if not plats:
+            return ("Ingen plats angiven.", None)
+        import json
+        import urllib.request
+        import urllib.parse
+        try:
+            gurl = ("https://geocoding-api.open-meteo.com/v1/search?name="
+                    + urllib.parse.quote(plats) + "&count=1&language=sv&format=json")
+            with urllib.request.urlopen(gurl, timeout=8) as r:
+                res = (json.load(r).get("results") or [])
+            if not res:
+                return (f"Hittade ingen plats som heter '{plats}'.", None)
+            o = res[0]
+            lat, lon = o["latitude"], o["longitude"]
+            ort = o.get("name") or plats
+            land = o.get("country") or ""
+            wurl = (f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+                    "&current=temperature_2m,apparent_temperature,relative_humidity_2m,"
+                    "precipitation,weather_code,wind_speed_10m&timezone=auto")
+            with urllib.request.urlopen(wurl, timeout=8) as r:
+                cur = (json.load(r).get("current") or {})
+            beskr = _VADERKOD.get(cur.get("weather_code"), "okänt väder")
+            return (f"Väder i {ort}{', ' + land if land else ''} just nu: {beskr}, "
+                    f"{cur.get('temperature_2m')}°C (känns som {cur.get('apparent_temperature')}°C), "
+                    f"luftfuktighet {cur.get('relative_humidity_2m')}%, "
+                    f"vind {cur.get('wind_speed_10m')} km/h, "
+                    f"nederbörd {cur.get('precipitation')} mm.", None)
+        except Exception as e:
+            return (f"Kunde inte hämta vädret just nu ({e}).", None)
 
     if namn == "skapa_projekt":
         pnamn = (inp.get("projektnamn") or "").strip()
